@@ -1,0 +1,10 @@
+[Unit]
+Description=Database
+
+[Container]
+Image=registry.test/library/postgres:17.2
+Network=app.network
+Volume=db.volume:/var/lib/postgresql/data
+
+[Install]
+WantedBy=multi-user.target

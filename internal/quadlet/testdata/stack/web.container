@@ -1,0 +1,15 @@
+[Unit]
+Description=Web front
+After=db.service
+
+[Container]
+Image=registry.example.com/acme/web:1.4.0
+Network=app.network
+Secret=db-password,type=env,target=DB_PASSWORD
+PublishPort=8080:8080
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Web front
+After=db.service
+
+[Container]
+Image=registry.test/acme/web:1.0
+Network=app.network
+PublishPort=8080:8080
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
