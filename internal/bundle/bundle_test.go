@@ -31,9 +31,9 @@ func imageLayout(t *testing.T) string {
 	return dir
 }
 
-func writing(t *testing.T) Writing {
+func contents(t *testing.T) Contents {
 	t.Helper()
-	return Writing{
+	return Contents{
 		Layout: imageLayout(t),
 		Config: Config{
 			Name: "acme", Version: "1.4.0", Reader: "quadlet", Platform: "linux/amd64",
@@ -49,7 +49,7 @@ func writing(t *testing.T) Writing {
 func built(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bundle")
-	if err := Write(dir, writing(t)); err != nil {
+	if err := Write(dir, contents(t)); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	return dir
@@ -70,22 +70,22 @@ func topIndex(t *testing.T, dir string) index {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	var carried index
-	if err := json.Unmarshal(body, &carried); err != nil {
+	var indexFile index
+	if err := json.Unmarshal(body, &indexFile); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	return carried
+	return indexFile
 }
 
 func TestTheTopIndexPointsAtOneThingOnly(t *testing.T) {
-	carried := topIndex(t, built(t))
-	if got, want := len(carried.Manifests), 1; got != want {
+	indexFile := topIndex(t, built(t))
+	if got, want := len(indexFile.Manifests), 1; got != want {
 		t.Fatalf("manifests: got %d, want %d, the bundle root", got, want)
 	}
-	if got, want := carried.Manifests[0].ArtifactType, ArtifactType; got != want {
+	if got, want := indexFile.Manifests[0].ArtifactType, ArtifactType; got != want {
 		t.Errorf("artifactType: got %q, want %q", got, want)
 	}
-	if got, want := carried.Manifests[0].MediaType, indexType; got != want {
+	if got, want := indexFile.Manifests[0].MediaType, indexType; got != want {
 		t.Errorf("the root must be an index so its children travel with it: got %q, want %q", got, want)
 	}
 }
@@ -129,34 +129,34 @@ func TestEveryBlobSitsUnderItsOwnDigest(t *testing.T) {
 }
 
 func TestOpenReturnsTheFilesWriteCarried(t *testing.T) {
-	opened, err := Open(built(t))
+	artifact, err := Open(built(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if got, want := len(opened.Files), 2; got != want {
+	if got, want := len(artifact.Files), 2; got != want {
 		t.Fatalf("files: got %d, want %d", got, want)
 	}
-	if got, want := opened.Files[0].Path, "etc/containers/systemd/app.container"; got != want {
+	if got, want := artifact.Files[0].Path, "etc/containers/systemd/app.container"; got != want {
 		t.Errorf("path: got %q, want %q", got, want)
 	}
 }
 
 func TestOpenReturnsTheConfigWriteCarried(t *testing.T) {
-	opened, err := Open(built(t))
+	artifact, err := Open(built(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if got, want := opened.Config.Name, "acme"; got != want {
+	if got, want := artifact.Config.Name, "acme"; got != want {
 		t.Errorf("name: got %q, want %q", got, want)
 	}
-	if got, want := opened.Config.Images[0].Digest, "sha256:aaa"; got != want {
+	if got, want := artifact.Config.Images[0].Digest, "sha256:aaa"; got != want {
 		t.Errorf("digest: got %q, want %q", got, want)
 	}
 }
 
 func TestTheRootIsTheBundleManifestDigest(t *testing.T) {
 	dir := built(t)
-	opened, err := Open(dir)
+	artifact, err := Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -164,21 +164,21 @@ func TestTheRootIsTheBundleManifestDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RootBytes: %v", err)
 	}
-	if got, want := string(root), opened.Root; got != want {
+	if got, want := string(root), artifact.Root; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if !strings.HasPrefix(opened.Root, "sha256:") {
-		t.Errorf("the root is not a digest: %q", opened.Root)
+	if !strings.HasPrefix(artifact.Root, "sha256:") {
+		t.Errorf("the root is not a digest: %q", artifact.Root)
 	}
 }
 
 func TestOpenRefusesATamperedBlob(t *testing.T) {
 	dir := built(t)
-	opened, err := Open(dir)
+	artifact, err := Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	name := strings.TrimPrefix(opened.Root, "sha256:")
+	name := strings.TrimPrefix(artifact.Root, "sha256:")
 	if err := os.WriteFile(filepath.Join(dir, blobsDir, name), []byte("{}"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

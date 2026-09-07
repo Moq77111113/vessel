@@ -7,6 +7,8 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+
+	"github.com/Moq77111113/vessel/internal/report"
 )
 
 // loadedPrefix is what podman prints once per image it took in.
@@ -30,11 +32,12 @@ func Exec(ctx context.Context, stdin io.Reader, name string, args ...string) ([]
 	return command.CombinedOutput()
 }
 
-// Load puts every image of the layout into local storage, one archive at a time.
+// Load puts every image of the layout into local storage, one archive at a time, announcing
+// each before podman load runs so a load running for minutes shows it is moving.
 //
 // podman only takes one image per oci-archive, and only an oci-archive keeps a
 // manifest byte for byte, which is what keeps the registry digest alive.
-func (l *Loader) Load(ctx context.Context, layout *Layout) ([]string, error) {
+func (l *Loader) Load(ctx context.Context, work report.Report, layout *Layout) ([]string, error) {
 	names, err := layout.Names()
 	if err != nil {
 		return nil, err
@@ -45,13 +48,14 @@ func (l *Loader) Load(ctx context.Context, layout *Layout) ([]string, error) {
 		if err := layout.Archive(i, &archive); err != nil {
 			return nil, fmt.Errorf("cut %s out of the layout: %w", name, err)
 		}
+		work.Line("Loading", name)
 		output, err := l.run(ctx, &archive, "podman", "load")
 		if err != nil {
 			return nil, fmt.Errorf("podman load %s: %w: %s", name, err, strings.TrimSpace(string(output)))
 		}
 		for line := range strings.SplitSeq(string(output), "\n") {
-			if loaded, ok := strings.CutPrefix(strings.TrimSpace(line), loadedPrefix); ok {
-				images = append(images, loaded)
+			if image, ok := strings.CutPrefix(strings.TrimSpace(line), loadedPrefix); ok {
+				images = append(images, image)
 			}
 		}
 	}

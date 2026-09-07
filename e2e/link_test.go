@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/cli"
@@ -12,11 +13,11 @@ import (
 )
 
 func TestLinkPinsEveryUnitToADigest(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	for _, file := range opened.Files {
+	for _, file := range artifact.Files {
 		body := string(file.Data)
 		if !strings.Contains(body, "Image=") {
 			continue
@@ -27,25 +28,72 @@ func TestLinkPinsEveryUnitToADigest(t *testing.T) {
 	}
 }
 
+// link resolves web.container's image after db.container's, since a reader visits units in
+// name order; a line printed as each image is resolved carries that order, not the sorted one
+// the final lock uses.
+func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "bundle")
+	output, err := runVesselCapture("link", "-o", out, "--name", "acme", "--version", "1.0", serveStack(t))
+	if err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	postgres := strings.Index(output, "library/postgres")
+	web := strings.Index(output, "acme/web")
+	if postgres == -1 || web == -1 {
+		t.Fatalf("both images should be named in the output: %s", output)
+	}
+	if postgres > web {
+		t.Errorf("acme/web printed before library/postgres, want resolution order: %s", output)
+	}
+}
+
+// Two link runs over the same source and registry are how an audit checks a bundle against
+// the commit it claims to come from: they must produce the same bundle, byte for byte. The
+// two runs are spaced over a second apart, the resolution a stamped build time would show a
+// difference at, so a build time sneaking back into the hashed config would show up here.
+func TestLinkTwiceFromTheSameSourceProducesTheSameBundle(t *testing.T) {
+	source := serveStack(t)
+	first := filepath.Join(t.TempDir(), "bundle")
+	if err := runVessel("link", "-o", first, "--name", "acme", "--version", "1.0", source); err != nil {
+		t.Fatalf("first link: %v", err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	second := filepath.Join(t.TempDir(), "bundle")
+	if err := runVessel("link", "-o", second, "--name", "acme", "--version", "1.0", source); err != nil {
+		t.Fatalf("second link: %v", err)
+	}
+	firstOpened, err := bundle.Open(first)
+	if err != nil {
+		t.Fatalf("Open first: %v", err)
+	}
+	secondOpened, err := bundle.Open(second)
+	if err != nil {
+		t.Fatalf("Open second: %v", err)
+	}
+	if firstOpened.Root != secondOpened.Root {
+		t.Errorf("got %s then %s, want the same root", firstOpened.Root, secondOpened.Root)
+	}
+}
+
 func TestLinkRecordsEveryImageInTheLock(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if got, want := len(opened.Config.Images), len(images); got != want {
+	if got, want := len(artifact.Config.Images), len(images); got != want {
 		t.Errorf("lock entries: got %d, want %d", got, want)
 	}
-	if got, want := opened.Config.Platform, "linux/amd64"; got != want {
+	if got, want := artifact.Config.Platform, "linux/amd64"; got != want {
 		t.Errorf("platform: got %q, want %q", got, want)
 	}
 }
 
 func TestLinkCarriesTheUnitThatHoldsNoImage(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	for _, file := range opened.Files {
+	for _, file := range artifact.Files {
 		if strings.HasSuffix(file.Path, "app.network") {
 			return
 		}
@@ -54,11 +102,11 @@ func TestLinkCarriesTheUnitThatHoldsNoImage(t *testing.T) {
 }
 
 func TestLinkLeavesOutAFileThatIsNotAUnit(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	for _, file := range opened.Files {
+	for _, file := range artifact.Files {
 		if strings.HasSuffix(file.Path, "README.txt") {
 			t.Errorf("README.txt reached the bundle at %s", file.Path)
 		}
@@ -79,23 +127,23 @@ variables:
 `,
 		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
 	})
-	opened, err := bundle.Open(dir)
+	artifact, err := bundle.Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if opened.Config.Name != "acme" || opened.Config.Version != "1.4.0" {
+	if artifact.Config.Name != "acme" || artifact.Config.Version != "1.4.0" {
 		t.Errorf("got %s %s, want the name and version vessel.yaml declares",
-			opened.Config.Name, opened.Config.Version)
+			artifact.Config.Name, artifact.Config.Version)
 	}
-	if len(opened.Config.Variables) != 1 || opened.Config.Variables[0].Name != "PUBLIC_HOST" {
-		t.Errorf("got variables %+v", opened.Config.Variables)
+	if len(artifact.Config.Variables) != 1 || artifact.Config.Variables[0].Name != "PUBLIC_HOST" {
+		t.Errorf("got variables %+v", artifact.Config.Variables)
 	}
-	for _, file := range opened.Files {
+	for _, file := range artifact.Files {
 		if file.Path == "etc/acme/realm.json" {
 			return
 		}
 	}
-	t.Errorf("etc/acme/realm.json was not carried, got %v", paths(opened.Files))
+	t.Errorf("etc/acme/realm.json was not carried, got %v", paths(artifact.Files))
 }
 
 func TestLinkRefusesAFileTargetThatCollidesWithAUnit(t *testing.T) {

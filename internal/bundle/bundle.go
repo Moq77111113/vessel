@@ -65,20 +65,19 @@ type Config struct {
 	Version   string              `json:"version"`
 	Reader    string              `json:"reader"`
 	Platform  string              `json:"platform"`
-	Time      string              `json:"time"`
 	Images    []Image             `json:"images"`
 	Variables []delivery.Variable `json:"variables,omitempty"`
 	Actions   []string            `json:"actions,omitempty"`
 }
 
-// Writing is everything a link run hands to Write.
-type Writing struct {
+// Contents is everything a link run hands to Write.
+type Contents struct {
 	Config Config
 	Layout string
 	Files  []descriptor.File
 }
 
-// Bundle is an opened artifact whose parts match the digests that pin them.
+// Bundle is an artifact whose parts match the digests that pin them.
 type Bundle struct {
 	Config    Config
 	Files     []descriptor.File
@@ -117,15 +116,15 @@ type index struct {
 }
 
 // Write turns the image layout into a bundle by adding the files and the bundle index.
-func Write(dir string, w Writing) error {
-	if err := copyTree(w.Layout, dir); err != nil {
+func Write(dir string, contents Contents) error {
+	if err := copyTree(contents.Layout, dir); err != nil {
 		return err
 	}
-	carried, err := readIndex(dir)
+	indexFile, err := readIndex(dir)
 	if err != nil {
 		return err
 	}
-	files, err := filesManifest(dir, w)
+	files, err := filesManifest(dir, contents)
 	if err != nil {
 		return err
 	}
@@ -133,7 +132,7 @@ func Write(dir string, w Writing) error {
 		SchemaVersion: 2,
 		MediaType:     indexType,
 		ArtifactType:  ArtifactType,
-		Manifests:     append(carried.Manifests, files),
+		Manifests:     append(indexFile.Manifests, files),
 	}))
 	if err != nil {
 		return err
@@ -146,14 +145,14 @@ func Write(dir string, w Writing) error {
 			ArtifactType: ArtifactType,
 			Digest:       root.Digest,
 			Size:         root.Size,
-			Annotations:  map[string]string{refNameAnnotation: w.Config.Name + ":" + w.Config.Version},
+			Annotations:  map[string]string{refNameAnnotation: contents.Config.Name + ":" + contents.Config.Version},
 		}},
 	})
 }
 
 // filesManifest writes the config and the descriptor files, and returns the manifest over them.
-func filesManifest(dir string, w Writing) (entry, error) {
-	archive, err := packFiles(w.Files)
+func filesManifest(dir string, contents Contents) (entry, error) {
+	archive, err := packFiles(contents.Files)
 	if err != nil {
 		return entry{}, err
 	}
@@ -161,7 +160,7 @@ func filesManifest(dir string, w Writing) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	config, err := putBlob(dir, mustMarshal(w.Config))
+	config, err := putBlob(dir, mustMarshal(contents.Config))
 	if err != nil {
 		return entry{}, err
 	}
@@ -197,19 +196,19 @@ func Open(dir string) (*Bundle, error) {
 	if err := json.Unmarshal(body, &bundleIndex); err != nil {
 		return nil, fmt.Errorf("decode the bundle index: %w", err)
 	}
-	files, err := filesEntry(bundleIndex)
+	entry, err := filesEntry(bundleIndex)
 	if err != nil {
 		return nil, err
 	}
-	body, err = readBlob(dir, files.Digest)
+	body, err = readBlob(dir, entry.Digest)
 	if err != nil {
 		return nil, err
 	}
-	var carried manifest
-	if err := json.Unmarshal(body, &carried); err != nil {
+	var filesManifest manifest
+	if err := json.Unmarshal(body, &filesManifest); err != nil {
 		return nil, fmt.Errorf("decode the files manifest: %w", err)
 	}
-	config, err := readBlob(dir, carried.Config.Digest)
+	config, err := readBlob(dir, filesManifest.Config.Digest)
 	if err != nil {
 		return nil, err
 	}
@@ -217,18 +216,18 @@ func Open(dir string) (*Bundle, error) {
 	if err := json.Unmarshal(config, &decoded); err != nil {
 		return nil, fmt.Errorf("decode the bundle config: %w", err)
 	}
-	if len(carried.Layers) != 1 {
-		return nil, fmt.Errorf("the bundle manifest carries %d layers, want 1", len(carried.Layers))
+	if len(filesManifest.Layers) != 1 {
+		return nil, fmt.Errorf("the bundle manifest carries %d layers, want 1", len(filesManifest.Layers))
 	}
-	archive, err := readBlob(dir, carried.Layers[0].Digest)
+	archive, err := readBlob(dir, filesManifest.Layers[0].Digest)
 	if err != nil {
 		return nil, err
 	}
-	unpacked, err := unpackFiles(archive)
+	files, err := unpackFiles(archive)
 	if err != nil {
 		return nil, err
 	}
-	return &Bundle{Config: decoded, Files: unpacked, LayoutDir: dir, Root: root.Digest}, nil
+	return &Bundle{Config: decoded, Files: files, LayoutDir: dir, Root: root.Digest}, nil
 }
 
 // IsBundle reports whether dir is an OCI layout holding a vessel bundle manifest.
@@ -250,18 +249,18 @@ func RootBytes(dir string) ([]byte, error) {
 // entry that points at it: a registry round trip drops artifactType from the entry while
 // the blob it names keeps it.
 func bundleEntry(dir string) (entry, error) {
-	var carried index
-	if err := readJSON(filepath.Join(dir, indexName), &carried); err != nil {
+	var indexFile index
+	if err := readJSON(filepath.Join(dir, indexName), &indexFile); err != nil {
 		return entry{}, fmt.Errorf("%s %w", dir, ErrNotABundle)
 	}
-	var corrupted error
-	for _, candidate := range carried.Manifests {
+	var corruption error
+	for _, candidate := range indexFile.Manifests {
 		if candidate.MediaType != indexType {
 			continue
 		}
 		body, err := readBlob(dir, candidate.Digest)
 		if errors.Is(err, ErrDigestMismatch) {
-			corrupted = err
+			corruption = err
 			continue
 		}
 		if err != nil {
@@ -276,23 +275,23 @@ func bundleEntry(dir string) (entry, error) {
 		}
 	}
 	// A blob that does not hash to its name is a damaged bundle, not a foreign directory.
-	if corrupted != nil {
-		return entry{}, corrupted
+	if corruption != nil {
+		return entry{}, corruption
 	}
 	return entry{}, fmt.Errorf("%s %w", dir, ErrNotABundle)
 }
 
 func readIndex(dir string) (index, error) {
-	var carried index
-	if err := readJSON(filepath.Join(dir, indexName), &carried); err != nil {
+	var indexFile index
+	if err := readJSON(filepath.Join(dir, indexName), &indexFile); err != nil {
 		return index{}, err
 	}
-	return carried, nil
+	return indexFile, nil
 }
 
-func writeIndex(dir string, carried index) error {
+func writeIndex(dir string, indexFile index) error {
 	path := filepath.Join(dir, indexName)
-	if err := os.WriteFile(path, mustMarshal(carried), 0o644); err != nil {
+	if err := os.WriteFile(path, mustMarshal(indexFile), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil

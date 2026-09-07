@@ -17,16 +17,16 @@ import (
 // the manifest blob the bundle carries, byte for byte. A docker-archive round trip
 // breaks it, which is why the bundle holds an OCI layout.
 func TestEveryPinnedDigestNamesAManifestTheBundleCarries(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if len(opened.Config.Images) == 0 {
+	if len(artifact.Config.Images) == 0 {
 		t.Fatal("the lock is empty")
 	}
-	for _, image := range opened.Config.Images {
+	for _, image := range artifact.Config.Images {
 		name := strings.TrimPrefix(image.Digest, "sha256:")
-		body, err := os.ReadFile(filepath.Join(opened.LayoutDir, "blobs", "sha256", name))
+		body, err := os.ReadFile(filepath.Join(artifact.LayoutDir, "blobs", "sha256", name))
 		if err != nil {
 			t.Fatalf("%s: no manifest blob in the bundle: %v", image.Ref, err)
 		}
@@ -40,11 +40,11 @@ func TestEveryPinnedDigestNamesAManifestTheBundleCarries(t *testing.T) {
 // The two fixture images share one layer. A layout stores it once; that is the whole
 // reason a bundle carries a layout rather than one archive per image.
 func TestTwoImagesSharingALayerStoreItOnce(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	entries, err := os.ReadDir(filepath.Join(opened.LayoutDir, "blobs", "sha256"))
+	entries, err := os.ReadDir(filepath.Join(artifact.LayoutDir, "blobs", "sha256"))
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
@@ -69,11 +69,11 @@ func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
 	if err := runVessel("link", "-o", out, "--name", "acme", "--version", "1.0", source); err != nil {
 		t.Fatalf("link: %v", err)
 	}
-	opened, err := bundle.Open(out)
+	artifact, err := bundle.Open(out)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	for _, file := range opened.Files {
+	for _, file := range artifact.Files {
 		if !strings.HasSuffix(file.Path, "web.container") {
 			continue
 		}
@@ -85,11 +85,11 @@ func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
 }
 
 func TestEveryImageCutsIntoItsOwnArchive(t *testing.T) {
-	opened, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(linkStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	layout, err := target.OpenLayout(opened.LayoutDir)
+	layout, err := target.OpenLayout(artifact.LayoutDir)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}

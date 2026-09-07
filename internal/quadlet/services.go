@@ -23,7 +23,7 @@ var serviceSuffixes = map[string]string{
 // at boot comes from the [Install] section the unit already carries. A .timer is not generated, so
 // it takes enable --now like any hand-written unit.
 func (r *Reader) Start(files []descriptor.File) []string {
-	services := Services(files)
+	services := serviceNames(files)
 	timers := siblings(files)
 	if len(services) == 0 && len(timers) == 0 {
 		return nil
@@ -54,8 +54,8 @@ func siblings(files []descriptor.File) []string {
 	return names
 }
 
-// Services names the systemd services these units generate, in start order.
-func Services(files []descriptor.File) []string {
+// serviceNames names the systemd services these units generate, in start order.
+func serviceNames(files []descriptor.File) []string {
 	var names []string
 	for _, file := range files {
 		if !under(file.Path, systemdPath) {

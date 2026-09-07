@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Moq77111113/vessel/internal/report"
 )
 
 const (
@@ -28,8 +30,9 @@ var (
 	ErrPathEscapes = errors.New("leaves the target directory")
 )
 
-// Pack writes stub followed by the bundle and a trailer, as one executable file.
-func Pack(stub io.Reader, bundle, out string) error {
+// Pack writes stub followed by the bundle and a trailer, as one executable file. It announces
+// every file to work before archiving it, so a large bundle shows it is moving.
+func Pack(stub io.Reader, bundle, out string, work report.Report) error {
 	file, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", out, err)
@@ -40,7 +43,7 @@ func Pack(stub io.Reader, bundle, out string) error {
 		return fmt.Errorf("copy the stub into %s: %w", out, err)
 	}
 	counter := &counting{writer: file}
-	if err := writeTar(counter, bundle); err != nil {
+	if err := writeTar(counter, bundle, work); err != nil {
 		return err
 	}
 	if _, err := io.WriteString(file, magic); err != nil {
@@ -145,7 +148,7 @@ func resolve(dir, name string) (string, error) {
 	return filepath.Join(dir, clean), nil
 }
 
-func writeTar(out io.Writer, bundle string) error {
+func writeTar(out io.Writer, bundle string, work report.Report) error {
 	archive := tar.NewWriter(out)
 	err := filepath.WalkDir(bundle, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -162,6 +165,7 @@ func writeTar(out io.Writer, bundle string) error {
 		if entry.IsDir() {
 			return archive.WriteHeader(&tar.Header{Name: name + "/", Mode: 0o755, Typeflag: tar.TypeDir})
 		}
+		work.Line("Writing", name)
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err

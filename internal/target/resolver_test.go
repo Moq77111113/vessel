@@ -194,6 +194,8 @@ func TestResolveRefusesASetTheDeliveryNeverDeclared(t *testing.T) {
 	}
 }
 
+// install runs as root, so the secret sits in root's store: the command the error names must
+// carry sudo, or an operator running it unprivileged reaches an empty store and finds nothing.
 func TestResolveRefusesToReplaceASecretTheMachineHolds(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", From: "printf x", Secret: true}}
 	_, err := resolver(t, map[string]string{"DB_PASSWORD": "new"}, []string{"DB_PASSWORD"}, "").
@@ -203,5 +205,8 @@ func TestResolveRefusesToReplaceASecretTheMachineHolds(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "DB_PASSWORD") {
 		t.Errorf("got %q, want it to name DB_PASSWORD", err.Error())
+	}
+	if !strings.Contains(err.Error(), "sudo podman secret rm") {
+		t.Errorf("got %q, want it to name a command that reaches root's store", err.Error())
 	}
 }

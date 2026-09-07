@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/report"
 )
 
 func newInspect() *cobra.Command {
@@ -21,18 +22,18 @@ func newInspect() *cobra.Command {
 }
 
 func inspectBundle(out io.Writer, dir string) error {
-	opened, err := bundle.Open(dir)
+	artifact, err := bundle.Open(dir)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s %s, read by %s, resolved for %s on %s\n",
-		opened.Config.Name, opened.Config.Version, opened.Config.Reader,
-		opened.Config.Platform, opened.Config.Time)
-	for _, image := range opened.Config.Images {
-		fmt.Fprintf(out, "image %s %s\n", image.Ref, image.Digest)
+	fmt.Fprintf(out, "%s %s, read by %s, resolved for %s\n",
+		artifact.Config.Name, artifact.Config.Version, artifact.Config.Reader, artifact.Config.Platform)
+	lines := report.New(out)
+	for _, image := range artifact.Config.Images {
+		lines.Line("Image", fmt.Sprintf("%s %s", image.Ref, image.Digest))
 	}
-	for _, file := range opened.Files {
-		fmt.Fprintf(out, "file  %s %d bytes\n", file.Path, len(file.Data))
+	for _, file := range artifact.Files {
+		lines.Line("File", fmt.Sprintf("%s %d bytes", file.Path, len(file.Data)))
 	}
 	return nil
 }

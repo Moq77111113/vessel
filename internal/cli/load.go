@@ -15,6 +15,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/target"
 )
 
@@ -50,7 +51,8 @@ func newLoad() *cobra.Command {
 				return err
 			}
 			m := machine{loader: target.NewLoader(target.Exec), shell: target.NewShell(target.Sh)}
-			return load(command.Context(), command.OutOrStdout(), command.InOrStdin(),
+			work := report.New(command.ErrOrStderr())
+			return load(command.Context(), command.OutOrStdout(), work, command.InOrStdin(),
 				m, args[0], root, values, true)
 		},
 	}
@@ -92,7 +94,7 @@ func parseSet(pairs []string) (map[string]string, error) {
 
 // load installs a bundle. verify is false when the bundle rode inside this executable:
 // a binary cannot vouch for the payload it carries, so the operator checks the file itself.
-func load(ctx context.Context, out io.Writer, in io.Reader, m machine, dir, root string,
+func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader, m machine, dir, root string,
 	set map[string]string, verify bool) error {
 	loader, shell := m.loader, m.shell
 	if err := target.Preflight(ctx, loader, root); err != nil {
@@ -103,31 +105,31 @@ func load(ctx context.Context, out io.Writer, in io.Reader, m machine, dir, root
 			return err
 		}
 	}
-	opened, err := bundle.Open(dir)
+	artifact, err := bundle.Open(dir)
 	if err != nil {
 		return err
 	}
-	if opened.Config.Name == "" {
+	if artifact.Config.Name == "" {
 		return fmt.Errorf("%s: %w", dir, ErrBundleHasNoName)
 	}
 
-	held, err := loader.Secrets(ctx)
+	secrets, err := loader.Secrets(ctx)
 	if err != nil {
 		return err
 	}
-	values := target.NewValues(root, opened.Config.Name)
-	resolver := target.NewResolver(values, shell, set, held, out, in)
-	resolution, err := resolver.Resolve(ctx, opened.Config.Variables)
+	values := target.NewValues(root, artifact.Config.Name)
+	resolver := target.NewResolver(values, shell, set, secrets, out, in)
+	resolution, err := resolver.Resolve(ctx, artifact.Config.Variables)
 	if err != nil {
 		return err
 	}
-	files, err := delivery.Substitute(opened.Files, resolution.Values,
-		delivery.SecretNames(opened.Config.Variables))
+	files, err := delivery.Substitute(artifact.Files, resolution.Values,
+		delivery.SecretNames(artifact.Config.Variables))
 	if err != nil {
 		return err
 	}
 
-	for _, action := range opened.Config.Actions {
+	for _, action := range artifact.Config.Actions {
 		if err := shell.Do(ctx, action); err != nil {
 			return err
 		}
@@ -153,18 +155,18 @@ func load(ctx context.Context, out io.Writer, in io.Reader, m machine, dir, root
 		}
 	}
 
-	layout, err := target.OpenLayout(opened.LayoutDir)
+	layout, err := target.OpenLayout(artifact.LayoutDir)
 	if err != nil {
 		return err
 	}
-	images, err := loader.Load(ctx, layout)
+	images, err := loader.Load(ctx, work, layout)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(out, "%s %s installed: %d images, %d of %d files changed\n",
-		opened.Config.Name, opened.Config.Version, len(images), changes, len(files))
-	reader, err := descriptor.ByName(readers, opened.Config.Reader)
+	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed: %d images, %d of %d files changed",
+		artifact.Config.Name, artifact.Config.Version, len(images), changes, len(files)))
+	reader, err := descriptor.ByName(readers, artifact.Config.Reader)
 	if err != nil {
 		return err
 	}
@@ -202,20 +204,20 @@ func verifyBundle(dir string) error {
 
 // reportMissingSecrets names the secrets the units expect and the machine does not hold.
 // It never fails the install: the operator may be about to create them.
-func reportMissingSecrets(ctx context.Context, out io.Writer, loader *target.Loader, wanted []string) {
-	if len(wanted) == 0 {
+func reportMissingSecrets(ctx context.Context, out io.Writer, loader *target.Loader, units []string) {
+	if len(units) == 0 {
 		return
 	}
-	held, err := loader.Secrets(ctx)
+	secrets, err := loader.Secrets(ctx)
 	if err != nil {
 		return
 	}
-	machine := make(map[string]bool, len(held))
-	for _, name := range held {
+	machine := make(map[string]bool, len(secrets))
+	for _, name := range secrets {
 		machine[name] = true
 	}
 	var missing []string
-	for _, name := range wanted {
+	for _, name := range units {
 		if !machine[name] {
 			missing = append(missing, name)
 		}

@@ -38,15 +38,15 @@ type Resolver struct {
 // NewResolver returns a resolver over one machine's store, shell and operator.
 func NewResolver(values *Values, shell *Shell, set map[string]string, secrets []string,
 	out io.Writer, ask io.Reader) *Resolver {
-	held := make(map[string]bool, len(secrets))
+	machine := make(map[string]bool, len(secrets))
 	for _, name := range secrets {
-		held[name] = true
+		machine[name] = true
 	}
 	return &Resolver{
 		values:  values,
 		shell:   shell,
 		set:     set,
-		secrets: held,
+		secrets: machine,
 		out:     out,
 		ask:     bufio.NewReader(ask),
 	}
@@ -54,7 +54,7 @@ func NewResolver(values *Values, shell *Shell, set map[string]string, secrets []
 
 // Resolve answers every variable, or names the first one it cannot.
 func (r *Resolver) Resolve(ctx context.Context, variables []delivery.Variable) (Resolution, error) {
-	stored, err := r.values.Read()
+	values, err := r.values.Read()
 	if err != nil {
 		return Resolution{}, err
 	}
@@ -66,7 +66,7 @@ func (r *Resolver) Resolve(ctx context.Context, variables []delivery.Variable) (
 		if variable.Secret && r.secrets[variable.Name] {
 			continue
 		}
-		value, err := r.value(ctx, variable, stored)
+		value, err := r.value(ctx, variable, values)
 		if err != nil {
 			return Resolution{}, err
 		}
@@ -82,9 +82,9 @@ func (r *Resolver) Resolve(ctx context.Context, variables []delivery.Variable) (
 // checkTheSetLands refuses a --set that cannot reach the install: one naming a variable the
 // delivery never declared, and one naming a secret this machine already holds.
 func (r *Resolver) checkTheSetLands(variables []delivery.Variable) error {
-	declared := make(map[string]delivery.Variable, len(variables))
+	byName := make(map[string]delivery.Variable, len(variables))
 	for _, variable := range variables {
-		declared[variable.Name] = variable
+		byName[variable.Name] = variable
 	}
 	names := make([]string, 0, len(r.set))
 	for name := range r.set {
@@ -92,12 +92,12 @@ func (r *Resolver) checkTheSetLands(variables []delivery.Variable) error {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		variable, ok := declared[name]
+		variable, ok := byName[name]
 		if !ok {
 			return fmt.Errorf("--set %s: %w", name, ErrSetIsUnknown)
 		}
 		if variable.Secret && r.secrets[name] {
-			return fmt.Errorf("--set %s: remove it with podman secret rm %s, then install again: %w",
+			return fmt.Errorf("--set %s: remove it with sudo podman secret rm %s, then install again: %w",
 				name, name, ErrSecretHeld)
 		}
 	}
@@ -105,11 +105,11 @@ func (r *Resolver) checkTheSetLands(variables []delivery.Variable) error {
 }
 
 func (r *Resolver) value(ctx context.Context, variable delivery.Variable,
-	stored map[string]string) (string, error) {
+	values map[string]string) (string, error) {
 	if value, ok := r.set[variable.Name]; ok {
 		return value, nil
 	}
-	if value, ok := stored[variable.Name]; ok && !variable.Secret {
+	if value, ok := values[variable.Name]; ok && !variable.Secret {
 		return value, nil
 	}
 	if variable.From != "" {

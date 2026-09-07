@@ -17,6 +17,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/target"
 )
 
@@ -37,7 +38,7 @@ variables:
 	root := t.TempDir()
 	m := machine{loader: target.NewLoader((&podmanStub{}).run), shell: target.NewShell(noCapture)}
 	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
-	if err := load(context.Background(), io.Discard, strings.NewReader(""), m, dir, root, set, false); err != nil {
+	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""), m, dir, root, set, false); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "etc/acme/realm.json"))
@@ -54,7 +55,7 @@ func TestLoadWritesNothingWhenAValueIsMissing(t *testing.T) {
 	root := t.TempDir()
 	stub := &podmanStub{}
 	m := machine{loader: target.NewLoader(stub.run), shell: target.NewShell(noCapture)}
-	if err := load(context.Background(), io.Discard, strings.NewReader(""), m, dir, root, nil, false); err == nil {
+	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""), m, dir, root, nil, false); err == nil {
 		t.Fatal("load succeeded with no value for PUBLIC_HOST")
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd")); err == nil {
@@ -81,7 +82,7 @@ files:
 	root := t.TempDir()
 	stub := &podmanStub{watchFile: filepath.Join(root, "etc/acme/realm.json")}
 	m := machine{loader: target.NewLoader(stub.run), shell: target.NewShell(noCapture)}
-	if err := load(context.Background(), io.Discard, strings.NewReader(""), m, dir, root, nil, false); err != nil {
+	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""), m, dir, root, nil, false); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if !stub.sawFileAtLoad {
@@ -104,7 +105,7 @@ variables:
 	stub := &podmanStub{}
 	m := machine{loader: target.NewLoader(stub.run), shell: target.NewShell(noCapture)}
 	set := map[string]string{"DB_PASSWORD": "hunter2"}
-	if err := load(context.Background(), io.Discard, strings.NewReader(""), m, dir, root, set, false); err != nil {
+	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""), m, dir, root, set, false); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	created, ok := stub.secrets["DB_PASSWORD"]
@@ -211,7 +212,7 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 		}
 	}
 	out := filepath.Join(t.TempDir(), "bundle")
-	if err := link(context.Background(), io.Discard, source, out, "linux/amd64", "", "", ""); err != nil {
+	if err := link(context.Background(), report.New(io.Discard), report.New(io.Discard), source, out, "linux/amd64", "", "", ""); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
@@ -225,7 +226,7 @@ func TestSetRefusesAnEmptyValue(t *testing.T) {
 
 func TestLoadRefusesABundleThatCarriesNoName(t *testing.T) {
 	m := machine{loader: target.NewLoader((&podmanStub{}).run), shell: target.NewShell(noCapture)}
-	err := load(context.Background(), io.Discard, strings.NewReader(""), m,
+	err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""), m,
 		namelessBundle(t), t.TempDir(), nil, false)
 	if !errors.Is(err, ErrBundleHasNoName) {
 		t.Errorf("got %v, want ErrBundleHasNoName", err)
@@ -249,11 +250,11 @@ func namelessBundle(t *testing.T) string {
 	write("index.json", `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`)
 
 	dir := filepath.Join(t.TempDir(), "bundle")
-	writing := bundle.Writing{
+	contents := bundle.Contents{
 		Layout: layout,
 		Config: bundle.Config{Version: "1.0.0", Reader: "quadlet", Platform: "linux/amd64"},
 	}
-	if err := bundle.Write(dir, writing); err != nil {
+	if err := bundle.Write(dir, contents); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	return dir

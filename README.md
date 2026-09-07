@@ -65,6 +65,9 @@ $ vessel pack ./bundle -o myapp
 myapp, 11 MB, run it on the target machine
 ```
 
+A private registry needs no flag: `link` reads the credentials the machine already keeps, so
+`podman login registry.example.com` (or `docker login`) once is enough.
+
 Every `Image=` tag comes out a digest. Nothing else in your file moves, comments and ordering
 included:
 

@@ -36,28 +36,28 @@ func TestStartSaysNothingWhenNoUnitStartsAService(t *testing.T) {
 }
 
 func TestServicesNamesOneServicePerContainerUnit(t *testing.T) {
-	got := Services(units("web.container", "db.container"))
+	got := serviceNames(units("web.container", "db.container"))
 	if want := "db.service web.service"; strings.Join(got, " ") != want {
 		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
 	}
 }
 
 func TestServicesLeavesOutNetworksAndVolumes(t *testing.T) {
-	got := Services(units("web.container", "app.network", "db.volume"))
+	got := serviceNames(units("web.container", "app.network", "db.volume"))
 	if len(got) != 1 {
 		t.Errorf("got %v, want only the container unit", got)
 	}
 }
 
 func TestServicesSuffixesAPod(t *testing.T) {
-	got := Services(units("app.pod"))
+	got := serviceNames(units("app.pod"))
 	if want := "app-pod.service"; strings.Join(got, " ") != want {
 		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
 	}
 }
 
 func TestServicesReturnsNothingWhenNoUnitStartsAService(t *testing.T) {
-	if got := Services(units("app.network")); len(got) != 0 {
+	if got := serviceNames(units("app.network")); len(got) != 0 {
 		t.Errorf("got %v, want nothing", got)
 	}
 }
@@ -80,7 +80,7 @@ func TestStartEnablesATimer(t *testing.T) {
 
 func TestServicesLeavesOutAFileThatIsNotInTheUnitDirectory(t *testing.T) {
 	files := []descriptor.File{{Path: "etc/acme/web.container"}}
-	if got := Services(files); len(got) != 0 {
+	if got := serviceNames(files); len(got) != 0 {
 		t.Errorf("got %v, want nothing", got)
 	}
 }

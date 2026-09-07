@@ -1,3 +1,5 @@
+// Package target puts a bundle on the machine it is installed on: podman, the shell, the file
+// tree, the site values it keeps, and the checks that run before any of it.
 package target
 
 import (
@@ -11,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
 // refNameAnnotation is the key podman reads to name an image it takes in.
@@ -81,7 +85,7 @@ func OpenLayout(dir string) (*Layout, error) {
 		if err := json.Unmarshal(body, &inner); err != nil {
 			continue
 		}
-		if inner.ArtifactType != bundleArtifactType {
+		if inner.ArtifactType != bundle.ArtifactType {
 			continue
 		}
 		layout.index = inner
@@ -90,25 +94,19 @@ func OpenLayout(dir string) (*Layout, error) {
 	return layout, nil
 }
 
-// bundleArtifactType marks the one manifest in the index that describes the bundle itself.
-const bundleArtifactType = "application/vnd.vessel.bundle.v1"
-
-// filesArtifactType marks the manifest carrying the descriptor files, not an image.
-const filesArtifactType = "application/vnd.vessel.files.manifest.v1"
-
 // images lists the manifests that are container images, skipping vessel's own.
 func (l *Layout) images() []manifest {
-	var found []manifest
+	var images []manifest
 	for _, entry := range l.index.Manifests {
 		switch entry.ArtifactType {
-		case bundleArtifactType, filesArtifactType:
+		case bundle.ArtifactType, bundle.FilesType:
 			continue
 		}
 		if entry.Annotations[refNameAnnotation] != "" {
-			found = append(found, entry)
+			images = append(images, entry)
 		}
 	}
-	return found
+	return images
 }
 
 // Names returns the reference every image in the layout carries.

@@ -1,4 +1,5 @@
-// Package registry resolves image references and pulls them into an OCI layout.
+// Package registry pulls the images a descriptor names into an OCI layout: Client reads the
+// network, WriteLayout writes the disk.
 package registry
 
 import (
@@ -7,16 +8,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/Moq77111113/vessel/internal/descriptor"
 )
-
-// refNameAnnotation is the key podman reads to name an image it loads.
-const refNameAnnotation = "org.opencontainers.image.ref.name"
 
 // Errors a client returns before it ever reaches a registry.
 var (
@@ -27,10 +25,12 @@ var (
 // Client reads registries over the network.
 type Client struct{}
 
-// New returns a client that reads public and authenticated registries.
+// New returns a client that reads public registries, and private ones through the credentials
+// podman and docker already keep.
 func New() *Client { return &Client{} }
 
-// Resolve returns the digest a reference points at right now.
+// Resolve returns the digest of the manifest a reference points at right now: the platform's
+// manifest, not the index that may list it, so the digest names the very blob Image returns.
 func (c *Client) Resolve(ctx context.Context, ref descriptor.Ref, platform string) (string, error) {
 	options, err := remoteOptions(ctx, platform)
 	if err != nil {
@@ -40,39 +40,43 @@ func (c *Client) Resolve(ctx context.Context, ref descriptor.Ref, platform strin
 	if err != nil {
 		return "", fmt.Errorf("%s: %w: %s", ref, ErrRefSyntax, err)
 	}
-	image, err := remote.Get(parsed, options...)
+	manifest, err := remote.Get(parsed, options...)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", ref, err)
 	}
-	return image.Digest.String(), nil
+	image, err := manifest.Image()
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", ref, err)
+	}
+	digest, err := image.Digest()
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", ref, err)
+	}
+	return digest.String(), nil
 }
 
-// Fetch pulls a pinned reference into the OCI layout at dir, under its whole name.
-func (c *Client) Fetch(ctx context.Context, ref descriptor.Ref, dir string) error {
+// Image pulls a reference already pinned to a digest.
+func (c *Client) Image(ctx context.Context, ref descriptor.Ref) (v1.Image, error) {
 	parsed, err := name.ParseReference(ref.String())
 	if err != nil {
-		return fmt.Errorf("%s: %w: %s", ref, ErrRefSyntax, err)
+		return nil, fmt.Errorf("%s: %w: %s", ref, ErrRefSyntax, err)
 	}
-	image, err := remote.Image(parsed, remote.WithContext(ctx))
+	options, err := remoteOptions(ctx, "")
 	if err != nil {
-		return fmt.Errorf("pull %s: %w", ref, err)
+		return nil, err
 	}
-	path, err := layout.FromPath(dir)
+	image, err := remote.Image(parsed, options...)
 	if err != nil {
-		path, err = layout.Write(dir, emptyIndex())
-		if err != nil {
-			return fmt.Errorf("create the layout in %s: %w", dir, err)
-		}
+		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}
-	annotations := layout.WithAnnotations(map[string]string{refNameAnnotation: ref.String()})
-	if err := path.AppendImage(image, annotations); err != nil {
-		return fmt.Errorf("write %s into the layout: %w", ref, err)
-	}
-	return nil
+	return image, nil
 }
 
 func remoteOptions(ctx context.Context, platform string) ([]remote.Option, error) {
-	options := []remote.Option{remote.WithContext(ctx)}
+	options := []remote.Option{
+		remote.WithContext(ctx),
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+	}
 	if platform == "" {
 		return options, nil
 	}

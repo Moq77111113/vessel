@@ -12,6 +12,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/installer"
+	"github.com/Moq77111113/vessel/internal/report"
 )
 
 // ErrNotABundle says the path handed to pack is not a bundle.
@@ -29,7 +30,8 @@ func newPack() *cobra.Command {
 			"have them check it: minisign -Vm <file> -P <key>.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			return pack(command.OutOrStdout(), args[0], out, key)
+			work := report.New(command.ErrOrStderr())
+			return pack(command.OutOrStdout(), work, args[0], out, key)
 		},
 	}
 	pack.Flags().StringVarP(&out, "out", "o", "", "the executable to write")
@@ -38,7 +40,7 @@ func newPack() *cobra.Command {
 	return pack
 }
 
-func pack(out io.Writer, dir, path, key string) error {
+func pack(out io.Writer, work report.Report, dir, path, key string) error {
 	if !bundle.IsBundle(dir) {
 		return fmt.Errorf("%s %w", dir, ErrNotABundle)
 	}
@@ -52,7 +54,7 @@ func pack(out io.Writer, dir, path, key string) error {
 	}
 	defer stub.Close()
 
-	if err := installer.Pack(stub, dir, path); err != nil {
+	if err := installer.Pack(stub, dir, path, work); err != nil {
 		return err
 	}
 	if err := signFile(path, key); err != nil {
@@ -62,7 +64,7 @@ func pack(out io.Writer, dir, path, key string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	fmt.Fprintf(out, "%s, %d MB, run it on the target machine\n", path, info.Size()/(1<<20))
+	report.New(out).Line("Finished", fmt.Sprintf("%s, %d MB, run it on the target machine", path, info.Size()/(1<<20)))
 	if key != "" {
 		fmt.Fprintf(out, "%s.minisig, ship it alongside\n", path)
 		return nil

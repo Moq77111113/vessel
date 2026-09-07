@@ -26,16 +26,16 @@ func Substitute(files []descriptor.File, values map[string]string, secrets []str
 	out := make([]descriptor.File, len(files))
 	for i, file := range files {
 		var missing, secret string
-		data := marker.ReplaceAllFunc(file.Data, func(found []byte) []byte {
-			name := string(marker.FindSubmatch(found)[1])
+		data := marker.ReplaceAllFunc(file.Data, func(match []byte) []byte {
+			name := string(marker.FindSubmatch(match)[1])
 			if slices.Contains(secrets, name) {
 				secret = name
-				return found
+				return match
 			}
 			value, ok := values[name]
 			if !ok {
 				missing = name
-				return found
+				return match
 			}
 			return []byte(value)
 		})
@@ -53,18 +53,18 @@ func Substitute(files []descriptor.File, values map[string]string, secrets []str
 // CheckMarkers refuses a marker naming a variable the delivery never declared, or naming a secret.
 // link runs it on the files it carries, so a typo is caught where the YAML can still be edited.
 func CheckMarkers(files []descriptor.File, variables []Variable) error {
-	declared := make(map[string]bool, len(variables))
+	names := make(map[string]bool, len(variables))
 	for _, variable := range variables {
-		declared[variable.Name] = true
+		names[variable.Name] = true
 	}
 	secrets := SecretNames(variables)
 	for _, file := range files {
-		for _, found := range marker.FindAllSubmatch(file.Data, -1) {
-			name := string(found[1])
+		for _, match := range marker.FindAllSubmatch(file.Data, -1) {
+			name := string(match[1])
 			if slices.Contains(secrets, name) {
 				return fmt.Errorf("%s in %s: %w", name, file.Path, ErrSecretInAFile)
 			}
-			if !declared[name] {
+			if !names[name] {
 				return fmt.Errorf("%s in %s: %w", name, file.Path, ErrUnknownVariable)
 			}
 		}

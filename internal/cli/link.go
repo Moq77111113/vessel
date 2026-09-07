@@ -6,22 +6,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/registry"
+	"github.com/Moq77111113/vessel/internal/report"
 )
+
+// puller is what resolveAll needs from a registry: resolve a reference to a digest, then pull
+// the manifest that digest names. *registry.Client satisfies it.
+type puller interface {
+	Resolve(ctx context.Context, ref descriptor.Ref, platform string) (string, error)
+	Image(ctx context.Context, ref descriptor.Ref) (v1.Image, error)
+}
 
 // ErrTargetCollides says a delivery file claims a path a unit already occupies.
 var ErrTargetCollides = errors.New("a file target collides with a unit")
@@ -48,7 +56,9 @@ func newLink() *cobra.Command {
 			"patched descriptor files.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			return link(command.Context(), command.OutOrStdout(), args[0], out, platform, name, version, key)
+			work := report.New(command.ErrOrStderr())
+			summary := report.New(command.OutOrStdout())
+			return link(command.Context(), work, summary, args[0], out, platform, name, version, key)
 		},
 	}
 	flags := link.Flags()
@@ -61,24 +71,24 @@ func newLink() *cobra.Command {
 	return link
 }
 
-func link(ctx context.Context, out2 io.Writer, source, out, platform, name, version, key string) error {
+func link(ctx context.Context, work, summary report.Report, source, out, platform, name, version, key string) error {
 	source = filepath.Clean(source)
-	declared, err := delivery.Read(os.DirFS(source))
+	definition, err := delivery.Read(os.DirFS(source))
 	if err != nil && !errors.Is(err, delivery.ErrNoDelivery) {
 		return err
 	}
 	if name == "" {
-		name = declared.Name
+		name = definition.Name
 	}
 	if err := delivery.CheckName(name); err != nil {
 		return err
 	}
 	if version == "" {
-		version = declared.Version
+		version = definition.Version
 	}
 	units := source
-	if declared.Units != "" {
-		units = filepath.Join(source, declared.Units)
+	if definition.Units != "" {
+		units = filepath.Join(source, definition.Units)
 	}
 	dir := os.DirFS(units)
 	reader, err := descriptor.Pick(readers, dir)
@@ -89,21 +99,21 @@ func link(ctx context.Context, out2 io.Writer, source, out, platform, name, vers
 	if err != nil {
 		return err
 	}
-	carried, err := carryFiles(source, declared.Files)
+	plain, err := carryFiles(source, definition.Files)
 	if err != nil {
 		return err
 	}
-	if err := checkNoCollision(manifest.Files, carried); err != nil {
+	if err := checkNoCollision(manifest.Files, plain); err != nil {
 		return err
 	}
-	if err := checkOutsideTheUnitDirectories(reader, carried); err != nil {
+	if err := checkOutsideTheUnitDirectories(reader, plain); err != nil {
 		return err
 	}
-	if err := checkEverySecretIsRead(reader.Requires(manifest.Files), declared.Variables); err != nil {
+	if err := checkEverySecretIsRead(reader.Requires(manifest.Files), definition.Variables); err != nil {
 		return err
 	}
-	manifest.Files = append(manifest.Files, carried...)
-	if err := delivery.CheckMarkers(manifest.Files, declared.Variables); err != nil {
+	manifest.Files = append(manifest.Files, plain...)
+	if err := delivery.CheckMarkers(manifest.Files, definition.Variables); err != nil {
 		return err
 	}
 
@@ -113,7 +123,7 @@ func link(ctx context.Context, out2 io.Writer, source, out, platform, name, vers
 	}
 	defer os.RemoveAll(layout)
 
-	digests, err := resolveAll(ctx, registry.New(), manifest.Relocs, platform, layout)
+	digests, err := resolveAll(ctx, work, registry.New(), manifest.Relocs, platform, layout)
 	if err != nil {
 		return err
 	}
@@ -121,7 +131,7 @@ func link(ctx context.Context, out2 io.Writer, source, out, platform, name, vers
 	if err != nil {
 		return err
 	}
-	writing := bundle.Writing{
+	contents := bundle.Contents{
 		Layout: layout,
 		Files:  files,
 		Config: bundle.Config{
@@ -129,40 +139,45 @@ func link(ctx context.Context, out2 io.Writer, source, out, platform, name, vers
 			Version:   version,
 			Reader:    reader.Name(),
 			Platform:  platform,
-			Time:      time.Now().UTC().Format(time.RFC3339),
 			Images:    imagesOf(digests),
-			Variables: declared.Variables,
-			Actions:   declared.Actions,
+			Variables: definition.Variables,
+			Actions:   definition.Actions,
 		},
 	}
-	if err := bundle.Write(out, writing); err != nil {
+	if err := bundle.Write(out, contents); err != nil {
 		return err
 	}
 	if err := signBundle(out, key); err != nil {
 		return err
 	}
-	for _, image := range writing.Config.Images {
-		fmt.Fprintf(out2, "%s %s\n", image.Ref, image.Digest)
-	}
-	fmt.Fprintf(out2, "%d images, %d files, bundle in %s\n", len(digests), len(files), out)
+	summary.Line("Finished", fmt.Sprintf("%d images, %d files, bundle in %s", len(digests), len(files), out))
 	return nil
 }
 
-func resolveAll(ctx context.Context, client *registry.Client, relocs []descriptor.Relocation, platform, layout string) (map[string]string, error) {
+// resolveAll pulls every relocation's image into the layout, announcing each before the call it
+// precedes so a long pull shows it is moving rather than going silent until it returns.
+func resolveAll(ctx context.Context, work report.Report, client puller, relocs []descriptor.Relocation, platform, layout string) (map[string]string, error) {
 	digests := make(map[string]string, len(relocs))
 	for _, reloc := range relocs {
-		ref := reloc.Ref.String()
-		if _, seen := digests[ref]; seen {
+		tag := reloc.Ref.String()
+		if _, seen := digests[tag]; seen {
 			continue
 		}
+		work.Line("Resolving", tag)
 		digest, err := client.Resolve(ctx, reloc.Ref, platform)
 		if err != nil {
 			return nil, err
 		}
-		if err := client.Fetch(ctx, reloc.Ref.WithDigest(digest), layout); err != nil {
+		ref := reloc.Ref.WithDigest(digest)
+		work.Line("Pulling", ref.String())
+		image, err := client.Image(ctx, ref)
+		if err != nil {
 			return nil, err
 		}
-		digests[ref] = digest
+		if err := registry.WriteLayout(layout, ref, image); err != nil {
+			return nil, err
+		}
+		digests[tag] = digest
 	}
 	return digests, nil
 }
@@ -200,42 +215,42 @@ func readPrivateKey(path string) (minisign.PrivateKey, error) {
 }
 
 // carryFiles reads the plain files a delivery declares, keyed by the path they take under the root.
-func carryFiles(source string, declared []delivery.File) ([]descriptor.File, error) {
-	files := make([]descriptor.File, 0, len(declared))
-	for _, file := range declared {
-		data, err := os.ReadFile(filepath.Join(source, file.Source))
+func carryFiles(source string, mappings []delivery.File) ([]descriptor.File, error) {
+	files := make([]descriptor.File, 0, len(mappings))
+	for _, mapping := range mappings {
+		data, err := os.ReadFile(filepath.Join(source, mapping.Source))
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", file.Source, err)
+			return nil, fmt.Errorf("read %s: %w", mapping.Source, err)
 		}
-		files = append(files, descriptor.File{Path: strings.TrimPrefix(file.Target, "/"), Data: data})
+		files = append(files, descriptor.File{Path: strings.TrimPrefix(mapping.Target, "/"), Data: data})
 	}
 	return files, nil
 }
 
-// checkNoCollision refuses a carried file whose path a unit already occupies, or that another
-// carried file already claims.
-func checkNoCollision(units, carried []descriptor.File) error {
-	occupied := make(map[string]bool, len(units))
+// checkNoCollision refuses a plain file whose path a unit already occupies, or that another
+// plain file already claims.
+func checkNoCollision(units, files []descriptor.File) error {
+	unitTargets := make(map[string]bool, len(units))
 	for _, unit := range units {
-		occupied[unit.Path] = true
+		unitTargets[unit.Path] = true
 	}
-	claimed := make(map[string]bool, len(carried))
-	for _, file := range carried {
-		if occupied[file.Path] {
+	targets := make(map[string]bool, len(files))
+	for _, file := range files {
+		if unitTargets[file.Path] {
 			return fmt.Errorf("%s: %w", file.Path, ErrTargetCollides)
 		}
-		if claimed[file.Path] {
+		if targets[file.Path] {
 			return fmt.Errorf("%s: %w", file.Path, ErrTargetDuplicate)
 		}
-		claimed[file.Path] = true
+		targets[file.Path] = true
 	}
 	return nil
 }
 
-// checkOutsideTheUnitDirectories refuses a carried file that lands where the reader writes its
+// checkOutsideTheUnitDirectories refuses a plain file that lands where the reader writes its
 // units: link never reads it as a unit, so nothing pins the image it may name.
-func checkOutsideTheUnitDirectories(reader descriptor.Reader, carried []descriptor.File) error {
-	for _, file := range carried {
+func checkOutsideTheUnitDirectories(reader descriptor.Reader, files []descriptor.File) error {
+	for _, file := range files {
 		if reader.Owns(file.Path) {
 			return fmt.Errorf("%s: %w", file.Path, ErrTargetInUnitDirectory)
 		}

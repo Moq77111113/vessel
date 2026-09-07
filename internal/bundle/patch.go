@@ -1,4 +1,3 @@
-// Package bundle writes and reads the artifact vessel produces.
 package bundle
 
 import (
@@ -33,10 +32,10 @@ func Patch(manifest descriptor.Manifest, digests map[string]string) ([]descripto
 			return nil, fmt.Errorf("%w for %s", ErrNoDigest, reloc.Ref)
 		}
 		data := files[reloc.File].Data
-		pinned := []byte(reloc.Ref.WithDigest(digest).String())
-		patch := make([]byte, 0, len(data)-reloc.Length+len(pinned))
+		replacement := []byte(reloc.Ref.WithDigest(digest).String())
+		patch := make([]byte, 0, len(data)-reloc.Length+len(replacement))
 		patch = append(patch, data[:reloc.Offset]...)
-		patch = append(patch, pinned...)
+		patch = append(patch, replacement...)
 		patch = append(patch, data[reloc.Offset+reloc.Length:]...)
 		files[reloc.File].Data = patch
 	}
