@@ -2,17 +2,47 @@
 
 Ship a container stack to a machine with no network.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/vessel-dark.svg">
+    <img src="assets/vessel-light.svg" alt="Two sides separated by a dashed line marked no network. On the build side, a units directory, a vessel.yaml and a registry feed vessel link, which writes a signed OCI bundle; vessel pack folds that bundle into one executable, myapp. Straddling the line, the only thing that crosses: myapp on a stick, or the bundle through a registry. On the air-gapped target machine, ./myapp install writes the units and files under /etc/containers/systemd, creates the podman secrets, loads the images into podman storage, then prints the systemctl lines that systemd uses to start the services.">
+  </picture>
+</p>
+
+## The problem
+
+An air-gapped site has no route to a registry. Nothing on that machine can pull an image, so the
+whole stack has to arrive as files.
+
+By hand that means a `podman save` per image, plus a tarball and a copy of the unit files. The site
+values go on a sheet of paper. A tag like `postgres:17.2` points at a different image next month.
+Two machines installed a week apart do not run the same code.
+
 Vessel reads the descriptor you already have, pins every image to a digest, and writes one signed
 OCI artifact. That artifact travels through your registry, or as a single executable on a USB
 stick. No Kubernetes, no format to learn, nothing to install on the far machine.
 
+## Thirty seconds
+
 ```sh
-vessel link ./units -o ./bundle          # pin every image to a digest
-vessel pack ./bundle -o myapp            # one file to carry
-./myapp install                          # on the other side
+vessel link ./units -o ./bundle --name acme   # pin every image to a digest
+vessel pack ./bundle -o myapp                 # one file to carry
+./myapp install                               # on the other side
 ```
 
-## Install
+## Maturity
+
+v0: no tagged release, no CI, no production site yet. The command line, the bundle format and
+`vessel.yaml` change without notice.
+
+What exists is covered. `e2e/` drives the real command line against an in-memory registry. One test
+checks the digest a unit pins against the manifest blob the bundle carries, byte for byte. Tests
+that need podman skip themselves and name what is missing.
+
+Run it on a lab machine and tell me where it breaks. Do not use it for a delivery you cannot repeat
+by hand.
+
+## Install vessel
 
 ```sh
 go install github.com/Moq77111113/vessel/cmd/vessel@latest
@@ -52,7 +82,78 @@ layout, so a registry can carry it instead:
 skopeo copy --all oci:./bundle:acme:1.4.0 docker://registry.example.com/deliveries/acme:1.4.0
 ```
 
-## Install it on a machine
+A machine that already carries vessel installs such a bundle directly, with `vessel load ./bundle`.
+
+## Declare a delivery
+
+A `vessel.yaml` at the root of your delivery directory declares what a unit cannot carry: plain
+files, site values, secrets and commands to run. It names the units directory, so `link` reads the
+delivery root, not the units:
+
+```sh
+acme/
+  vessel.yaml
+  realm.json
+  units/
+    web.container
+    db.container
+$ vessel link ./acme -o ./bundle
+```
+
+```yaml
+name: acme
+version: 1.4.0
+units: ./units
+files:
+  - source: realm.json
+    target: /etc/acme/realm.json
+variables:
+  - name: PUBLIC_HOST
+    ask: the public address of this machine
+  - name: DB_PASSWORD
+    secret: true
+    from: openssl rand -hex 32
+actions:
+  - mkdir -p /etc/acme/certs
+```
+
+`DB_PASSWORD` needs a unit carrying `Secret=DB_PASSWORD`, or `link` refuses it. A bundle name is a
+plain lowercase identifier (`acme`, `dmas-c2`); the machine keeps the delivery's values under
+`/var/lib/vessel/<name>/`. A value comes from `--set`, a previous install, `from:`, or `ask:`, in
+that order; missing all four blocks it, and `--set` on an undeclared variable or an empty value is
+also an error.
+
+```sh
+$ ./myapp install --set PUBLIC_HOST=203.0.113.10
+acme 1.4.0 installed: 2 images, 4 of 4 files changed
+
+Start it:
+  systemctl daemon-reload
+  systemctl start db.service web.service
+```
+
+A missing value stops the install before the first file is written:
+
+```sh
+$ ./myapp install
+vessel: SITE_NAME: no value for this variable
+```
+
+`DB_PASSWORD` never reaches disk or the screen; it comes from `from:` or `--set`, `install` runs
+`podman secret create DB_PASSWORD` for it, and the unit reads it back under that name:
+
+```ini
+[Container]
+Secret=DB_PASSWORD,type=env,target=POSTGRES_PASSWORD
+```
+
+The podman secret name is the variable name; `link` refuses a secret no unit reads that way, and
+rotating one is `podman secret rm DB_PASSWORD` then another install.
+
+Actions run first, before files and images, with an effect and nothing else: never a value, never a
+stand-in for a unit. They run on every install, so write them idempotent, the way `mkdir -p` is.
+
+## Install on the target machine
 
 ```sh
 $ ./myapp inspect                        # reads and prints, writes nothing
@@ -64,7 +165,7 @@ $ ./myapp install
 acme 1.4.0 installed: 2 images, 3 of 3 files changed
 
 These secrets are not on this machine yet, the units need them:
-  podman secret create db-password <file>
+  podman secret create DB_PASSWORD <file>
 
 Start it:
   systemctl daemon-reload

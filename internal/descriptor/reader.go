@@ -19,6 +19,8 @@ type Reader interface {
 	Start(files []File) []string
 	// Requires names what the machine must already hold for these files to start.
 	Requires(files []File) []string
+	// Owns reports whether a path under the target root belongs to this reader's units.
+	Owns(path string) bool
 }
 
 // ByName returns the reader that produced a bundle, so load can ask it how to start.

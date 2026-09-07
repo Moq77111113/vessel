@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/Moq77111113/vessel/internal/cli"
+	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
 // fixtureHost is the registry the units in testdata point at, swapped for the live one.
@@ -97,6 +98,44 @@ func linkStack(t *testing.T) string {
 		t.Fatalf("link: %v", err)
 	}
 	return out
+}
+
+// linkDelivery lays extra files into the fixture stack, links it, and returns the bundle directory.
+func linkDelivery(t *testing.T, files map[string]string) string {
+	t.Helper()
+	source := serveStack(t)
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", name, err)
+		}
+	}
+	out := filepath.Join(t.TempDir(), "bundle")
+	if err := runVessel("link", "-o", out, source); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	return out
+}
+
+// linkDeliveryErr lays extra files into the fixture stack and links it, returning link's error.
+func linkDeliveryErr(t *testing.T, files map[string]string) error {
+	t.Helper()
+	source := serveStack(t)
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", name, err)
+		}
+	}
+	out := filepath.Join(t.TempDir(), "bundle")
+	return runVessel("link", "-o", out, source)
+}
+
+// paths names the files a bundle carries, for a failure message.
+func paths(files []descriptor.File) []string {
+	names := make([]string, len(files))
+	for i, file := range files {
+		names[i] = file.Path
+	}
+	return names
 }
 
 // runVessel runs the command line with its output thrown away.

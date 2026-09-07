@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
@@ -57,14 +58,17 @@ type Image struct {
 	Digest string `json:"digest"`
 }
 
-// Config is the bundle manifest's config blob: what this bundle is, and every image in it.
+// Config is the bundle manifest's config blob: what this bundle is, every image in it, and the
+// variables and actions its install side needs.
 type Config struct {
-	Name     string  `json:"name"`
-	Version  string  `json:"version"`
-	Reader   string  `json:"reader"`
-	Platform string  `json:"platform"`
-	Time     string  `json:"time"`
-	Images   []Image `json:"images"`
+	Name      string              `json:"name"`
+	Version   string              `json:"version"`
+	Reader    string              `json:"reader"`
+	Platform  string              `json:"platform"`
+	Time      string              `json:"time"`
+	Images    []Image             `json:"images"`
+	Variables []delivery.Variable `json:"variables,omitempty"`
+	Actions   []string            `json:"actions,omitempty"`
 }
 
 // Writing is everything a link run hands to Write.

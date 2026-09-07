@@ -8,12 +8,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/installer"
+	"github.com/Moq77111113/vessel/internal/target"
 )
 
 // newPacked is the command tree of an executable that carries its own bundle.
 // It has one job, so it offers two verbs and no way to build anything.
 func newPacked(self string) *cobra.Command {
 	var root string
+	var set []string
 
 	name := filepath.Base(self)
 	packed := &cobra.Command{
@@ -39,13 +41,20 @@ func newPacked(self string) *cobra.Command {
 		Short: "Put the images and files on this machine",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
+			values, err := parseSet(set)
+			if err != nil {
+				return err
+			}
+			m := machine{loader: target.NewLoader(target.Exec), shell: target.NewShell(target.Sh)}
 			return withPayload(self, func(dir string) error {
-				return load(command.Context(), command.OutOrStdout(), dir, root, false)
+				return load(command.Context(), command.OutOrStdout(), command.InOrStdin(),
+					m, dir, root, values, false)
 			})
 		},
 	}
 	install.Flags().StringVar(&root, "root", "/", "install under this directory instead of /")
 	install.Flags().MarkHidden("root")
+	install.Flags().StringArrayVar(&set, "set", nil, "answer a variable: --set NAME=value")
 
 	packed.AddCommand(inspect, install)
 	return packed

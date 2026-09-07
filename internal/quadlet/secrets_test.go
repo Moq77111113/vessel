@@ -18,6 +18,13 @@ func TestRequiresNamesTheSecretAUnitAsksFor(t *testing.T) {
 	}
 }
 
+func TestRequiresReadsASecretWrittenWithSpacesAroundTheEquals(t *testing.T) {
+	got := NewReader().Requires(unit("[Container]\nSecret = db-password,type=env,target=DB_PASSWORD\n"))
+	if want := "db-password"; strings.Join(got, " ") != want {
+		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
 func TestRequiresReadsASecretGivenByNameAlone(t *testing.T) {
 	got := NewReader().Requires(unit("[Container]\nSecret=api-key\n"))
 	if want := "api-key"; strings.Join(got, " ") != want {
@@ -41,6 +48,13 @@ func TestRequiresSkipsACommentedSecret(t *testing.T) {
 
 func TestRequiresReturnsNothingWhenNoUnitAsksForOne(t *testing.T) {
 	if got := NewReader().Requires(unit("[Container]\nImage=x\n")); len(got) != 0 {
+		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestRequiresLeavesOutAFileThatIsNotInTheUnitDirectory(t *testing.T) {
+	files := []descriptor.File{{Path: "etc/acme/backup.conf", Data: []byte("Secret=not-a-unit\n")}}
+	if got := NewReader().Requires(files); len(got) != 0 {
 		t.Errorf("got %v, want nothing", got)
 	}
 }

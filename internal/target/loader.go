@@ -83,6 +83,16 @@ func (l *Loader) Secrets(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+// CreateSecret puts one secret into podman, reading its value from standard input so it never
+// appears in a command line another process can list.
+func (l *Loader) CreateSecret(ctx context.Context, name, value string) error {
+	output, err := l.run(ctx, strings.NewReader(value), "podman", "secret", "create", name, "-")
+	if err != nil {
+		return fmt.Errorf("podman secret create %s: %w: %s", name, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
 // Version returns the podman version the machine carries.
 func (l *Loader) Version(ctx context.Context) (string, error) {
 	output, err := l.run(ctx, nil, "podman", "--version")

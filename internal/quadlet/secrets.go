@@ -8,7 +8,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
-const secretKey = "Secret="
+const secretKey = "Secret"
 
 // Requires names the podman secrets these units expect to find on the machine.
 //
@@ -17,6 +17,9 @@ const secretKey = "Secret="
 func (r *Reader) Requires(files []descriptor.File) []string {
 	seen := map[string]bool{}
 	for _, file := range files {
+		if !r.Owns(file.Path) {
+			continue
+		}
 		for line := range bytes.SplitSeq(file.Data, []byte("\n")) {
 			name, ok := secretName(line)
 			if ok {
@@ -37,7 +40,7 @@ func secretName(line []byte) (string, bool) {
 	if len(trimmed) == 0 || trimmed[0] == '#' || trimmed[0] == ';' {
 		return "", false
 	}
-	value, ok := bytes.CutPrefix(trimmed, []byte(secretKey))
+	value, ok := cutKey(trimmed, secretKey)
 	if !ok {
 		return "", false
 	}

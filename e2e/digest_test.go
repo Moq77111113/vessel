@@ -3,6 +3,7 @@ package e2e
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,34 @@ func TestTwoImagesSharingALayerStoreItOnce(t *testing.T) {
 	want := 3*len(images) + 1 + 4
 	if len(entries) != want {
 		t.Errorf("blobs: got %d, want %d; the shared layer is stored more than once", len(entries), want)
+	}
+}
+
+// A unit written Image = ref, with spaces around the equals, still resolves: the
+// spaced key is legal systemd syntax and must not slip an image through unpinned.
+func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
+	host := serveRegistry(t)
+	source := t.TempDir()
+	unit := fmt.Sprintf("[Container]\nImage = %s/acme/web:1.0\n", host)
+	if err := os.WriteFile(filepath.Join(source, "web.container"), []byte(unit), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "bundle")
+	if err := runVessel("link", "-o", out, "--name", "acme", "--version", "1.0", source); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	opened, err := bundle.Open(out)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	for _, file := range opened.Files {
+		if !strings.HasSuffix(file.Path, "web.container") {
+			continue
+		}
+		body := string(file.Data)
+		if !strings.Contains(body, "@sha256:") {
+			t.Errorf("still carries a tag, not a digest: %s", body)
+		}
 	}
 }
 

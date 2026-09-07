@@ -27,6 +27,8 @@ func (s stub) Start([]File) []string { return nil }
 
 func (s stub) Requires([]File) []string { return nil }
 
+func (s stub) Owns(string) bool { return false }
+
 func TestPickReturnsTheReaderThatRecognizesTheDirectory(t *testing.T) {
 	readers := []Reader{stub{name: "compose", marks: "compose.yaml"}, stub{name: "quadlet", marks: "app.container"}}
 	reader, err := Pick(readers, fstest.MapFS{"app.container": {}})

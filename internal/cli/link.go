@@ -4,20 +4,38 @@ import (
 	"aead.dev/minisign"
 
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/registry"
 )
+
+// ErrTargetCollides says a delivery file claims a path a unit already occupies.
+var ErrTargetCollides = errors.New("a file target collides with a unit")
+
+// ErrTargetDuplicate says two delivery files claim the same path.
+var ErrTargetDuplicate = errors.New("a file target is declared twice")
+
+// ErrSecretNoUnitReads says a delivery declares a secret no unit ever reads. The podman secret
+// vessel creates carries the variable name, and Secret= is the only way a container sees it.
+var ErrSecretNoUnitReads = errors.New("no unit reads this secret with a Secret= key")
+
+// ErrTargetInUnitDirectory says a delivery file lands where the reader writes its units. A file
+// carried there is never read as a unit, so its image is never pinned to a digest.
+var ErrTargetInUnitDirectory = errors.New("a file target lands in the unit directory")
 
 func newLink() *cobra.Command {
 	var out, platform, name, version, key string
@@ -44,13 +62,48 @@ func newLink() *cobra.Command {
 }
 
 func link(ctx context.Context, out2 io.Writer, source, out, platform, name, version, key string) error {
-	dir := os.DirFS(source)
+	source = filepath.Clean(source)
+	declared, err := delivery.Read(os.DirFS(source))
+	if err != nil && !errors.Is(err, delivery.ErrNoDelivery) {
+		return err
+	}
+	if name == "" {
+		name = declared.Name
+	}
+	if err := delivery.CheckName(name); err != nil {
+		return err
+	}
+	if version == "" {
+		version = declared.Version
+	}
+	units := source
+	if declared.Units != "" {
+		units = filepath.Join(source, declared.Units)
+	}
+	dir := os.DirFS(units)
 	reader, err := descriptor.Pick(readers, dir)
 	if err != nil {
 		return err
 	}
 	manifest, err := reader.Read(dir)
 	if err != nil {
+		return err
+	}
+	carried, err := carryFiles(source, declared.Files)
+	if err != nil {
+		return err
+	}
+	if err := checkNoCollision(manifest.Files, carried); err != nil {
+		return err
+	}
+	if err := checkOutsideTheUnitDirectories(reader, carried); err != nil {
+		return err
+	}
+	if err := checkEverySecretIsRead(reader.Requires(manifest.Files), declared.Variables); err != nil {
+		return err
+	}
+	manifest.Files = append(manifest.Files, carried...)
+	if err := delivery.CheckMarkers(manifest.Files, declared.Variables); err != nil {
 		return err
 	}
 
@@ -72,12 +125,14 @@ func link(ctx context.Context, out2 io.Writer, source, out, platform, name, vers
 		Layout: layout,
 		Files:  files,
 		Config: bundle.Config{
-			Name:     name,
-			Version:  version,
-			Reader:   reader.Name(),
-			Platform: platform,
-			Time:     time.Now().UTC().Format(time.RFC3339),
-			Images:   imagesOf(digests),
+			Name:      name,
+			Version:   version,
+			Reader:    reader.Name(),
+			Platform:  platform,
+			Time:      time.Now().UTC().Format(time.RFC3339),
+			Images:    imagesOf(digests),
+			Variables: declared.Variables,
+			Actions:   declared.Actions,
 		},
 	}
 	if err := bundle.Write(out, writing); err != nil {
@@ -142,6 +197,61 @@ func readPrivateKey(path string) (minisign.PrivateKey, error) {
 		return minisign.PrivateKey{}, fmt.Errorf("%s: %w", path, err)
 	}
 	return key, nil
+}
+
+// carryFiles reads the plain files a delivery declares, keyed by the path they take under the root.
+func carryFiles(source string, declared []delivery.File) ([]descriptor.File, error) {
+	files := make([]descriptor.File, 0, len(declared))
+	for _, file := range declared {
+		data, err := os.ReadFile(filepath.Join(source, file.Source))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", file.Source, err)
+		}
+		files = append(files, descriptor.File{Path: strings.TrimPrefix(file.Target, "/"), Data: data})
+	}
+	return files, nil
+}
+
+// checkNoCollision refuses a carried file whose path a unit already occupies, or that another
+// carried file already claims.
+func checkNoCollision(units, carried []descriptor.File) error {
+	occupied := make(map[string]bool, len(units))
+	for _, unit := range units {
+		occupied[unit.Path] = true
+	}
+	claimed := make(map[string]bool, len(carried))
+	for _, file := range carried {
+		if occupied[file.Path] {
+			return fmt.Errorf("%s: %w", file.Path, ErrTargetCollides)
+		}
+		if claimed[file.Path] {
+			return fmt.Errorf("%s: %w", file.Path, ErrTargetDuplicate)
+		}
+		claimed[file.Path] = true
+	}
+	return nil
+}
+
+// checkOutsideTheUnitDirectories refuses a carried file that lands where the reader writes its
+// units: link never reads it as a unit, so nothing pins the image it may name.
+func checkOutsideTheUnitDirectories(reader descriptor.Reader, carried []descriptor.File) error {
+	for _, file := range carried {
+		if reader.Owns(file.Path) {
+			return fmt.Errorf("%s: %w", file.Path, ErrTargetInUnitDirectory)
+		}
+	}
+	return nil
+}
+
+// checkEverySecretIsRead refuses a secret variable no unit reads: vessel creates the podman secret
+// under the variable name, and a unit reaches it with a Secret= key naming that same name.
+func checkEverySecretIsRead(required []string, variables []delivery.Variable) error {
+	for _, name := range delivery.SecretNames(variables) {
+		if !slices.Contains(required, name) {
+			return fmt.Errorf("%s: %w", name, ErrSecretNoUnitReads)
+		}
+	}
+	return nil
 }
 
 // imagesOf turns the resolution map into the ordered list the config carries.

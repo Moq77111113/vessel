@@ -52,6 +52,48 @@ func TestLoadingTwiceChangesNothingTheSecondTime(t *testing.T) {
 	}
 }
 
+func TestInstallPutsTheValueTheOperatorGaveIntoTheFile(t *testing.T) {
+	needPodman(t)
+
+	dir := linkDelivery(t, map[string]string{
+		"vessel.yaml": `
+name: acme
+version: 1.4.0
+files:
+  - source: realm.json
+    target: /etc/acme/realm.json
+variables:
+  - name: PUBLIC_HOST
+    ask: public address
+`,
+		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
+	})
+	root := t.TempDir()
+	if err := runVessel("load", "--root", root, "--set", "PUBLIC_HOST=dmas.acme.local", dir); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "etc/acme/realm.json"))
+	if err != nil {
+		t.Fatalf("the file never reached the root: %v", err)
+	}
+	if got, want := string(body), `{"realm":"dmas.acme.local"}`; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestInstallWritesNothingWhenAValueIsMissing(t *testing.T) {
+	needPodman(t)
+
+	dir := linkDelivery(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
+	root := t.TempDir()
+	if err := runVessel("load", "--root", root, dir); err == nil {
+		t.Fatal("load succeeded with no value for PUBLIC_HOST")
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd")); err == nil {
+		t.Error("load wrote units even though a value was missing")
+	}
+}
+
 // needPodman skips the test unless podman is here, new enough, and able to start.
 func needPodman(t *testing.T) {
 	t.Helper()

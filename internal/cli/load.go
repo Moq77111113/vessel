@@ -13,6 +13,7 @@ import (
 
 	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/target"
 )
@@ -24,12 +25,14 @@ var publicKey string
 
 // Errors load reports before it looks at a bundle.
 var (
-	ErrNoPublicKey = errors.New("this build carries no public key, it cannot verify a signed bundle")
-	ErrNoBundle    = errors.New("is not a vessel bundle")
+	ErrNoPublicKey     = errors.New("this build carries no public key, it cannot verify a signed bundle")
+	ErrNoBundle        = errors.New("is not a vessel bundle")
+	ErrBundleHasNoName = errors.New("this bundle carries no name, link it again with this vessel")
 )
 
 func newLoad() *cobra.Command {
 	var root string
+	var set []string
 
 	load := &cobra.Command{
 		Use:   "load <bundle>",
@@ -42,18 +45,56 @@ func newLoad() *cobra.Command {
 			if !bundle.IsBundle(args[0]) {
 				return fmt.Errorf("%s %w", args[0], ErrNoBundle)
 			}
-			return load(command.Context(), command.OutOrStdout(), args[0], root, true)
+			values, err := parseSet(set)
+			if err != nil {
+				return err
+			}
+			m := machine{loader: target.NewLoader(target.Exec), shell: target.NewShell(target.Sh)}
+			return load(command.Context(), command.OutOrStdout(), command.InOrStdin(),
+				m, args[0], root, values, true)
 		},
 	}
 	load.Flags().StringVar(&root, "root", "/", "install under this directory instead of /")
 	load.Flags().MarkHidden("root")
+	load.Flags().StringArrayVar(&set, "set", nil, "answer a variable: --set NAME=value")
 	return load
+}
+
+// machine is the two channels load reaches this machine through: podman and the shell.
+// The composition root builds them; load only uses what it is given, so a test drives
+// both without podman.
+type machine struct {
+	loader *target.Loader
+	shell  *target.Shell
+}
+
+// Errors a --set flag draws before load looks at a bundle.
+var (
+	ErrBadSet     = errors.New("is not NAME=value")
+	ErrSetIsEmpty = errors.New("gives no value, and a value is never empty")
+)
+
+// parseSet turns a repeated --set NAME=value flag into the values it names.
+func parseSet(pairs []string) (map[string]string, error) {
+	values := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		name, value, ok := strings.Cut(pair, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("--set %q %w", pair, ErrBadSet)
+		}
+		if value == "" {
+			return nil, fmt.Errorf("--set %s %w", name, ErrSetIsEmpty)
+		}
+		values[name] = value
+	}
+	return values, nil
 }
 
 // load installs a bundle. verify is false when the bundle rode inside this executable:
 // a binary cannot vouch for the payload it carries, so the operator checks the file itself.
-func load(ctx context.Context, out io.Writer, dir, root string, verify bool) error {
-	loader := target.NewLoader(target.Exec)
+func load(ctx context.Context, out io.Writer, in io.Reader, m machine, dir, root string,
+	set map[string]string, verify bool) error {
+	loader, shell := m.loader, m.shell
 	if err := target.Preflight(ctx, loader, root); err != nil {
 		return err
 	}
@@ -66,6 +107,52 @@ func load(ctx context.Context, out io.Writer, dir, root string, verify bool) err
 	if err != nil {
 		return err
 	}
+	if opened.Config.Name == "" {
+		return fmt.Errorf("%s: %w", dir, ErrBundleHasNoName)
+	}
+
+	held, err := loader.Secrets(ctx)
+	if err != nil {
+		return err
+	}
+	values := target.NewValues(root, opened.Config.Name)
+	resolver := target.NewResolver(values, shell, set, held, out, in)
+	resolution, err := resolver.Resolve(ctx, opened.Config.Variables)
+	if err != nil {
+		return err
+	}
+	files, err := delivery.Substitute(opened.Files, resolution.Values,
+		delivery.SecretNames(opened.Config.Variables))
+	if err != nil {
+		return err
+	}
+
+	for _, action := range opened.Config.Actions {
+		if err := shell.Do(ctx, action); err != nil {
+			return err
+		}
+	}
+
+	tree := target.NewTree(root)
+	changes := 0
+	for _, file := range files {
+		changed, err := tree.Write(file)
+		if err != nil {
+			return err
+		}
+		if changed {
+			changes++
+		}
+	}
+	if err := values.Write(resolution.Values); err != nil {
+		return err
+	}
+	for name, value := range resolution.Secrets {
+		if err := loader.CreateSecret(ctx, name, value); err != nil {
+			return err
+		}
+	}
+
 	layout, err := target.OpenLayout(opened.LayoutDir)
 	if err != nil {
 		return err
@@ -75,27 +162,15 @@ func load(ctx context.Context, out io.Writer, dir, root string, verify bool) err
 		return err
 	}
 
-	tree := target.NewTree(root)
-	changes := 0
-	for _, file := range opened.Files {
-		changed, err := tree.Write(file)
-		if err != nil {
-			return err
-		}
-		if changed {
-			changes++
-		}
-	}
-
 	fmt.Fprintf(out, "%s %s installed: %d images, %d of %d files changed\n",
-		opened.Config.Name, opened.Config.Version, len(images), changes, len(opened.Files))
+		opened.Config.Name, opened.Config.Version, len(images), changes, len(files))
 	reader, err := descriptor.ByName(readers, opened.Config.Reader)
 	if err != nil {
 		return err
 	}
-	reportMissingSecrets(ctx, out, loader, reader.Requires(opened.Files))
+	reportMissingSecrets(ctx, out, loader, reader.Requires(files))
 
-	commands := reader.Start(opened.Files)
+	commands := reader.Start(files)
 	if len(commands) == 0 {
 		return nil
 	}

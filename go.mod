@@ -6,6 +6,7 @@ require (
 	aead.dev/minisign v0.3.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

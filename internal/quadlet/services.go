@@ -2,6 +2,7 @@ package quadlet
 
 import (
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -16,22 +17,50 @@ var serviceSuffixes = map[string]string{
 	".pod":       "-pod.service",
 }
 
-// Start returns the two systemctl lines that bring these units up.
+// Start returns the systemctl lines that bring these units up.
 //
-// systemctl start, never enable: a quadlet unit is generated, so enable fails on it.
-// Starting at boot comes from the [Install] section the unit already carries.
+// systemctl start on a quadlet unit, never enable: it is generated, so enable fails on it. Starting
+// at boot comes from the [Install] section the unit already carries. A .timer is not generated, so
+// it takes enable --now like any hand-written unit.
 func (r *Reader) Start(files []descriptor.File) []string {
 	services := Services(files)
-	if len(services) == 0 {
+	timers := siblings(files)
+	if len(services) == 0 && len(timers) == 0 {
 		return nil
 	}
-	return []string{"systemctl daemon-reload", "systemctl start " + strings.Join(services, " ")}
+	lines := []string{"systemctl daemon-reload"}
+	if len(services) > 0 {
+		lines = append(lines, "systemctl start "+strings.Join(services, " "))
+	}
+	for _, name := range timers {
+		lines = append(lines, "systemctl enable --now "+name)
+	}
+	return lines
+}
+
+// siblings names the plain systemd units these files carry, in a stable order.
+func siblings(files []descriptor.File) []string {
+	var names []string
+	for _, file := range files {
+		if !under(file.Path, siblingPath) {
+			continue
+		}
+		base := path.Base(file.Path)
+		if slices.Contains(siblingSuffixes, path.Ext(base)) {
+			names = append(names, base)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Services names the systemd services these units generate, in start order.
 func Services(files []descriptor.File) []string {
 	var names []string
 	for _, file := range files {
+		if !under(file.Path, systemdPath) {
+			continue
+		}
 		base := path.Base(file.Path)
 		extension := path.Ext(base)
 		suffix, ok := serviceSuffixes[extension]

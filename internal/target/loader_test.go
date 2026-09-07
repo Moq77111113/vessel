@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -262,4 +263,24 @@ func countBlobs(names map[string]bool) int {
 		}
 	}
 	return count
+}
+
+func TestCreateSecretHandsTheValueOnStandardInput(t *testing.T) {
+	var got []string
+	var body []byte
+	loader := NewLoader(func(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
+		got = append([]string{name}, args...)
+		body, _ = io.ReadAll(stdin)
+		return nil, nil
+	})
+	if err := loader.CreateSecret(context.Background(), "db-password", "a3f9"); err != nil {
+		t.Fatalf("CreateSecret: %v", err)
+	}
+	want := []string{"podman", "secret", "create", "db-password", "-"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if string(body) != "a3f9" {
+		t.Errorf("got %q on stdin, want %q", body, "a3f9")
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestReaderDetectsADirectoryHoldingContainerUnits(t *testing.T) {
@@ -86,8 +87,51 @@ func TestRelocationSpansExactlyTheReferenceBytes(t *testing.T) {
 	}
 }
 
+func TestReaderFindsTheImageWrittenWithSpacesAroundTheEquals(t *testing.T) {
+	dir := fstest.MapFS{
+		"web.container": {Data: []byte("[Container]\nImage = registry.test/acme/web:1.0\n")},
+	}
+	manifest, err := NewReader().Read(dir)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got, want := len(manifest.Relocs), 1; got != want {
+		t.Fatalf("relocations: got %d, want %d", got, want)
+	}
+	reloc := manifest.Relocs[0]
+	data := manifest.Files[reloc.File].Data
+	got := string(data[reloc.Offset : reloc.Offset+reloc.Length])
+	if want := "registry.test/acme/web:1.0"; got != want {
+		t.Errorf("offset points at %q, want %q", got, want)
+	}
+}
+
 func TestReadRejectsADirectoryWithNoUnitAtAll(t *testing.T) {
 	if _, err := NewReader().Read(os.DirFS(t.TempDir())); err == nil {
 		t.Fatal("Read: want an error on an empty directory, got nil")
+	}
+}
+
+func TestReaderCarriesATimerUnderTheSystemdPath(t *testing.T) {
+	dir := fstest.MapFS{
+		"web.container": {Data: []byte("[Container]\nImage=registry.test/acme/web:1.0\n")},
+		"collect.timer": {Data: []byte("[Timer]\nOnUnitInactiveSec=1min\n")},
+	}
+	manifest, err := NewReader().Read(dir)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	want := map[string]bool{
+		"etc/containers/systemd/web.container": true,
+		"etc/systemd/system/collect.timer":     true,
+	}
+	for _, file := range manifest.Files {
+		if !want[file.Path] {
+			t.Errorf("got %s, want one of %v", file.Path, want)
+		}
+		delete(want, file.Path)
+	}
+	if len(want) != 0 {
+		t.Errorf("these files were not carried: %v", want)
 	}
 }

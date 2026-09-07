@@ -1,6 +1,7 @@
 package quadlet
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,5 +59,40 @@ func TestServicesSuffixesAPod(t *testing.T) {
 func TestServicesReturnsNothingWhenNoUnitStartsAService(t *testing.T) {
 	if got := Services(units("app.network")); len(got) != 0 {
 		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestStartEnablesATimer(t *testing.T) {
+	files := []descriptor.File{
+		{Path: "etc/containers/systemd/web.container"},
+		{Path: "etc/systemd/system/collect.timer"},
+	}
+	got := NewReader().Start(files)
+	want := []string{
+		"systemctl daemon-reload",
+		"systemctl start web.service",
+		"systemctl enable --now collect.timer",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestServicesLeavesOutAFileThatIsNotInTheUnitDirectory(t *testing.T) {
+	files := []descriptor.File{{Path: "etc/acme/web.container"}}
+	if got := Services(files); len(got) != 0 {
+		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestStartLeavesOutATimerThatIsNotInTheUnitDirectory(t *testing.T) {
+	files := []descriptor.File{
+		{Path: "etc/containers/systemd/web.container"},
+		{Path: "etc/acme/backup.timer"},
+	}
+	got := NewReader().Start(files)
+	want := []string{"systemctl daemon-reload", "systemctl start web.service"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
