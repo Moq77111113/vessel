@@ -20,14 +20,18 @@ func TestVesselReadsQuadlet(t *testing.T) {
 	}
 }
 
-func TestVesselOffersTheThreeCommands(t *testing.T) {
-	want := map[string]bool{"link": false, "load": false, "inspect": false}
-	for _, command := range New().Commands() {
-		want[command.Name()] = true
+func TestVesselOffersBuildInspectAndInstall(t *testing.T) {
+	want := []string{"build", "inspect", "install"}
+	var got []string
+	for _, command := range newVessel().Commands() {
+		got = append(got, command.Name())
 	}
-	for command, offered := range want {
-		if !offered {
-			t.Errorf("vessel does not offer %q", command)
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i, name := range want {
+		if got[i] != name {
+			t.Errorf("got %v, want %v", got, want)
 		}
 	}
 }
@@ -42,8 +46,8 @@ func TestVesselRejectsAnUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestLinkRefusesToRunWithoutAnOutputDirectory(t *testing.T) {
-	err := runVessel(t, "link", t.TempDir())
+func TestBuildRefusesToRunWithoutAnOutputFile(t *testing.T) {
+	err := runVessel(t, "build", t.TempDir())
 	if err == nil {
 		t.Fatal("want an error, got nil")
 	}
@@ -70,8 +74,8 @@ func runVessel(t *testing.T, args ...string) error {
 	return vessel.Execute()
 }
 
-func TestLoadOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
-	err := runVessel(t, "load", t.TempDir(), "--root", t.TempDir())
+func TestInstallOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
+	err := runVessel(t, "install", t.TempDir(), "--root", t.TempDir())
 	if !errors.Is(err, ErrNoBundle) {
 		t.Errorf("got %v, want ErrNoBundle", err)
 	}

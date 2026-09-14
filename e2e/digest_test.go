@@ -17,7 +17,7 @@ import (
 // the manifest blob the bundle carries, byte for byte. A docker-archive round trip
 // breaks it, which is why the bundle holds an OCI layout.
 func TestEveryPinnedDigestNamesAManifestTheBundleCarries(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestEveryPinnedDigestNamesAManifestTheBundleCarries(t *testing.T) {
 // The two fixture images share one layer. A layout stores it once; that is the whole
 // reason a bundle carries a layout rather than one archive per image.
 func TestTwoImagesSharingALayerStoreItOnce(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -65,9 +65,9 @@ func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "web.container"), []byte(unit), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	out := filepath.Join(t.TempDir(), "bundle")
-	if err := runVessel("link", "-o", out, "--name", "acme", "--version", "1.0", source); err != nil {
-		t.Fatalf("link: %v", err)
+	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
+	if err := runVessel("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", source); err != nil {
+		t.Fatalf("build: %v", err)
 	}
 	artifact, err := bundle.Open(out)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
 }
 
 func TestEveryImageCutsIntoItsOwnArchive(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

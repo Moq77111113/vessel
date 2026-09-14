@@ -111,36 +111,36 @@ func unpackFixture(t *testing.T, host string) string {
 	return source
 }
 
-// linkStack links the fixture stack and returns the bundle directory.
-func linkStack(t *testing.T) string {
+// buildStack builds the fixture stack and returns the bundle directory.
+func buildStack(t *testing.T) string {
 	t.Helper()
-	out := filepath.Join(t.TempDir(), "bundle")
-	args := []string{"link", "-o", out, "--name", "acme", "--version", "1.0", serveStack(t)}
+	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
+	args := []string{"build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", serveStack(t)}
 	if err := runVessel(args...); err != nil {
-		t.Fatalf("link: %v", err)
+		t.Fatalf("build: %v", err)
 	}
 	return out
 }
 
-// linkDelivery lays extra files into the fixture stack, links it, and returns the bundle
-// directory. A test asserting on link's refusal calls linkDeliveryErr instead.
-func linkDelivery(t *testing.T, files map[string]string) string {
+// buildDelivery lays extra files into the fixture stack, builds it, and returns the bundle
+// directory. A test asserting on build's refusal calls buildDeliveryErr instead.
+func buildDelivery(t *testing.T, files map[string]string) string {
 	t.Helper()
-	out, err := linkFixture(t, files)
+	out, err := buildFixture(t, files)
 	if err != nil {
-		t.Fatalf("link: %v", err)
+		t.Fatalf("build: %v", err)
 	}
 	return out
 }
 
-// linkDeliveryErr does the same and returns link's error instead of failing on it.
-func linkDeliveryErr(t *testing.T, files map[string]string) error {
+// buildDeliveryErr does the same and returns build's error instead of failing on it.
+func buildDeliveryErr(t *testing.T, files map[string]string) error {
 	t.Helper()
-	_, err := linkFixture(t, files)
+	_, err := buildFixture(t, files)
 	return err
 }
 
-func linkFixture(t *testing.T, files map[string]string) (string, error) {
+func buildFixture(t *testing.T, files map[string]string) (string, error) {
 	t.Helper()
 	source := serveStack(t)
 	for name, body := range files {
@@ -148,8 +148,8 @@ func linkFixture(t *testing.T, files map[string]string) (string, error) {
 			t.Fatalf("WriteFile %s: %v", name, err)
 		}
 	}
-	out := filepath.Join(t.TempDir(), "bundle")
-	return out, runVessel("link", "-o", out, source)
+	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
+	return out, runVessel("build", "-o", exe, "--layout", out, source)
 }
 
 // paths names the files a bundle carries, for a failure message.

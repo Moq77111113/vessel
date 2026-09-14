@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"aead.dev/minisign"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,8 +9,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-
-	"github.com/spf13/cobra"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
@@ -44,32 +40,6 @@ var ErrSecretNoUnitReads = errors.New("no unit reads this secret with a Secret= 
 // ErrTargetInUnitDirectory says a delivery file lands where the reader writes its units. A file
 // carried there is never read as a unit, so its image is never pinned to a digest.
 var ErrTargetInUnitDirectory = errors.New("a file target lands in the unit directory")
-
-func newLink() *cobra.Command {
-	var out, platform, name, version, key string
-
-	link := &cobra.Command{
-		Use:   "link <source>",
-		Short: "Resolve a descriptor to digests and write a signed bundle",
-		Long: "Reads the descriptor in <source>, resolves every image reference to an\n" +
-			"immutable digest, and writes a bundle that carries the images and the\n" +
-			"patched descriptor files.",
-		Args: cobra.ExactArgs(1),
-		RunE: func(command *cobra.Command, args []string) error {
-			work := report.New(command.ErrOrStderr())
-			summary := report.New(command.OutOrStdout())
-			return link(command.Context(), work, summary, args[0], out, platform, name, version, key)
-		},
-	}
-	flags := link.Flags()
-	flags.StringVarP(&out, "out", "o", "", "directory the bundle is written to")
-	flags.StringVar(&platform, "platform", "linux/amd64", "platform every reference resolves for")
-	flags.StringVar(&name, "name", "", "bundle name")
-	flags.StringVar(&version, "version", "", "bundle version")
-	flags.StringVar(&key, "key", "", "minisign private key file")
-	link.MarkFlagRequired("out")
-	return link
-}
 
 func link(ctx context.Context, work, summary report.Report, source, out, platform, name, version, key string) error {
 	source = filepath.Clean(source)
@@ -199,19 +169,6 @@ func signBundle(dir, keyPath string) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
-}
-
-// readPrivateKey opens a minisign private key, with VESSEL_KEY_PASSWORD when it has one.
-func readPrivateKey(path string) (minisign.PrivateKey, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return minisign.PrivateKey{}, fmt.Errorf("read the private key: %w", err)
-	}
-	key, err := attest.ReadKey(data, os.Getenv("VESSEL_KEY_PASSWORD"))
-	if err != nil {
-		return minisign.PrivateKey{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return key, nil
 }
 
 // carryFiles reads the plain files a delivery declares, keyed by the path they take under the root.

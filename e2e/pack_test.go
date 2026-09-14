@@ -19,13 +19,13 @@ func buildVessel(t *testing.T) string {
 	return path
 }
 
-// packStack links the fixture stack and packs it into one executable.
+// packStack builds the fixture stack into one executable.
 func packStack(t *testing.T) string {
 	t.Helper()
 	vessel, out := buildVessel(t), filepath.Join(t.TempDir(), "myapp")
-	pack := exec.Command(vessel, "pack", linkStack(t), "-o", out)
-	if output, err := pack.CombinedOutput(); err != nil {
-		t.Fatalf("vessel pack: %v: %s", err, output)
+	build := exec.Command(vessel, "build", serveStack(t), "-o", out, "--name", "acme", "--version", "1.0")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("vessel build: %v: %s", err, output)
 	}
 	return out
 }
@@ -50,7 +50,7 @@ func TestAPackedFileOffersInstallAndNothingToBuild(t *testing.T) {
 			t.Errorf("the packed file does not offer %q: %s", verb, output)
 		}
 	}
-	for _, verb := range []string{"link", "pack"} {
+	for _, verb := range []string{"build", "link", "pack"} {
 		if strings.Contains(string(output), verb) {
 			t.Errorf("the packed file still offers %q, it should not: %s", verb, output)
 		}

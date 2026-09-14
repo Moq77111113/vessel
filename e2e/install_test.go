@@ -15,8 +15,8 @@ func TestAQuadletStackReachesACleanRootFromABundle(t *testing.T) {
 	needPodman(t)
 
 	root := t.TempDir()
-	if err := runVessel("load", "--root", root, linkStack(t)); err != nil {
-		t.Fatalf("load: %v", err)
+	if err := runVessel("install", "--root", root, buildStack(t)); err != nil {
+		t.Fatalf("install: %v", err)
 	}
 	unit, err := os.ReadFile(filepath.Join(root, "etc/containers/systemd/web.container"))
 	if err != nil {
@@ -28,34 +28,34 @@ func TestAQuadletStackReachesACleanRootFromABundle(t *testing.T) {
 	}
 }
 
-func TestLoadingTwiceChangesNothingTheSecondTime(t *testing.T) {
+func TestInstallingTwiceChangesNothingTheSecondTime(t *testing.T) {
 	needPodman(t)
 
-	root, bundle := t.TempDir(), linkStack(t)
-	if err := runVessel("load", "--root", root, bundle); err != nil {
-		t.Fatalf("first load: %v", err)
+	root, bundle := t.TempDir(), buildStack(t)
+	if err := runVessel("install", "--root", root, bundle); err != nil {
+		t.Fatalf("first install: %v", err)
 	}
 	unit := filepath.Join(root, "etc/containers/systemd/web.container")
 	before, err := os.Stat(unit)
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if err := runVessel("load", "--root", root, bundle); err != nil {
-		t.Fatalf("second load: %v", err)
+	if err := runVessel("install", "--root", root, bundle); err != nil {
+		t.Fatalf("second install: %v", err)
 	}
 	after, err := os.Stat(unit)
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
 	if !before.ModTime().Equal(after.ModTime()) {
-		t.Error("the second load rewrote a file whose content had not changed")
+		t.Error("the second install rewrote a file whose content had not changed")
 	}
 }
 
 func TestInstallPutsTheValueTheOperatorGaveIntoTheFile(t *testing.T) {
 	needPodman(t)
 
-	dir := linkDelivery(t, map[string]string{
+	dir := buildDelivery(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.4.0
@@ -69,8 +69,8 @@ variables:
 		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
 	})
 	root := t.TempDir()
-	if err := runVessel("load", "--root", root, "--set", "PUBLIC_HOST=dmas.acme.local", dir); err != nil {
-		t.Fatalf("load: %v", err)
+	if err := runVessel("install", "--root", root, "--set", "PUBLIC_HOST=dmas.acme.local", dir); err != nil {
+		t.Fatalf("install: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "etc/acme/realm.json"))
 	if err != nil {
@@ -84,13 +84,13 @@ variables:
 func TestInstallWritesNothingWhenAValueIsMissing(t *testing.T) {
 	needPodman(t)
 
-	dir := linkDelivery(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
+	dir := buildDelivery(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
 	root := t.TempDir()
-	if err := runVessel("load", "--root", root, dir); err == nil {
-		t.Fatal("load succeeded with no value for PUBLIC_HOST")
+	if err := runVessel("install", "--root", root, dir); err == nil {
+		t.Fatal("install succeeded with no value for PUBLIC_HOST")
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd")); err == nil {
-		t.Error("load wrote units even though a value was missing")
+		t.Error("install wrote units even though a value was missing")
 	}
 }
 

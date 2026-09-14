@@ -28,19 +28,19 @@ var publicKey string
 var (
 	ErrNoPublicKey     = errors.New("this build carries no public key, it cannot verify a signed bundle")
 	ErrNoBundle        = errors.New("is not a vessel bundle")
-	ErrBundleHasNoName = errors.New("this bundle carries no name, link it again with this vessel")
+	ErrBundleHasNoName = errors.New("this bundle carries no name, build it again with this vessel")
 )
 
-func newLoad() *cobra.Command {
+func newInstall() *cobra.Command {
 	var root string
 	var set []string
 
-	load := &cobra.Command{
-		Use:   "load <bundle>",
+	install := &cobra.Command{
+		Use:   "install <bundle>",
 		Short: "Install a bundle on this machine",
 		Long: "Checks the machine, verifies the bundle, puts its images into local storage\n" +
 			"and its files on disk, then prints the command that starts everything.\n\n" +
-			"For an operator, prefer an executable made by pack: it needs no vessel binary.",
+			"For an operator, prefer an executable made by build: it needs no vessel binary.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			if !bundle.IsBundle(args[0]) {
@@ -56,10 +56,10 @@ func newLoad() *cobra.Command {
 				m, args[0], root, values, true)
 		},
 	}
-	load.Flags().StringVar(&root, "root", "/", "install under this directory instead of /")
-	load.Flags().MarkHidden("root")
-	load.Flags().StringArrayVar(&set, "set", nil, "answer a variable: --set NAME=value")
-	return load
+	install.Flags().StringVar(&root, "root", "/", "install under this directory instead of /")
+	install.Flags().MarkHidden("root")
+	install.Flags().StringArrayVar(&set, "set", nil, "answer a variable: --set NAME=value")
+	return install
 }
 
 // machine is the two channels load reaches this machine through: podman and the shell.

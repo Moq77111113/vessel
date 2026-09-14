@@ -13,7 +13,7 @@ import (
 )
 
 func TestLinkPinsEveryUnitToADigest(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -32,10 +32,10 @@ func TestLinkPinsEveryUnitToADigest(t *testing.T) {
 // name order; a line printed as each image is resolved carries that order, not the sorted one
 // the final lock uses.
 func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "bundle")
-	output, err := runVesselCapture("link", "-o", out, "--name", "acme", "--version", "1.0", serveStack(t))
+	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
+	output, err := runVesselCapture("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", serveStack(t))
 	if err != nil {
-		t.Fatalf("link: %v", err)
+		t.Fatalf("build: %v", err)
 	}
 	postgres := strings.Index(output, "library/postgres")
 	web := strings.Index(output, "acme/web")
@@ -53,14 +53,14 @@ func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
 // difference at, so a build time sneaking back into the hashed config would show up here.
 func TestLinkTwiceFromTheSameSourceProducesTheSameBundle(t *testing.T) {
 	source := serveStack(t)
-	first := filepath.Join(t.TempDir(), "bundle")
-	if err := runVessel("link", "-o", first, "--name", "acme", "--version", "1.0", source); err != nil {
-		t.Fatalf("first link: %v", err)
+	first, firstExe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
+	if err := runVessel("build", "-o", firstExe, "--layout", first, "--name", "acme", "--version", "1.0", source); err != nil {
+		t.Fatalf("first build: %v", err)
 	}
 	time.Sleep(1100 * time.Millisecond)
-	second := filepath.Join(t.TempDir(), "bundle")
-	if err := runVessel("link", "-o", second, "--name", "acme", "--version", "1.0", source); err != nil {
-		t.Fatalf("second link: %v", err)
+	second, secondExe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
+	if err := runVessel("build", "-o", secondExe, "--layout", second, "--name", "acme", "--version", "1.0", source); err != nil {
+		t.Fatalf("second build: %v", err)
 	}
 	firstOpened, err := bundle.Open(first)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestLinkTwiceFromTheSameSourceProducesTheSameBundle(t *testing.T) {
 }
 
 func TestLinkRecordsEveryImageInTheLock(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestLinkRecordsEveryImageInTheLock(t *testing.T) {
 }
 
 func TestLinkCarriesTheUnitThatHoldsNoImage(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestLinkCarriesTheUnitThatHoldsNoImage(t *testing.T) {
 }
 
 func TestLinkLeavesOutAFileThatIsNotAUnit(t *testing.T) {
-	artifact, err := bundle.Open(linkStack(t))
+	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestLinkLeavesOutAFileThatIsNotAUnit(t *testing.T) {
 }
 
 func TestLinkCarriesTheFilesAndVariablesTheDeliveryDeclares(t *testing.T) {
-	dir := linkDelivery(t, map[string]string{
+	dir := buildDelivery(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.4.0
@@ -147,7 +147,7 @@ variables:
 }
 
 func TestLinkRefusesAFileTargetThatCollidesWithAUnit(t *testing.T) {
-	err := linkDeliveryErr(t, map[string]string{
+	err := buildDeliveryErr(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.0.0
@@ -163,7 +163,7 @@ files:
 }
 
 func TestLinkRefusesTwoFilesDeclaringTheSameTarget(t *testing.T) {
-	err := linkDeliveryErr(t, map[string]string{
+	err := buildDeliveryErr(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.0.0
@@ -182,7 +182,7 @@ files:
 }
 
 func TestLinkRefusesAFileTargetInsideTheUnitDirectory(t *testing.T) {
-	err := linkDeliveryErr(t, map[string]string{
+	err := buildDeliveryErr(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.0.0
@@ -198,23 +198,23 @@ files:
 }
 
 func TestLinkRefusesADeliveryWithNoName(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "bundle")
-	err := runVessel("link", "-o", out, serveStack(t))
+	out := filepath.Join(t.TempDir(), "vessel-stack")
+	err := runVessel("build", "-o", out, serveStack(t))
 	if !errors.Is(err, delivery.ErrNoName) {
 		t.Errorf("got %v, want ErrNoName", err)
 	}
 }
 
 func TestLinkRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "bundle")
-	err := runVessel("link", "-o", out, "--name", "../../etc", serveStack(t))
+	out := filepath.Join(t.TempDir(), "vessel-stack")
+	err := runVessel("build", "-o", out, "--name", "../../etc", serveStack(t))
 	if !errors.Is(err, delivery.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
 
 func TestLinkRefusesASecretNoUnitReads(t *testing.T) {
-	err := linkDeliveryErr(t, map[string]string{
+	err := buildDeliveryErr(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.0.0
@@ -230,7 +230,7 @@ variables:
 }
 
 func TestLinkRefusesAMarkerNoVariableDeclares(t *testing.T) {
-	err := linkDeliveryErr(t, map[string]string{
+	err := buildDeliveryErr(t, map[string]string{
 		"vessel.yaml": `
 name: acme
 version: 1.0.0
