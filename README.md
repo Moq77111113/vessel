@@ -5,7 +5,7 @@ Ship a container stack to a machine with no network.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/vessel-dark.svg">
-    <img src="assets/vessel-light.svg" alt="Two sides separated by a dashed line marked no network. On the build side, a units directory, a vessel.yaml and a registry feed vessel link, which writes a signed OCI bundle; vessel pack folds that bundle into one executable, myapp. Straddling the line, the only thing that crosses: myapp on a stick, or the bundle through a registry. On the air-gapped target machine, ./myapp install writes the units and files under /etc/containers/systemd, creates the podman secrets, loads the images into podman storage, then prints the systemctl lines that systemd uses to start the services.">
+    <img src="assets/vessel-light.svg" alt="Two sides separated by a dashed line marked no network. On the build side, a units directory, a vessel.yaml and a registry feed vessel build, which writes one executable, myapp. Straddling the line, the only thing that crosses: myapp on a stick, or the OCI layout through a registry. On the air-gapped target machine, ./myapp install writes the units and files under /etc/containers/systemd, creates the podman secrets, loads the images into podman storage, and starts the services.">
   </picture>
 </p>
 
@@ -18,16 +18,15 @@ By hand that means a `podman save` per image, plus a tarball and a copy of the u
 values go on a sheet of paper. A tag like `postgres:17.2` points at a different image next month.
 Two machines installed a week apart do not run the same code.
 
-Vessel reads the descriptor you already have, pins every image to a digest, and writes one signed
-OCI artifact. That artifact travels through your registry, or as a single executable on a USB
-stick. No Kubernetes, no format to learn, nothing to install on the far machine.
+Vessel reads the descriptor you already have, pins every image to a digest, and writes one
+executable. It travels on a USB stick. On the far machine it installs the stack, starts it, and can
+later say what is there, upgrade it or take it off. No Kubernetes, no format to learn.
 
 ## Thirty seconds
 
 ```sh
-vessel link ./units -o ./bundle --name acme   # pin every image to a digest
-vessel pack ./bundle -o myapp                 # one file to carry
-./myapp install                               # on the other side
+vessel build ./units -o myapp   # pin every image to a digest, write one file
+./myapp install                 # on the other side, it runs when this returns
 ```
 
 ## Maturity
@@ -56,16 +55,13 @@ Go 1.26 or newer. Only the machine that *builds* needs vessel: `myapp` carries i
 directory, the systemd units that each run a container.
 
 ```sh
-$ vessel link ./units -o ./bundle --name acme --version 1.4.0
-registry.example.com/acme/web:1.0            sha256:dcc94eaf6f8694…
-registry.example.com/library/postgres:17.2   sha256:a7f2e782a04d50…
-2 images, 3 files, bundle in ./bundle
-
-$ vessel pack ./bundle -o myapp
-myapp, 11 MB, run it on the target machine
+$ vessel build ./units -o myapp --name acme --version 1.4.0
+  Resolving registry.example.com/acme/web:1.0
+    Pulling registry.example.com/acme/web@sha256:dcc94eaf6f8694…
+   Finished myapp, 11 MB, run it on the target machine
 ```
 
-A private registry needs no flag: `link` reads the credentials the machine already keeps, so
+A private registry needs no flag: `build` reads the credentials the machine already keeps, so
 `podman login registry.example.com` (or `docker login`) once is enough.
 
 Every `Image=` tag comes out a digest. Nothing else in your file moves, comments and ordering
@@ -78,19 +74,22 @@ included:
 Network=app.network
 ```
 
-`myapp` is your whole delivery: copy it onto a stick and you are done. A bundle is also a plain OCI
-layout, so a registry can carry it instead:
+`myapp` is your whole delivery: copy it onto a stick and you are done.
+
+`--layout ./bundle` writes the OCI layout beside it, for a CI job that archives deliveries on a
+registry. The executable is that same layout with a copy of vessel in front of it.
 
 ```sh
-skopeo copy --all oci:./bundle:acme:1.4.0 docker://registry.example.com/deliveries/acme:1.4.0
+$ vessel build ./units -o myapp --layout ./bundle
+$ skopeo copy --all oci:./bundle:acme:1.4.0 docker://registry.example.com/deliveries/acme:1.4.0
 ```
 
-A machine that already carries vessel installs such a bundle directly, with `vessel load ./bundle`.
+A machine that already carries vessel installs such a layout directly, with `vessel install ./bundle`.
 
 ## Declare a delivery
 
 A `vessel.yaml` at the root of your delivery directory declares what a unit cannot carry: plain
-files, site values, secrets and commands to run. It names the units directory, so `link` reads the
+files, site values, secrets and commands to run. It names the units directory, so `build` reads the
 delivery root, not the units:
 
 ```sh
@@ -100,7 +99,7 @@ acme/
   units/
     web.container
     db.container
-$ vessel link ./acme -o ./bundle
+$ vessel build ./acme -o myapp
 ```
 
 ```yaml
@@ -112,7 +111,7 @@ files:
     target: /etc/acme/realm.json
 variables:
   - name: PUBLIC_HOST
-    ask: the public address of this machine
+    description: the public address of this machine
   - name: DB_PASSWORD
     secret: true
     from: openssl rand -hex 32
@@ -120,27 +119,27 @@ actions:
   - mkdir -p /etc/acme/certs
 ```
 
-`DB_PASSWORD` needs a unit carrying `Secret=DB_PASSWORD`, or `link` refuses it. A bundle name is a
+`DB_PASSWORD` needs a unit carrying `Secret=DB_PASSWORD`, or `build` refuses it. A bundle name is a
 plain lowercase identifier (`acme`, `dmas-c2`); the machine keeps the delivery's values under
-`/var/lib/vessel/<name>/`. A value comes from `--set`, a previous install, `from:`, or `ask:`, in
-that order; missing all four blocks it, and `--set` on an undeclared variable or an empty value is
-also an error.
+`/var/lib/vessel/<name>/`. A value comes from `--set`, a previous install, or `from:`, in that
+order; missing all three blocks it, and `--set` on an undeclared variable or an empty value is also
+an error.
 
 ```sh
 $ ./myapp install --set PUBLIC_HOST=203.0.113.10
-acme 1.4.0 installed: 2 images, 4 of 4 files changed
-
-Start it:
-  systemctl daemon-reload
-  systemctl start db.service web.service
+   Finished acme 1.4.0 installed and running: 2 images, 4 of 4 files changed
 ```
 
 A missing value stops the install before the first file is written:
 
 ```sh
 $ ./myapp install
-vessel: SITE_NAME: no value for this variable
+vessel: SITE_NAME is not set: the name this site goes by
 ```
+
+vessel never asks at a keyboard. An answer typed at a prompt exists nowhere afterwards, and the
+whole point is a delivery you can repeat: `--set` is a line you put on the install sheet, in the
+playbook, and on the next machine identically.
 
 `DB_PASSWORD` never reaches disk or the screen; it comes from `from:` or `--set`, `install` runs
 `podman secret create DB_PASSWORD` for it, and the unit reads it back under that name:
@@ -150,7 +149,7 @@ vessel: SITE_NAME: no value for this variable
 Secret=DB_PASSWORD,type=env,target=POSTGRES_PASSWORD
 ```
 
-The podman secret name is the variable name; `link` refuses a secret no unit reads that way, and
+The podman secret name is the variable name; `build` refuses a secret no unit reads that way, and
 rotating one is `podman secret rm DB_PASSWORD` then another install.
 
 Actions run first, before files and images, with an effect and nothing else: never a value, never a
@@ -165,15 +164,14 @@ image registry.example.com/acme/web:1.0   sha256:dcc94eaf6f8694…
 file  etc/containers/systemd/web.container 315 bytes
 
 $ ./myapp install
-acme 1.4.0 installed: 2 images, 3 of 3 files changed
-
 These secrets are not on this machine yet, the units need them:
   podman secret create DB_PASSWORD <file>
 
-Start it:
-  systemctl daemon-reload
-  systemctl start db.service web.service
+   Finished acme 1.4.0 installed and running: 2 images, 3 of 3 files changed
 ```
+
+`install` returns once the services are up, and fails if one did not come up. It never watches or
+restarts anything afterwards.
 
 Secrets and certificates never travel inside `myapp`. When a unit asks for one, `install` names it
 instead of letting the service fail later for no visible reason. Running `install` twice changes
@@ -187,6 +185,42 @@ vessel: this machine is not ready:
   podman is too old for quadlet: found 4.3.1, want 5.0 or newer
   cannot write to /etc/containers/systemd
 ```
+
+## Live with it on the machine
+
+`install` writes a record of what it put there, under `/var/lib/vessel/<name>/`. Three verbs read
+it.
+
+```sh
+$ ./myapp status
+acme 1.4.0, installed 2026-09-12T16:53:46Z
+previous 1.3.0, installed 2026-03-02T09:14:11Z
+    Service web.service running
+    Differs etc/acme/realm.json
+```
+
+`Differs` was edited since the install, `Absent` is gone, and `this install never finished` means
+it died partway. `vessel status` with no name lists every delivery the machine holds.
+
+`upgrade` is `install` plus one thing: what the previous version put and this one no longer carries
+is stopped and removed. It refuses a machine holding no record.
+
+`uninstall` stops the services, then removes exactly the files its record names, never one it did
+not put. It leaves the podman secrets, the images and the site values, and names all three: another
+delivery may need them.
+
+## Ansible
+
+Nothing waits on a terminal, so a playbook never hangs. The exit code says what happened.
+
+| code | meaning |
+|---|---|
+| 0 | installed and running |
+| 3 | the machine is not ready, nothing was read |
+| 4 | the delivery was refused, the machine was not touched |
+| 5 | the install failed partway, the machine changed |
+
+A 5 leaves the record open, so `status` names it and running `install` again resumes.
 
 ## Requirements
 
@@ -204,12 +238,12 @@ So print the checksum on the install sheet and have the operator compare it:
 sha256sum myapp
 ```
 
-`vessel pack --key vessel.key` also writes a `myapp.minisig`, for sites that run a
+`vessel build --key vessel.key` also writes a `myapp.minisig`, for sites that run a
 [minisign](https://jedisct1.github.io/minisign/) step.
 
 Stronger, when you can put a binary in your machine image: build it with your public key baked in
-(`make build KEY=vessel.pub`), sign the bundle with `vessel link --key`, and ship the bundle
-directory rather than a packed file. That binary checks the signature itself, with nothing to
+(`make build KEY=vessel.pub`), sign the layout with `vessel build --key --layout`, and ship that
+layout rather than the executable. That binary checks the signature itself, with nothing to
 compare by hand.
 
 ## Contributing
