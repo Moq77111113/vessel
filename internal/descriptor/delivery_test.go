@@ -1,4 +1,4 @@
-package delivery
+package descriptor
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestReadTakesTheWholeDeclaration(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte(`
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte(`
 name: dmas
 version: 1.4.0
 units: ./units
@@ -49,7 +49,7 @@ func TestReadSaysWhenThereIsNoDeclaration(t *testing.T) {
 }
 
 func TestUnitsDefaultsToTheSourceDirectory(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\n")}}
 	got, err := Read(dir)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
@@ -60,91 +60,91 @@ func TestUnitsDefaultsToTheSourceDirectory(t *testing.T) {
 }
 
 func TestReadRejectsAVariableNameThatIsNotUpperSnakeCase(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nvariables:\n  - name: publicHost\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nvariables:\n  - name: publicHost\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrVariableName) {
 		t.Errorf("got %v, want ErrVariableName", err)
 	}
 }
 
 func TestReadRejectsARelativeFileTarget(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: etc/a\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: etc/a\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetNotAbsolute) {
 		t.Errorf("got %v, want ErrTargetNotAbsolute", err)
 	}
 }
 
 func TestReadRejectsAFileTargetThatLeavesTheRoot(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/../../a\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/../../a\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetEscapes) {
 		t.Errorf("got %v, want ErrTargetEscapes", err)
 	}
 }
 
 func TestReadRejectsAFileTargetWithATrailingDotDot(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/..\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/..\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetEscapes) {
 		t.Errorf("got %v, want ErrTargetEscapes", err)
 	}
 }
 
 func TestReadRejectsAFileTargetWithADotSegment(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/./a\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/./a\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetNotClean) {
 		t.Errorf("got %v, want ErrTargetNotClean", err)
 	}
 }
 
 func TestReadRejectsAFileTargetWithADoubledSlash(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc//a\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc//a\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetNotClean) {
 		t.Errorf("got %v, want ErrTargetNotClean", err)
 	}
 }
 
 func TestReadRejectsAFileTargetThatIsTheRoot(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetIsRoot) {
 		t.Errorf("got %v, want ErrTargetIsRoot", err)
 	}
 }
 
 func TestReadRejectsAFileWithNoSource(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - target: /etc/a\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - target: /etc/a\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrFileSource) {
 		t.Errorf("got %v, want ErrFileSource", err)
 	}
 }
 
 func TestReadRejectsADeclarationWithNoName(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("version: 1.0\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("version: 1.0\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrNoName) {
 		t.Errorf("got %v, want ErrNoName", err)
 	}
 }
 
 func TestReadRejectsANameThatLeavesTheRoot(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: ../../etc\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: ../../etc\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
 
 func TestReadRejectsANameWithASlash(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas/prod\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas/prod\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
 
 func TestReadRejectsANameThatIsDotDot(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: ..\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: ..\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
 
 func TestReadAcceptsAnOrdinaryName(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\n")}}
 	if _, err := Read(dir); err != nil {
 		t.Errorf("Read: %v", err)
 	}
@@ -162,7 +162,7 @@ type unreadable struct{}
 func (unreadable) Open(string) (fs.File, error) { return nil, fs.ErrPermission }
 
 func TestReadRejectsAFileTargetWithADotDotInTheMiddle(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/../etc/dmas/realm.json\n")}}
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\nfiles:\n  - source: a\n    target: /etc/../etc/dmas/realm.json\n")}}
 	if _, err := Read(dir); !errors.Is(err, ErrTargetEscapes) {
 		t.Errorf("got %v, want ErrTargetEscapes", err)
 	}

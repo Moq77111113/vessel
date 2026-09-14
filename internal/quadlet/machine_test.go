@@ -33,10 +33,6 @@ func units() []descriptor.File {
 	}
 }
 
-func TestQuadletSatisfiesTheMachinePort(t *testing.T) {
-	var _ machine.Machine = quadlet.New(nil)
-}
-
 func TestStartBringsUpEveryServiceTheUnitsGenerate(t *testing.T) {
 	system := &calls{}
 	if err := quadlet.New(system.run).Start(context.Background(), units()); err != nil {

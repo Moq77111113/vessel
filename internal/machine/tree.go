@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Moq77111113/vessel/internal/atomicfile"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
-// ErrPathEscapes says a bundle file asked for a path outside the target root.
 var ErrPathEscapes = errors.New("leaves the target root")
 
 // Tree is the file tree of the target machine, rooted where a bundle is written.
@@ -36,7 +36,7 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, fmt.Errorf("create %s: %w", dir, err)
 	}
-	if err := replace(path, file.Data, 0o644); err != nil {
+	if err := atomicfile.Write(path, file.Data, 0o644); err != nil {
 		return false, err
 	}
 	return true, nil

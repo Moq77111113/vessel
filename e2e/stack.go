@@ -28,7 +28,7 @@ import (
 const fixtureHost = "registry.test"
 
 // images is what the fixture units ask for, and what the registry is filled with.
-// Both are built on one shared layer, so the bundle has something to deduplicate.
+// Both are built on one layer layer, so the bundle has something to deduplicate.
 var images = []string{"acme/web:1.0", "library/postgres:17.2"}
 
 // multiPlatform is served behind a single-platform index rather than directly: real
@@ -51,12 +51,12 @@ func serveRegistry(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	shared, err := random.Layer(256, types.OCILayer)
+	layer, err := random.Layer(256, types.OCILayer)
 	if err != nil {
 		t.Fatalf("random.Layer: %v", err)
 	}
 	for _, repository := range images {
-		image, err := randomOCIImage(shared)
+		image, err := randomOCIImage(layer)
 		if err != nil {
 			t.Fatalf("randomOCIImage: %v", err)
 		}
@@ -81,13 +81,13 @@ func serveRegistry(t *testing.T) string {
 // randomOCIImage builds a pseudo-random image whose manifest, config and layers all
 // carry OCI media types. random.Image mixes docker media types into an OCI manifest,
 // which podman refuses to load: a bundle needs one coherent format, not a hybrid.
-func randomOCIImage(shared v1.Layer) (v1.Image, error) {
+func randomOCIImage(layer v1.Layer) (v1.Image, error) {
 	own, err := random.Layer(128, types.OCILayer)
 	if err != nil {
 		return nil, err
 	}
 	base := mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), types.OCIConfigJSON)
-	return mutate.AppendLayers(base, own, shared)
+	return mutate.AppendLayers(base, own, layer)
 }
 
 // unpackFixture copies testdata/stack into a temporary directory, pointing it at host.

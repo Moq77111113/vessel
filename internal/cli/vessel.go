@@ -16,6 +16,9 @@ var machines = []machine.Machine{
 	quadlet.New(machine.Exec),
 }
 
+// machineRoot is where a verb reads and writes: this machine, never a directory beside it.
+const machineRoot = "/"
+
 // New returns the command tree this binary offers. A binary packed with a bundle
 // installs that bundle and cannot build another one.
 func New() *cobra.Command {
@@ -32,6 +35,6 @@ func newVessel() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	vessel.AddCommand(newBuild(), newInspect(), newInstall(), newUpgrade(), newStatus(), newUninstall())
+	vessel.AddCommand(newBuild(), newInspect(), newInstallCommand(), newUpgradeCommand(), newStatus(), newUninstall())
 	return vessel
 }

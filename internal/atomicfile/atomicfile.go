@@ -1,4 +1,5 @@
-package machine
+// Package atomicfile puts a file down in one shot, so a power cut leaves no half-written file.
+package atomicfile
 
 import (
 	"fmt"
@@ -7,9 +8,9 @@ import (
 	"path/filepath"
 )
 
-// replace puts body at path through a temporary file, so a power cut leaves the old file or the
+// Write puts body at path through a temporary file, so a power cut leaves the old file or the
 // new one, never a half-written one. The parent directory must already exist.
-func replace(path string, body []byte, mode fs.FileMode) error {
+func Write(path string, body []byte, mode fs.FileMode) error {
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, ".vessel-*")
 	if err != nil {

@@ -1,15 +1,13 @@
-package delivery
+package descriptor
 
 import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
 func TestSubstitutePutsTheValueInPlaceOfItsMarker(t *testing.T) {
-	files := []descriptor.File{{
+	files := []File{{
 		Path: "etc/containers/systemd/web.container",
 		Data: []byte("[Container]\nEnvironment=HOST=###PUBLIC_HOST###\n"),
 	}}
@@ -24,7 +22,7 @@ func TestSubstitutePutsTheValueInPlaceOfItsMarker(t *testing.T) {
 }
 
 func TestSubstituteReplacesEveryOccurrence(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/a", Data: []byte("###A### and ###A###")}}
+	files := []File{{Path: "etc/a", Data: []byte("###A### and ###A###")}}
 	got, err := Substitute(files, map[string]string{"A": "x"}, nil)
 	if err != nil {
 		t.Fatalf("Substitute: %v", err)
@@ -35,7 +33,7 @@ func TestSubstituteReplacesEveryOccurrence(t *testing.T) {
 }
 
 func TestSubstituteNamesTheFileAndTheVariableItCannotResolve(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/a", Data: []byte("###PUBLIC_HOST###")}}
+	files := []File{{Path: "etc/a", Data: []byte("###PUBLIC_HOST###")}}
 	_, err := Substitute(files, map[string]string{}, nil)
 	if !errors.Is(err, ErrUnknownVariable) {
 		t.Fatalf("got %v, want ErrUnknownVariable", err)
@@ -46,7 +44,7 @@ func TestSubstituteNamesTheFileAndTheVariableItCannotResolve(t *testing.T) {
 }
 
 func TestSubstituteRefusesToWriteASecretIntoAFile(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/a", Data: []byte("password = ###DB_PASSWORD###")}}
+	files := []File{{Path: "etc/a", Data: []byte("password = ###DB_PASSWORD###")}}
 	_, err := Substitute(files, map[string]string{}, []string{"DB_PASSWORD"})
 	if !errors.Is(err, ErrSecretInAFile) {
 		t.Fatalf("got %v, want ErrSecretInAFile", err)
@@ -57,7 +55,7 @@ func TestSubstituteRefusesToWriteASecretIntoAFile(t *testing.T) {
 }
 
 func TestSubstituteLeavesAFileWithNoMarkerUntouched(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/a", Data: []byte("# nothing here\n")}}
+	files := []File{{Path: "etc/a", Data: []byte("# nothing here\n")}}
 	got, err := Substitute(files, map[string]string{"A": "x"}, nil)
 	if err != nil {
 		t.Fatalf("Substitute: %v", err)
@@ -68,7 +66,7 @@ func TestSubstituteLeavesAFileWithNoMarkerUntouched(t *testing.T) {
 }
 
 func TestSubstituteRefusesTheSecretEvenWhenAnotherVariableIsAlsoMissing(t *testing.T) {
-	files := []descriptor.File{{
+	files := []File{{
 		Path: "etc/a",
 		Data: []byte("host = ###PUBLIC_HOST###\npassword = ###DB_PASSWORD###"),
 	}}
@@ -79,7 +77,7 @@ func TestSubstituteRefusesTheSecretEvenWhenAnotherVariableIsAlsoMissing(t *testi
 }
 
 func TestCheckMarkersRefusesAMarkerNoVariableDeclares(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/acme/realm.json", Data: []byte(`{"host":"###PUBLIC_HOST###"}`)}}
+	files := []File{{Path: "etc/acme/realm.json", Data: []byte(`{"host":"###PUBLIC_HOST###"}`)}}
 	err := CheckMarkers(files, []Variable{{Name: "OTHER"}})
 	if !errors.Is(err, ErrUnknownVariable) {
 		t.Errorf("got %v, want ErrUnknownVariable", err)
@@ -87,7 +85,7 @@ func TestCheckMarkersRefusesAMarkerNoVariableDeclares(t *testing.T) {
 }
 
 func TestCheckMarkersRefusesASecretWrittenIntoAFile(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/acme/realm.json", Data: []byte("###DB_PASSWORD###")}}
+	files := []File{{Path: "etc/acme/realm.json", Data: []byte("###DB_PASSWORD###")}}
 	err := CheckMarkers(files, []Variable{{Name: "DB_PASSWORD", Secret: true}})
 	if !errors.Is(err, ErrSecretInAFile) {
 		t.Errorf("got %v, want ErrSecretInAFile", err)
@@ -95,7 +93,7 @@ func TestCheckMarkersRefusesASecretWrittenIntoAFile(t *testing.T) {
 }
 
 func TestCheckMarkersAcceptsAFileWhoseMarkersAreDeclared(t *testing.T) {
-	files := []descriptor.File{{Path: "etc/acme/realm.json", Data: []byte("###PUBLIC_HOST###")}}
+	files := []File{{Path: "etc/acme/realm.json", Data: []byte("###PUBLIC_HOST###")}}
 	if err := CheckMarkers(files, []Variable{{Name: "PUBLIC_HOST", Description: "address"}}); err != nil {
 		t.Errorf("CheckMarkers: %v", err)
 	}

@@ -1,5 +1,5 @@
 KEY ?=
-LDFLAGS = $(if $(KEY),-X github.com/Moq77111113/vessel/internal/cli.publicKey=$(shell cat $(KEY)))
+LDFLAGS = $(if $(KEY),-X github.com/Moq77111113/vessel/internal/bundle.publicKey=$(shell cat $(KEY)))
 
 # build: without KEY, the binary accepts unsigned bundles. Ship one with KEY.
 build:

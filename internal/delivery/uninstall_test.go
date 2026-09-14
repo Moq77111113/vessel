@@ -1,4 +1,4 @@
-package cli
+package delivery
 
 import (
 	"bytes"
@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/quadlet"
+	"github.com/Moq77111113/vessel/internal/record"
 )
 
 func TestUninstallRemovesExactlyTheFilesTheRecordNames(t *testing.T) {
@@ -24,13 +24,13 @@ func TestUninstallRemovesExactlyTheFilesTheRecordNames(t *testing.T) {
 	theirs := filepath.Join(root, "etc/containers/systemd/other.container")
 	writeFile(t, mine, "vessel put this")
 	writeFile(t, theirs, "somebody else put this")
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "etc/containers/systemd/web.container"}},
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := os.Stat(mine); !os.IsNotExist(err) {
@@ -45,12 +45,12 @@ func TestUninstallRefusesARecordEntryThatLeavesTheRoot(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(filepath.Dir(root), "escape.txt")
 	writeFile(t, outside, "not vessel's to touch")
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "../escape.txt"}},
+		Files: []record.Entry{{Path: "../escape.txt"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
-	err := uninstall(context.Background(), io.Discard, testKinds(), root, "acme")
+	err := Uninstall(context.Background(), io.Discard, testKinds(), root, "acme")
 	if !errors.Is(err, machine.ErrPathEscapes) {
 		t.Errorf("got %v, want ErrPathEscapes", err)
 	}
@@ -62,16 +62,16 @@ func TestUninstallRefusesARecordEntryThatLeavesTheRoot(t *testing.T) {
 func TestUninstallCountsOnlyTheFilesItActuallyRemoved(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/containers/systemd/web.container"), "vessel put this")
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{
+		Files: []record.Entry{
 			{Path: "etc/containers/systemd/web.container"},
 			{Path: "etc/containers/systemd/already-gone.container"},
 		},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), "removed: 1 files") {
@@ -83,13 +83,13 @@ func TestUninstallStopsTheServiceBeforeRemovingItsFile(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "etc/containers/systemd/web.container")
 	writeFile(t, path, "vessel put this")
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "etc/containers/systemd/web.container"}},
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	kinds := []machine.Machine{brokenStop{quadlet.New((&podmanStub{}).run)}}
-	err := uninstall(context.Background(), io.Discard, kinds, root, "acme")
+	err := Uninstall(context.Background(), io.Discard, kinds, root, "acme")
 	if !errors.Is(err, errBrokenStop) {
 		t.Fatalf("got %v, want errBrokenStop", err)
 	}
@@ -100,12 +100,12 @@ func TestUninstallStopsTheServiceBeforeRemovingItsFile(t *testing.T) {
 
 func TestUninstallNamesTheSecretsItLeavesOnTheMachine(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet", Secrets: []string{"DB_PASSWORD"},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), "DB_PASSWORD") {
@@ -115,12 +115,12 @@ func TestUninstallNamesTheSecretsItLeavesOnTheMachine(t *testing.T) {
 
 func TestUninstallNamesTheImagesItLeavesInLocalStorage(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet", Images: []string{"sha256:aaaa"},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), "sha256:aaaa") {
@@ -130,12 +130,12 @@ func TestUninstallNamesTheImagesItLeavesInLocalStorage(t *testing.T) {
 
 func TestUninstallNamesTheSiteValuesItLeaves(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), siteFor(t, root, "acme").Path()) {
@@ -145,28 +145,27 @@ func TestUninstallNamesTheSiteValuesItLeaves(t *testing.T) {
 
 func TestUninstallLeavesStatusReportingNoRecord(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
-	if err := uninstall(context.Background(), io.Discard, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), io.Discard, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
-	err := status(context.Background(), io.Discard, testKinds(), root, "acme")
+	err := Status(context.Background(), io.Discard, testKinds(), root, "acme")
 	if !errors.Is(err, ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
 }
 
 func TestUninstallFailsOnAMachineThatHoldsNoRecord(t *testing.T) {
-	err := uninstall(context.Background(), io.Discard, testKinds(), t.TempDir(), "acme")
+	err := Uninstall(context.Background(), io.Discard, testKinds(), t.TempDir(), "acme")
 	if !errors.Is(err, ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
 }
 
-// brokenStop wraps a machine.Machine and fails Stop, so a test drives an uninstall past the
-// point where it must not have touched a file yet.
+// brokenStop fails Stop, where an uninstall must not have touched a file yet.
 type brokenStop struct {
 	machine.Machine
 }
@@ -188,8 +187,8 @@ func writeFile(t *testing.T, path, body string) {
 }
 
 func TestUninstallRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
-	err := uninstall(context.Background(), io.Discard, testKinds(), t.TempDir(), "../../../etc/cron.daily")
-	if !errors.Is(err, delivery.ErrDeliveryName) {
+	err := Uninstall(context.Background(), io.Discard, testKinds(), t.TempDir(), "../../../etc/cron.daily")
+	if !errors.Is(err, descriptor.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
@@ -197,16 +196,33 @@ func TestUninstallRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
 func TestUninstallDisablesATimerTheDeliveryCarried(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/systemd/system/backup.timer"), "[Timer]\n")
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "etc/systemd/system/backup.timer"}},
+		Files: []record.Entry{{Path: "etc/systemd/system/backup.timer"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	stub := &podmanStub{}
-	if err := uninstall(context.Background(), io.Discard, []machine.Machine{quadlet.New(stub.run)}, root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), io.Discard, []machine.Machine{quadlet.New(stub.run)}, root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl disable --now backup.timer") {
 		t.Errorf("uninstall never disabled the timer: %v", stub.calls)
+	}
+}
+
+func TestUninstallRemovesAUnitAnInstallPut(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	unit := filepath.Join(root, "etc/containers/systemd/web.container")
+	if _, err := os.Stat(unit); err != nil {
+		t.Fatalf("the unit never reached the root: %v", err)
+	}
+	if err := Uninstall(context.Background(), io.Discard, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if _, err := os.Stat(unit); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("uninstall left the unit in place: %v", err)
 	}
 }

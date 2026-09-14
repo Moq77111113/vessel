@@ -1,4 +1,5 @@
-package machine
+// Package site is what this machine answers for a delivery: the values it holds, and how a run resolves them.
+package site
 
 import (
 	"errors"
@@ -8,33 +9,26 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Moq77111113/vessel/internal/delivery"
+	"github.com/Moq77111113/vessel/internal/atomicfile"
 )
 
-// valuesPath is where a machine keeps the site values it was given, under the target root.
-const valuesPath = "var/lib/vessel"
-
-// ErrValueHasANewline says a value cannot be stored because the file keeps one value per line.
 var ErrValueHasANewline = errors.New("a value cannot hold a newline")
 
-// Site is the site values one delivery already holds on this machine.
-type Site struct {
+// Store is the site values one delivery already holds on this machine.
+type Store struct {
 	path string
 }
 
-// NewSite returns the value store of a delivery under the target root, or refuses its name.
-func NewSite(root, name string) (*Site, error) {
-	if err := delivery.CheckName(name); err != nil {
-		return nil, err
-	}
-	return &Site{path: filepath.Join(root, valuesPath, name, "values")}, nil
+// NewStore returns the value store of a delivery under its directory.
+func NewStore(dir string) *Store {
+	return &Store{path: filepath.Join(dir, "values")}
 }
 
-// Path is where this store keeps the values, under the target root.
-func (v *Site) Path() string { return v.path }
+// Path is where this store keeps the values.
+func (v *Store) Path() string { return v.path }
 
 // Read returns the values this machine holds, empty on a machine that holds none.
-func (v *Site) Read() (map[string]string, error) {
+func (v *Store) Read() (map[string]string, error) {
 	data, err := os.ReadFile(v.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -43,8 +37,7 @@ func (v *Site) Read() (map[string]string, error) {
 		return nil, fmt.Errorf("read %s: %w", v.path, err)
 	}
 	values := map[string]string{}
-	// Cut on the first "=": relies on delivery.Read imposing ^[A-Z][A-Z0-9_]*$ on names, so a name
-	// never carries one.
+	// A name never carries "=": descriptor.Read imposes ^[A-Z][A-Z0-9_]*$.
 	for _, line := range strings.Split(string(data), "\n") {
 		name, value, ok := strings.Cut(line, "=")
 		if ok {
@@ -55,7 +48,7 @@ func (v *Site) Read() (map[string]string, error) {
 }
 
 // Write replaces the store with these values.
-func (v *Site) Write(values map[string]string) error {
+func (v *Store) Write(values map[string]string) error {
 	names := make([]string, 0, len(values))
 	for name := range values {
 		names = append(names, name)
@@ -76,5 +69,5 @@ func (v *Site) Write(values map[string]string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	return replace(v.path, []byte(body.String()), 0o600)
+	return atomicfile.Write(v.path, []byte(body.String()), 0o600)
 }

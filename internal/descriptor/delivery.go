@@ -1,5 +1,4 @@
-// Package delivery reads the declaration of a delivery: its files, its site values, its actions.
-package delivery
+package descriptor
 
 import (
 	"errors"
@@ -12,8 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Name is the file a source directory declares its delivery in.
-const Name = "vessel.yaml"
+// DeliveryFile is the file a source directory declares its delivery in.
+const DeliveryFile = "vessel.yaml"
 
 // Errors Read returns.
 var (
@@ -35,8 +34,8 @@ var variableName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 // directory under the target root without ever leaving it.
 var deliveryName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
-// File is one plain file the delivery carries, and where it lands on the machine.
-type File struct {
+// Mapping is one plain file the delivery carries, and where it lands on the machine.
+type Mapping struct {
 	Source string `yaml:"source" json:"source"`
 	Target string `yaml:"target" json:"target"`
 }
@@ -54,7 +53,7 @@ type Delivery struct {
 	Name      string     `yaml:"name"`
 	Version   string     `yaml:"version"`
 	Units     string     `yaml:"units"`
-	Files     []File     `yaml:"files"`
+	Files     []Mapping  `yaml:"files"`
 	Variables []Variable `yaml:"variables"`
 	Actions   []string   `yaml:"actions"`
 }
@@ -62,7 +61,7 @@ type Delivery struct {
 // CheckName refuses a name that cannot stand for a directory under the target root.
 func CheckName(name string) error {
 	if name == "" {
-		return fmt.Errorf("%s: %w", Name, ErrNoName)
+		return fmt.Errorf("%s: %w", DeliveryFile, ErrNoName)
 	}
 	if !deliveryName.MatchString(name) {
 		return fmt.Errorf("%q: %w", name, ErrDeliveryName)
@@ -93,16 +92,16 @@ func leaves(target string) bool {
 
 // Read returns the declaration the directory carries, and ErrNoDelivery when it carries none.
 func Read(dir fs.FS) (Delivery, error) {
-	data, err := fs.ReadFile(dir, Name)
+	data, err := fs.ReadFile(dir, DeliveryFile)
 	if errors.Is(err, fs.ErrNotExist) {
-		return Delivery{}, fmt.Errorf("%s: %w", Name, ErrNoDelivery)
+		return Delivery{}, fmt.Errorf("%s: %w", DeliveryFile, ErrNoDelivery)
 	}
 	if err != nil {
-		return Delivery{}, fmt.Errorf("read %s: %w", Name, err)
+		return Delivery{}, fmt.Errorf("read %s: %w", DeliveryFile, err)
 	}
 	var declaration Delivery
 	if err := yaml.Unmarshal(data, &declaration); err != nil {
-		return Delivery{}, fmt.Errorf("read %s: %w", Name, err)
+		return Delivery{}, fmt.Errorf("read %s: %w", DeliveryFile, err)
 	}
 	if err := CheckName(declaration.Name); err != nil {
 		return Delivery{}, err

@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/quadlet"
 )
 
@@ -11,7 +12,7 @@ func Code(err error) int {
 	switch {
 	case errors.Is(err, quadlet.ErrNotReady):
 		return 3
-	case errors.Is(err, ErrPartlyInstalled):
+	case errors.Is(err, delivery.ErrPartlyInstalled):
 		return 5
 	}
 	// A failure that reached neither fact left the machine untouched.

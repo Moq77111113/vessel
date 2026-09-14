@@ -1,4 +1,4 @@
-package machine
+package site
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Moq77111113/vessel/internal/delivery"
+	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
 // Errors Resolve returns.
@@ -22,16 +22,21 @@ type Resolution struct {
 	Secrets map[string]string
 }
 
+// Shell answers the command a variable's from: names.
+type Shell interface {
+	Value(ctx context.Context, command string) (string, error)
+}
+
 // Values answers the variables a delivery declares, from this machine and this operator.
 type Values struct {
-	site    *Site
-	shell   *Shell
+	site    *Store
+	shell   Shell
 	set     map[string]string
 	secrets map[string]bool
 }
 
 // NewValues returns the values of one run: --set, what a previous install stored, then from:.
-func NewValues(site *Site, shell *Shell, set map[string]string, secrets []string) *Values {
+func NewValues(site *Store, shell Shell, set map[string]string, secrets []string) *Values {
 	machineSecrets := make(map[string]bool, len(secrets))
 	for _, name := range secrets {
 		machineSecrets[name] = true
@@ -40,12 +45,12 @@ func NewValues(site *Site, shell *Shell, set map[string]string, secrets []string
 }
 
 // Resolve answers every variable, or names the first one it cannot.
-func (v *Values) Resolve(ctx context.Context, variables []delivery.Variable) (Resolution, error) {
+func (v *Values) Resolve(ctx context.Context, variables []descriptor.Variable) (Resolution, error) {
 	values, err := v.site.Read()
 	if err != nil {
 		return Resolution{}, err
 	}
-	if err := v.checkTheSetLands(variables); err != nil {
+	if err := v.checkSet(variables); err != nil {
 		return Resolution{}, err
 	}
 	resolution := Resolution{Values: map[string]string{}, Secrets: map[string]string{}}
@@ -66,10 +71,9 @@ func (v *Values) Resolve(ctx context.Context, variables []delivery.Variable) (Re
 	return resolution, nil
 }
 
-// checkTheSetLands refuses a --set that cannot reach the install: one naming a variable the
-// delivery never declared, and one naming a secret this machine already holds.
-func (v *Values) checkTheSetLands(variables []delivery.Variable) error {
-	byName := make(map[string]delivery.Variable, len(variables))
+// checkSet refuses a --set naming a variable this delivery never declared, or a secret this machine holds.
+func (v *Values) checkSet(variables []descriptor.Variable) error {
+	byName := make(map[string]descriptor.Variable, len(variables))
 	for _, variable := range variables {
 		byName[variable.Name] = variable
 	}
@@ -91,7 +95,7 @@ func (v *Values) checkTheSetLands(variables []delivery.Variable) error {
 	return nil
 }
 
-func (v *Values) value(ctx context.Context, variable delivery.Variable,
+func (v *Values) value(ctx context.Context, variable descriptor.Variable,
 	values map[string]string) (string, error) {
 	if value, ok := v.set[variable.Name]; ok {
 		return value, nil
@@ -110,7 +114,7 @@ func (v *Values) value(ctx context.Context, variable delivery.Variable,
 }
 
 // noValue refuses a variable nothing answers, naming it and what it is.
-func noValue(variable delivery.Variable) error {
+func noValue(variable descriptor.Variable) error {
 	if variable.Description == "" {
 		return fmt.Errorf("%s %w", variable.Name, ErrNoValue)
 	}

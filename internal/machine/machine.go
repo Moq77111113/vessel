@@ -12,10 +12,8 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// ErrNoMachine says no machine recognized the source directory.
 var ErrNoMachine = errors.New("no descriptor found")
 
-// ErrUnknownMachine says this build carries no machine of that kind.
 var ErrUnknownMachine = errors.New("this build does not know that machine kind")
 
 // Service is one unit of a delivery and whether the machine runs it.
@@ -24,16 +22,16 @@ type Service struct {
 	Running bool
 }
 
-// Source is the build side: it reads a delivery directory.
-type Source interface {
+// Descriptor is the build side: it reads a delivery directory.
+type Descriptor interface {
 	Detect(fs.FS) bool
 	Read(fs.FS) (descriptor.Manifest, error)
 	Owns(path string) bool
 	Requires(files []descriptor.File) []string
 }
 
-// Target is the machine side: it applies a delivery and reads back what is there.
-type Target interface {
+// Host is the machine side: it applies a delivery and reads back what is there.
+type Host interface {
 	Check(ctx context.Context, root string) error
 	Secrets(ctx context.Context) ([]string, error)
 	AddSecret(ctx context.Context, name, value string) error
@@ -46,8 +44,8 @@ type Target interface {
 // Machine is one deployment kind: quadlet on podman, compose on docker.
 type Machine interface {
 	Name() string
-	Source
-	Target
+	Descriptor
+	Host
 }
 
 // ByName returns the machine that built a bundle, so install can apply it.

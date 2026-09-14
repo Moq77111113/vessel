@@ -1,4 +1,4 @@
-package cli
+package delivery
 
 import (
 	"bytes"
@@ -11,19 +11,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Moq77111113/vessel/internal/delivery"
+	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/quadlet"
+	"github.com/Moq77111113/vessel/internal/record"
+	"github.com/Moq77111113/vessel/internal/site"
 )
 
 func TestStatusReportsTheVersionTheMachineHolds(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1757000000, 0).UTC(), End: time.Unix(1757000060, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "acme 1.4.0") {
@@ -33,11 +35,11 @@ func TestStatusReportsTheVersionTheMachineHolds(t *testing.T) {
 
 func TestStatusSaysTheInstallNeverFinished(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "never finished") {
@@ -54,13 +56,13 @@ func TestStatusNamesAFileThatDiffersSinceTheInstall(t *testing.T) {
 	if err := os.WriteFile(path, []byte("edited by hand\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "Differs") || !strings.Contains(out.String(), "web.container") {
@@ -83,14 +85,18 @@ func TestStatusNamesAFileItCannotRead(t *testing.T) {
 	if err := os.Chmod(path, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
-	writeRecord(t, root, machine.Record{
+	t.Cleanup(func() {
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Errorf("chmod: %v", err)
+		}
+	})
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "Unreadable") || !strings.Contains(out.String(), "web.container") {
@@ -103,13 +109,13 @@ func TestStatusNamesAFileItCannotRead(t *testing.T) {
 
 func TestStatusNamesAFileAbsentSinceTheInstall(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []machine.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
 		Start: time.Unix(1, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "Absent") || !strings.Contains(out.String(), "web.container") {
@@ -122,39 +128,51 @@ func TestStatusNamesAFileAbsentSinceTheInstall(t *testing.T) {
 
 func TestStatusPrintsWhatTheMachineIsRunning(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	kind := downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, []machine.Machine{kind}, root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, []machine.Machine{kind}, root, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if !strings.Contains(out.String(), "web.service") {
-		t.Errorf("got %q, want the service named", out.String())
+	if !strings.Contains(out.String(), "web.service down") {
+		t.Errorf("got %q, want the service named with the state it is in", out.String())
 	}
 }
 
-func TestStatusReportsTheVersionThenFailsOnAKindThisBuildDoesNotKnow(t *testing.T) {
-	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
-		Name: "acme", Version: "1.4.0", Machine: "compose",
-		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
-	})
-	var out bytes.Buffer
-	err := status(context.Background(), &out, testKinds(), root, "acme")
+func TestStatusFailsOnAKindThisBuildDoesNotKnow(t *testing.T) {
+	err := Status(context.Background(), io.Discard, testKinds(), rootHoldingAComposeRecord(t), "acme")
 	if !errors.Is(err, machine.ErrUnknownMachine) {
 		t.Errorf("got %v, want ErrUnknownMachine", err)
+	}
+}
+
+func TestStatusPrintsTheVersionBeforeItFails(t *testing.T) {
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), rootHoldingAComposeRecord(t), "acme"); err == nil {
+		t.Fatal("status succeeded on a kind this build does not know")
 	}
 	if !strings.Contains(out.String(), "acme 1.4.0") {
 		t.Errorf("got %q, want the version line printed before the failure", out.String())
 	}
 }
 
+// rootHoldingAComposeRecord writes a record naming a machine kind this build cannot read.
+func rootHoldingAComposeRecord(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "compose",
+		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
+	})
+	return root
+}
+
 func TestStatusSaysTheMachineHoldsNoRecord(t *testing.T) {
 	var out bytes.Buffer
-	err := status(context.Background(), &out, testKinds(), t.TempDir(), "acme")
+	err := Status(context.Background(), &out, testKinds(), t.TempDir(), "acme")
 	if !errors.Is(err, ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
@@ -162,7 +180,7 @@ func TestStatusSaysTheMachineHoldsNoRecord(t *testing.T) {
 
 func TestStatusWithNoNameSkipsADeliveryWithAnOddName(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
@@ -174,7 +192,7 @@ func TestStatusWithNoNameSkipsADeliveryWithAnOddName(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	var out bytes.Buffer
-	if err := list(&out, root); err != nil {
+	if err := List(&out, root); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if want := "acme 1.4.0"; !strings.Contains(out.String(), want) {
@@ -186,50 +204,50 @@ func testKinds() []machine.Machine {
 	return []machine.Machine{quadlet.New((&podmanStub{}).run)}
 }
 
-func writeRecord(t *testing.T, root string, record machine.Record) {
+func writeRecord(t *testing.T, root string, record record.Record) {
 	t.Helper()
 	if err := recordsFor(t, root, record.Name).Write(record); err != nil {
 		t.Fatalf("write the record: %v", err)
 	}
 }
 
+func recordsFor(t *testing.T, root, name string) *record.Records {
+	t.Helper()
+	dir, err := dirFor(root, name)
+	if err != nil {
+		t.Fatalf("dirFor: %v", err)
+	}
+	return record.NewRecords(dir)
+}
+
+func siteFor(t *testing.T, root, name string) *site.Store {
+	t.Helper()
+	dir, err := dirFor(root, name)
+	if err != nil {
+		t.Fatalf("dirFor: %v", err)
+	}
+	return site.NewStore(dir)
+}
+
 func TestStatusRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
-	err := status(context.Background(), io.Discard, testKinds(), t.TempDir(), "../../../etc/cron.daily")
-	if !errors.Is(err, delivery.ErrDeliveryName) {
+	err := Status(context.Background(), io.Discard, testKinds(), t.TempDir(), "../../../etc/cron.daily")
+	if !errors.Is(err, descriptor.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
 
-func recordsFor(t *testing.T, root, name string) *machine.Records {
-	t.Helper()
-	records, err := machine.NewRecords(root, name)
-	if err != nil {
-		t.Fatalf("NewRecords: %v", err)
-	}
-	return records
-}
-
-func siteFor(t *testing.T, root, name string) *machine.Site {
-	t.Helper()
-	site, err := machine.NewSite(root, name)
-	if err != nil {
-		t.Fatalf("NewSite: %v", err)
-	}
-	return site
-}
-
 func TestStatusPrintsTheVersionThisMachineCameFrom(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.3.0", Machine: "quadlet",
 		Start: time.Unix(1756000000, 0).UTC(), End: time.Unix(1756000060, 0).UTC(),
 	})
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1757000000, 0).UTC(), End: time.Unix(1757000060, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	want := "1.3.0, installed " + time.Unix(1756000000, 0).UTC().Format(time.RFC3339)
@@ -240,21 +258,48 @@ func TestStatusPrintsTheVersionThisMachineCameFrom(t *testing.T) {
 
 func TestStatusWithNoNameListsEveryDeliveryTheMachineHolds(t *testing.T) {
 	root := t.TempDir()
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
-	writeRecord(t, root, machine.Record{
+	writeRecord(t, root, record.Record{
 		Name: "gateway", Version: "2.0.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := list(&out, root); err != nil {
+	if err := List(&out, root); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	for _, want := range []string{"acme 1.4.0", "gateway 2.0.0"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("got %q, want %q in it", out.String(), want)
 		}
+	}
+}
+
+func TestStatusFailsWhenAFileTheRecordNamesNoLongerMatches(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet",
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
+		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
+	})
+	err := Status(context.Background(), io.Discard, testKinds(), root, "acme")
+	if !errors.Is(err, ErrRecordDoesNotMatch) {
+		t.Errorf("got %v, want ErrRecordDoesNotMatch", err)
+	}
+}
+
+func TestStatusNamesTheVersionAnInstallPutOnTheMachine(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "acme 1.4.0") {
+		t.Errorf("got %q, want the installed version named", out.String())
 	}
 }

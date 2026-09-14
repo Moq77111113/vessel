@@ -1,80 +1,20 @@
-package machine
+package machine_test
 
 import (
 	"archive/tar"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Moq77111113/vessel/internal/machine"
+	"github.com/Moq77111113/vessel/internal/machine/layouttest"
 )
 
-// twoImageLayout writes an OCI layout holding two images that share one layer.
-func twoImageLayout(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	blobs := filepath.Join(dir, "blobs", "sha256")
-	if err := os.MkdirAll(blobs, 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	put := func(body []byte) string {
-		sum := sha256.Sum256(body)
-		digest := hex.EncodeToString(sum[:])
-		if err := os.WriteFile(filepath.Join(blobs, digest), body, 0o644); err != nil {
-			t.Fatalf("WriteFile: %v", err)
-		}
-		return "sha256:" + digest
-	}
-	shared := put([]byte("a layer both images carry"))
-
-	var manifests []map[string]any
-	for _, name := range []string{"registry.example.com/acme/web:1.0", "registry.example.com/library/postgres:17.2"} {
-		config := put([]byte(`{"architecture":"amd64","os":"linux","name":"` + name + `"}`))
-		body, err := json.Marshal(map[string]any{
-			"schemaVersion": 2,
-			"mediaType":     "application/vnd.oci.image.manifest.v1+json",
-			"config":        map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": config, "size": 1},
-			"layers":        []map[string]any{{"mediaType": "application/vnd.oci.image.layer.v1.tar+gzip", "digest": shared, "size": 1}},
-		})
-		if err != nil {
-			t.Fatalf("Marshal: %v", err)
-		}
-		digest := put(body)
-		manifests = append(manifests, map[string]any{
-			"mediaType":   "application/vnd.oci.image.manifest.v1+json",
-			"digest":      digest,
-			"size":        len(body),
-			"annotations": map[string]string{RefNameAnnotation: name},
-		})
-	}
-	index, err := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": manifests})
-	if err != nil {
-		t.Fatalf("Marshal: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "index.json"), index, 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "oci-layout"), []byte(`{"imageLayoutVersion":"1.0.0"}`), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	return dir
-}
-
-func openLayout(t *testing.T) *Layout {
-	t.Helper()
-	layout, err := OpenLayout(twoImageLayout(t))
-	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
-	}
-	return layout
-}
-
 func TestLayoutNamesEveryImageItHolds(t *testing.T) {
-	names, err := openLayout(t).Names()
+	names, err := layouttest.Open(t).Names()
 	if err != nil {
 		t.Fatalf("Names: %v", err)
 	}
@@ -91,7 +31,7 @@ func TestLayoutNamesEveryImageItHolds(t *testing.T) {
 
 func TestArchiveHoldsOneManifestAndItsBlobs(t *testing.T) {
 	var out strings.Builder
-	if err := openLayout(t).Archive(0, &out); err != nil {
+	if err := layouttest.Open(t).Archive(0, &out); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 	names := entryNames(t, out.String())
@@ -107,7 +47,7 @@ func TestArchiveHoldsOneManifestAndItsBlobs(t *testing.T) {
 
 func TestArchiveIndexNamesOnlyTheImageItCarries(t *testing.T) {
 	var out strings.Builder
-	if err := openLayout(t).Archive(1, &out); err != nil {
+	if err := layouttest.Open(t).Archive(1, &out); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 	index := entryBody(t, out.String(), "index.json")
@@ -120,7 +60,7 @@ func TestArchiveIndexNamesOnlyTheImageItCarries(t *testing.T) {
 }
 
 func TestOpenLayoutRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
-	dir := twoImageLayout(t)
+	dir := layouttest.TwoImages(t)
 	entries, err := os.ReadDir(filepath.Join(dir, "blobs", "sha256"))
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
@@ -129,13 +69,13 @@ func TestOpenLayoutRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
 	if err := os.WriteFile(path, []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	layout, err := OpenLayout(dir)
+	layout, err := machine.OpenLayout(dir)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}
 	var out strings.Builder
 	err = errors.Join(layout.Archive(0, &out), layout.Archive(1, &out))
-	if !errors.Is(err, ErrBlobDigest) {
+	if !errors.Is(err, machine.ErrBlobDigest) {
 		t.Errorf("got %v, want ErrBlobDigest", err)
 	}
 }

@@ -68,29 +68,3 @@ func TestAPackedFileInspectsWhatItCarries(t *testing.T) {
 		}
 	}
 }
-
-func TestAPackedFileInstallsAndStartsTheStack(t *testing.T) {
-	needPodman(t)
-	systemctl := takeSystemctl(t)
-
-	root := t.TempDir()
-	output, err := exec.Command(packStack(t), "install", "--root", root).CombinedOutput()
-	if err != nil {
-		t.Fatalf("install: %v: %s", err, output)
-	}
-	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd/web.container")); err != nil {
-		t.Fatalf("the unit never reached the root: %v: %s", err, output)
-	}
-	asked, err := os.ReadFile(systemctl)
-	if err != nil {
-		t.Fatalf("the packed file called no systemctl at all: %v: %s", err, output)
-	}
-	if !strings.Contains(string(asked), "start db.service web.service") {
-		t.Errorf("got %q, want it to start the services the stack carries", asked)
-	}
-	for _, service := range []string{"db.service", "web.service"} {
-		if !strings.Contains(string(asked), "is-active "+service) {
-			t.Errorf("got %q, want it to check %s is running", asked, service)
-		}
-	}
-}

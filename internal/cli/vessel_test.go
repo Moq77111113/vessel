@@ -4,9 +4,11 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/machine"
 )
 
@@ -29,20 +31,26 @@ func TestVesselReadsQuadlet(t *testing.T) {
 	}
 }
 
-func TestVesselOffersBuildInspectInstallStatusUninstallAndUpgrade(t *testing.T) {
+func TestVesselOffersSixVerbs(t *testing.T) {
+	if got, want := len(verbs()), 6; got != want {
+		t.Errorf("got %d verbs, want %d: %v", got, want, verbs())
+	}
+}
+
+func TestVesselListsItsVerbsInOrder(t *testing.T) {
 	want := []string{"build", "inspect", "install", "status", "uninstall", "upgrade"}
-	var got []string
+	if got := verbs(); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// verbs names the commands vessel offers, in the order it lists them.
+func verbs() []string {
+	var names []string
 	for _, command := range newVessel().Commands() {
-		got = append(got, command.Name())
+		names = append(names, command.Name())
 	}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-	for i, name := range want {
-		if got[i] != name {
-			t.Errorf("got %v, want %v", got, want)
-		}
-	}
+	return names
 }
 
 func TestVesselRejectsAnUnknownCommand(t *testing.T) {
@@ -84,8 +92,8 @@ func runVessel(t *testing.T, args ...string) error {
 }
 
 func TestInstallOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
-	err := runVessel(t, "install", t.TempDir(), "--root", t.TempDir())
-	if !errors.Is(err, ErrNoBundle) {
+	err := runVessel(t, "install", t.TempDir())
+	if !errors.Is(err, bundle.ErrNotABundle) {
 		t.Errorf("got %v, want ErrNoBundle", err)
 	}
 }

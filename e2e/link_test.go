@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
-	"github.com/Moq77111113/vessel/internal/cli"
-	"github.com/Moq77111113/vessel/internal/delivery"
+	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/link"
 )
 
 func TestLinkPinsEveryUnitToADigest(t *testing.T) {
@@ -62,16 +62,16 @@ func TestLinkTwiceFromTheSameSourceProducesTheSameBundle(t *testing.T) {
 	if err := runVessel("build", "-o", secondExe, "--layout", second, "--name", "acme", "--version", "1.0", source); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
-	firstOpened, err := bundle.Open(first)
+	firstBundle, err := bundle.Open(first)
 	if err != nil {
 		t.Fatalf("Open first: %v", err)
 	}
-	secondOpened, err := bundle.Open(second)
+	secondBundle, err := bundle.Open(second)
 	if err != nil {
 		t.Fatalf("Open second: %v", err)
 	}
-	if firstOpened.Root != secondOpened.Root {
-		t.Errorf("got %s then %s, want the same root", firstOpened.Root, secondOpened.Root)
+	if firstBundle.Root != secondBundle.Root {
+		t.Errorf("got %s then %s, want the same root", firstBundle.Root, secondBundle.Root)
 	}
 }
 
@@ -157,7 +157,7 @@ files:
 `,
 		"realm.json": `{}`,
 	})
-	if !errors.Is(err, cli.ErrTargetCollides) {
+	if !errors.Is(err, link.ErrTargetCollides) {
 		t.Errorf("got %v, want ErrTargetCollides", err)
 	}
 }
@@ -176,7 +176,7 @@ files:
 		"a.json": `{}`,
 		"b.json": `{}`,
 	})
-	if !errors.Is(err, cli.ErrTargetDuplicate) {
+	if !errors.Is(err, link.ErrTargetDuplicate) {
 		t.Errorf("got %v, want ErrTargetDuplicate", err)
 	}
 }
@@ -192,7 +192,7 @@ files:
 `,
 		"extra.unit": "[Container]\nImage=registry.test/acme/web:1.0\n",
 	})
-	if !errors.Is(err, cli.ErrTargetInUnitDirectory) {
+	if !errors.Is(err, link.ErrTargetInUnitDirectory) {
 		t.Errorf("got %v, want ErrTargetInUnitDirectory", err)
 	}
 }
@@ -200,7 +200,7 @@ files:
 func TestLinkRefusesADeliveryWithNoName(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "vessel-stack")
 	err := runVessel("build", "-o", out, serveStack(t))
-	if !errors.Is(err, delivery.ErrNoName) {
+	if !errors.Is(err, descriptor.ErrNoName) {
 		t.Errorf("got %v, want ErrNoName", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestLinkRefusesADeliveryWithNoName(t *testing.T) {
 func TestLinkRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "vessel-stack")
 	err := runVessel("build", "-o", out, "--name", "../../etc", serveStack(t))
-	if !errors.Is(err, delivery.ErrDeliveryName) {
+	if !errors.Is(err, descriptor.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
 }
@@ -224,7 +224,7 @@ variables:
     from: openssl rand -hex 32
 `,
 	})
-	if !errors.Is(err, cli.ErrSecretNoUnitReads) {
+	if !errors.Is(err, link.ErrSecretNoUnitReads) {
 		t.Errorf("got %v, want ErrSecretNoUnitReads", err)
 	}
 }
@@ -240,7 +240,7 @@ files:
 `,
 		"realm.json": `{"host":"###PUBLIC_HOST###"}`,
 	})
-	if !errors.Is(err, delivery.ErrUnknownVariable) {
+	if !errors.Is(err, descriptor.ErrUnknownVariable) {
 		t.Errorf("got %v, want ErrUnknownVariable", err)
 	}
 }

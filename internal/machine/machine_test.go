@@ -46,12 +46,12 @@ func TestPickReturnsTheFirstMachineThatRecognizesTheSource(t *testing.T) {
 	}
 	dir := fstest.MapFS{"web.container": &fstest.MapFile{}}
 
-	picked, err := machine.Pick(machines, dir)
+	kind, err := machine.Pick(machines, dir)
 	if err != nil {
 		t.Fatalf("pick: %v", err)
 	}
-	if picked.Name() != "quadlet" {
-		t.Errorf("got %q, want %q", picked.Name(), "quadlet")
+	if kind.Name() != "quadlet" {
+		t.Errorf("got %q, want %q", kind.Name(), "quadlet")
 	}
 }
 
@@ -61,12 +61,12 @@ func TestPickKeepsTheOrderItWasGiven(t *testing.T) {
 		stub{name: "quadlet", mark: "web.container"},
 	}
 
-	picked, err := machine.Pick(machines, fstest.MapFS{"web.container": &fstest.MapFile{}})
+	kind, err := machine.Pick(machines, fstest.MapFS{"web.container": &fstest.MapFile{}})
 	if err != nil {
 		t.Fatalf("pick: %v", err)
 	}
-	if picked.Name() != "compose" {
-		t.Errorf("got %q, want %q", picked.Name(), "compose")
+	if kind.Name() != "compose" {
+		t.Errorf("got %q, want %q", kind.Name(), "compose")
 	}
 }
 

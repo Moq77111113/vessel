@@ -15,10 +15,7 @@ var ErrAction = errors.New("command failed")
 // Capture runs one shell command and returns what it printed on stdout alone.
 type Capture func(ctx context.Context, command string) ([]byte, error)
 
-// Sh runs a command through the system shell, and is what NewShell takes outside tests.
-//
-// Only stdout comes back as a value. stderr rides with the error instead, so a command that
-// chatters on stderr does not poison the value, and a failure still says why.
+// Sh runs a command through the system shell, returning stdout as the value and stderr with the error.
 func Sh(ctx context.Context, command string) ([]byte, error) {
 	shell := exec.CommandContext(ctx, "sh", "-c", command)
 	var stderr bytes.Buffer

@@ -8,30 +8,27 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/installer"
-	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
 // newPacked is the command tree of an executable that carries its own bundle.
-// It has one job, so it offers no way to build anything.
 func newPacked(self string) *cobra.Command {
-	var root string
-	var set []string
-	var upgradeRoot string
-	var upgradeSet []string
-	var statusRoot string
-	var uninstallRoot string
-
 	name := filepath.Base(self)
-	packed := &cobra.Command{
+	command := &cobra.Command{
 		Use:           name,
 		Short:         "Install " + name + " on this machine",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	command.AddCommand(packedInspect(self), packedInstall(self), packedUpgrade(self),
+		packedStatus(self), packedUninstall(self))
+	return command
+}
 
-	inspect := &cobra.Command{
+func packedInspect(self string) *cobra.Command {
+	return &cobra.Command{
 		Use:   "inspect",
 		Short: "Show what is inside, without installing it",
 		Args:  cobra.NoArgs,
@@ -41,26 +38,44 @@ func newPacked(self string) *cobra.Command {
 			})
 		},
 	}
+}
 
-	install := &cobra.Command{
+func packedInstall(self string) *cobra.Command {
+	var set []string
+
+	command := &cobra.Command{
 		Use:   "install",
 		Short: "Put the images and files on this machine",
 		Args:  cobra.NoArgs,
-		RunE:  runLoad(self, &root, &set, modeInstall),
+		RunE: func(command *cobra.Command, _ []string) error {
+			return withJob(self, set, func(job delivery.Install) error {
+				return job.Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			})
+		},
 	}
-	bindRootFlag(install, &root, "install under this directory instead of /")
-	install.Flags().StringArrayVar(&set, "set", nil, "answer a variable: --set NAME=value")
+	bindSetFlag(command, &set)
+	return command
+}
 
-	upgrade := &cobra.Command{
+func packedUpgrade(self string) *cobra.Command {
+	var set []string
+
+	command := &cobra.Command{
 		Use:   "upgrade",
 		Short: "Install a newer version, refusing a machine that holds no record of this delivery",
 		Args:  cobra.NoArgs,
-		RunE:  runLoad(self, &upgradeRoot, &upgradeSet, modeUpgrade),
+		RunE: func(command *cobra.Command, _ []string) error {
+			return withJob(self, set, func(job delivery.Install) error {
+				return job.Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			})
+		},
 	}
-	bindRootFlag(upgrade, &upgradeRoot, "install under this directory instead of /")
-	upgrade.Flags().StringArrayVar(&upgradeSet, "set", nil, "answer a variable: --set NAME=value")
+	bindSetFlag(command, &set)
+	return command
+}
 
-	statusCmd := &cobra.Command{
+func packedStatus(self string) *cobra.Command {
+	command := &cobra.Command{
 		Use:   "status",
 		Short: "Show what this machine holds for this delivery",
 		Args:  cobra.NoArgs,
@@ -70,13 +85,15 @@ func newPacked(self string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return status(command.Context(), command.OutOrStdout(), machines, statusRoot, artifact.Config.Name)
+				return delivery.Status(command.Context(), command.OutOrStdout(), machines, machineRoot, artifact.Config.Name)
 			})
 		},
 	}
-	bindRootFlag(statusCmd, &statusRoot, "read under this directory instead of /")
+	return command
+}
 
-	uninstallCmd := &cobra.Command{
+func packedUninstall(self string) *cobra.Command {
+	command := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Take this delivery off this machine",
 		Args:  cobra.NoArgs,
@@ -86,42 +103,34 @@ func newPacked(self string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return uninstall(command.Context(), command.OutOrStdout(), machines, uninstallRoot, artifact.Config.Name)
+				return delivery.Uninstall(command.Context(), command.OutOrStdout(), machines, machineRoot, artifact.Config.Name)
 			})
 		},
 	}
-	bindRootFlag(uninstallCmd, &uninstallRoot, "remove under this directory instead of /")
-
-	packed.AddCommand(inspect, install, upgrade, statusCmd, uninstallCmd)
-	return packed
+	return command
 }
 
-// runLoad builds a packed install or upgrade command's RunE, the two names an operator gives to load.
-func runLoad(self string, root *string, set *[]string, run mode) func(*cobra.Command, []string) error {
-	return func(command *cobra.Command, _ []string) error {
-		values, err := parseSet(*set)
+// withJob lays the carried bundle down and hands the install it describes to run. A binary
+// cannot vouch for the payload it carries, so the operator checks the file itself.
+func withJob(self string, set []string, run func(delivery.Install) error) error {
+	values, err := delivery.ParseSet(set)
+	if err != nil {
+		return err
+	}
+	return withPayload(self, func(dir string) error {
+		artifact, err := bundle.OpenNamed(dir)
 		if err != nil {
 			return err
 		}
-		work := report.New(command.ErrOrStderr())
-		return withPayload(self, func(dir string) error {
-			return load(command.Context(), command.OutOrStdout(), work,
-				machines, machine.NewShell(machine.Sh), dir, *root, values, false, run)
-		})
-	}
-}
-
-// bindRootFlag gives command the hidden --root flag every verb shares.
-func bindRootFlag(command *cobra.Command, root *string, help string) {
-	command.Flags().StringVar(root, "root", "/", help)
-	command.Flags().MarkHidden("root")
+		return run(newInstall(artifact, values))
+	})
 }
 
 // withPayload lays the carried bundle down in a working directory and hands it to run.
 func withPayload(self string, run func(dir string) error) error {
 	dir, err := os.MkdirTemp("", "vessel-bundle-*")
 	if err != nil {
-		return fmt.Errorf("create a working directory: %w", err)
+		return fmt.Errorf("unpack the carried bundle: %w", err)
 	}
 	defer os.RemoveAll(dir)
 

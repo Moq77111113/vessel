@@ -36,11 +36,11 @@ func (r *Reader) Requires(files []descriptor.File) []string {
 }
 
 func secretName(line []byte) (string, bool) {
-	trimmed := bytes.TrimLeft(line, " \t")
-	if len(trimmed) == 0 || trimmed[0] == '#' || trimmed[0] == ';' {
+	rest := bytes.TrimLeft(line, " \t")
+	if len(rest) == 0 || rest[0] == '#' || rest[0] == ';' {
 		return "", false
 	}
-	value, ok := cutKey(trimmed, secretKey)
+	value, ok := cutKey(rest, secretKey)
 	if !ok {
 		return "", false
 	}

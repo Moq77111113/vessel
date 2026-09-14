@@ -1,16 +1,12 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"io"
-	"path/filepath"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/machine"
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/quadlet"
-	"github.com/Moq77111113/vessel/internal/report"
 )
 
 func TestAMachineThatIsNotReadyExitsWithThree(t *testing.T) {
@@ -27,15 +23,8 @@ func TestAFailureThatTouchedNothingExitsWithFour(t *testing.T) {
 }
 
 func TestAFailureAfterTheRecordIsOpenExitsWithFive(t *testing.T) {
-	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "etc/acme"), "an ordinary file where the delivery wants a directory")
-	err := load(context.Background(), io.Discard, report.New(io.Discard),
-		testKinds(), machine.NewShell(noCapture), blockedFileBundle(t), root,
-		map[string]string{"PUBLIC_HOST": "dmas.acme.local"}, false, modeInstall)
-	if err == nil {
-		t.Fatal("install succeeded even though no file could be written")
-	}
+	err := fmt.Errorf("%w: no file could be written", delivery.ErrPartlyInstalled)
 	if got := Code(err); got != 5 {
-		t.Errorf("got %d, want 5 for a machine the install already touched", got)
+		t.Errorf("got %d, want 5", got)
 	}
 }

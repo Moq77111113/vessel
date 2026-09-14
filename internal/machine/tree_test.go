@@ -33,12 +33,12 @@ func TestTreeWritesTheFileUnderTheRoot(t *testing.T) {
 }
 
 func TestTreeReportsAChangeOnTheFirstWrite(t *testing.T) {
-	changed, err := NewTree(t.TempDir()).Write(unit())
+	ok, err := NewTree(t.TempDir()).Write(unit())
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if !changed {
-		t.Error("changed: got false, want true on a first write")
+	if !ok {
+		t.Error("got false, want true on a first write")
 	}
 }
 
@@ -47,12 +47,12 @@ func TestTreeReportsNoChangeOnASecondIdenticalWrite(t *testing.T) {
 	if _, err := tree.Write(unit()); err != nil {
 		t.Fatalf("first Write: %v", err)
 	}
-	changed, err := tree.Write(unit())
+	ok, err := tree.Write(unit())
 	if err != nil {
 		t.Fatalf("second Write: %v", err)
 	}
-	if changed {
-		t.Error("changed: got true, want false on an identical write")
+	if ok {
+		t.Error("got true, want false on an identical write")
 	}
 }
 
@@ -65,12 +65,12 @@ func TestTreeOverwritesAFileTheOperatorEdited(t *testing.T) {
 	if err := os.WriteFile(path, []byte("edited by hand\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	changed, err := NewTree(root).Write(unit())
+	ok, err := NewTree(root).Write(unit())
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if !changed {
-		t.Error("changed: got false, want true when the content differs")
+	if !ok {
+		t.Error("got false, want true when the content differs")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -108,12 +108,12 @@ func TestTreeRemoveDeletesTheFileUnderTheRoot(t *testing.T) {
 	if _, err := tree.Write(unit()); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	removed, err := tree.Remove(unit().Path)
+	ok, err := tree.Remove(unit().Path)
 	if err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if !removed {
-		t.Error("removed: got false, want true on a file that was there")
+	if !ok {
+		t.Error("got false, want true on a file that was there")
 	}
 	if _, err := os.Stat(filepath.Join(root, unit().Path)); !os.IsNotExist(err) {
 		t.Error("Remove left the file in place")
@@ -121,12 +121,12 @@ func TestTreeRemoveDeletesTheFileUnderTheRoot(t *testing.T) {
 }
 
 func TestTreeRemoveIsANoOpOnAFileAlreadyGone(t *testing.T) {
-	removed, err := NewTree(t.TempDir()).Remove("etc/containers/systemd/web.container")
+	ok, err := NewTree(t.TempDir()).Remove("etc/containers/systemd/web.container")
 	if err != nil {
 		t.Errorf("Remove: %v, want nil on a file already gone", err)
 	}
-	if removed {
-		t.Error("removed: got true, want false on a file that was never there")
+	if ok {
+		t.Error("got true, want false on a file that was never there")
 	}
 }
 

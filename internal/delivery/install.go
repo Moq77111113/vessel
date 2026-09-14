@@ -1,0 +1,320 @@
+package delivery
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/machine"
+	"github.com/Moq77111113/vessel/internal/record"
+	"github.com/Moq77111113/vessel/internal/report"
+	"github.com/Moq77111113/vessel/internal/site"
+)
+
+// Install is one run of putting a bundle on one machine.
+type Install struct {
+	Artifact *bundle.Bundle
+	Root     string
+	Set      map[string]string
+	Machines []machine.Machine
+	Shell    *machine.Shell
+}
+
+// Upgrade installs a newer version, refusing a machine that holds no record of this delivery.
+func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report) error {
+	name := i.Artifact.Config.Name
+	dir, err := dirFor(i.Root, name)
+	if err != nil {
+		return err
+	}
+	_, found, err := record.NewRecords(dir).Read()
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%s: %w, run install instead", name, ErrNoRecord)
+	}
+	return i.Run(ctx, out, work)
+}
+
+// Run puts the images, the files and the secrets on the machine, then starts the services once.
+func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) error {
+	config := i.Artifact.Config
+	dir, err := dirFor(i.Root, config.Name)
+	if err != nil {
+		return err
+	}
+	records := record.NewRecords(dir)
+	current, found, err := records.Read()
+	if err != nil {
+		return err
+	}
+
+	host, err := i.checkMachine(ctx, config.Machine)
+	if err != nil {
+		return err
+	}
+	secrets, err := host.Secrets(ctx)
+	if err != nil {
+		return err
+	}
+	store, resolution, err := i.resolveValues(ctx, dir, config, secrets)
+	if err != nil {
+		return err
+	}
+	files, err := descriptor.Substitute(i.Artifact.Files, resolution.Values,
+		descriptor.SecretNames(config.Variables))
+	if err != nil {
+		return err
+	}
+
+	next := record.Record{
+		Name:     config.Name,
+		Version:  config.Version,
+		Machine:  config.Machine,
+		Platform: config.Platform,
+		Root:     i.Artifact.Root,
+		Files:    entriesOf(files),
+		Images:   digestsOf(config.Images),
+		Secrets:  unionNames(current.Secrets, namesOf(resolution.Secrets)),
+		Start:    time.Now().UTC(),
+	}
+	if err := openRecord(records, current, next); err != nil {
+		return err
+	}
+	images, changes, err := i.applyToMachine(ctx, out, work, machineChange{
+		host:       host,
+		records:    records,
+		current:    current,
+		next:       next,
+		found:      found,
+		store:      store,
+		resolution: resolution,
+		secrets:    secrets,
+		files:      files,
+	})
+	if err != nil {
+		return partway(err)
+	}
+
+	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %d of %d files changed",
+		config.Name, config.Version, len(images), changes, len(files)))
+	return nil
+}
+
+// machineChange carries what applyToMachine needs, once the record has marked the machine changed.
+type machineChange struct {
+	host       machine.Machine
+	records    *record.Records
+	current    record.Record
+	next       record.Record
+	found      bool
+	store      *site.Store
+	resolution site.Resolution
+	secrets    []string
+	files      []descriptor.File
+}
+
+// applyToMachine writes the files, the secrets and the images, starts the services and closes the record.
+func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.Report,
+	change machineChange) ([]string, int, error) {
+	if err := change.store.Write(change.resolution.Values); err != nil {
+		return nil, 0, err
+	}
+	if err := i.runActions(ctx, i.Artifact.Config.Actions); err != nil {
+		return nil, 0, err
+	}
+
+	tree := machine.NewTree(i.Root)
+	changes, err := writeFiles(tree, change.files)
+	if err != nil {
+		return nil, 0, err
+	}
+	if change.found {
+		if err := removeGone(ctx, work, change.host, tree, change.current.Files, change.next.Files); err != nil {
+			return nil, 0, err
+		}
+	}
+	if err := addSecrets(ctx, change.host, change.resolution.Secrets); err != nil {
+		return nil, 0, err
+	}
+	images, err := addImages(ctx, work, change.host, i.Artifact.LayoutDir)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	reportMissingSecrets(out, change.secrets, change.host.Requires(change.files))
+	if err := startServices(ctx, change.host, change.files); err != nil {
+		return nil, 0, err
+	}
+
+	change.next.End = time.Now().UTC()
+	if err := change.records.Write(change.next); err != nil {
+		return nil, 0, err
+	}
+	return images, changes, nil
+}
+
+// checkMachine finds the machine that built this bundle and refuses one that is not ready.
+func (i Install) checkMachine(ctx context.Context, name string) (machine.Machine, error) {
+	host, err := machine.ByName(i.Machines, name)
+	if err != nil {
+		return nil, err
+	}
+	if err := host.Check(ctx, i.Root); err != nil {
+		return nil, err
+	}
+	return host, nil
+}
+
+// resolveValues answers every variable the delivery declares, from this machine and this operator.
+func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Config,
+	secrets []string) (*site.Store, site.Resolution, error) {
+	store := site.NewStore(dir)
+	resolution, err := site.NewValues(store, i.Shell, i.Set, secrets).Resolve(ctx, config.Variables)
+	if err != nil {
+		return nil, site.Resolution{}, err
+	}
+	return store, resolution, nil
+}
+
+// openRecord writes the record this install opens, naming the files both versions carry.
+func openRecord(records *record.Records, current, next record.Record) error {
+	opening := next
+	opening.Files = union(current.Files, next.Files)
+	return records.Write(opening)
+}
+
+// runActions runs the commands the delivery declares, in the order it declares them.
+func (i Install) runActions(ctx context.Context, actions []string) error {
+	for _, action := range actions {
+		if err := i.Shell.Do(ctx, action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeFiles puts every file under the target root and counts the ones whose content changed.
+func writeFiles(tree *machine.Tree, files []descriptor.File) (int, error) {
+	changes := 0
+	for _, file := range files {
+		wrote, err := tree.Write(file)
+		if err != nil {
+			return changes, err
+		}
+		if wrote {
+			changes++
+		}
+	}
+	return changes, nil
+}
+
+// addSecrets puts every secret this run resolved into the machine's own secret store.
+func addSecrets(ctx context.Context, host machine.Host, secrets map[string]string) error {
+	for name, value := range secrets {
+		if err := host.AddSecret(ctx, name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addImages puts the images the bundle carries into local storage, and names them.
+func addImages(ctx context.Context, work report.Report, host machine.Host, dir string) ([]string, error) {
+	layout, err := machine.OpenLayout(dir)
+	if err != nil {
+		return nil, err
+	}
+	return host.AddImages(ctx, work, layout)
+}
+
+// startServices starts the services the units generate and fails on any that did not come up.
+func startServices(ctx context.Context, host machine.Host, files []descriptor.File) error {
+	if err := host.Start(ctx, files); err != nil {
+		return err
+	}
+	return checkServicesUp(ctx, host, files)
+}
+
+// ErrPartlyInstalled says the machine was already changed when this install stopped.
+var ErrPartlyInstalled = errors.New("this machine is partway through the install")
+
+// partway marks an error the machine was already changed for, and never marks it twice.
+func partway(err error) error {
+	if errors.Is(err, ErrPartlyInstalled) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrPartlyInstalled, err)
+}
+
+var ErrServiceIsDown = errors.New("did not start")
+
+// checkServicesUp fails naming every service the machine reports as down.
+func checkServicesUp(ctx context.Context, host machine.Host, files []descriptor.File) error {
+	services, err := host.Services(ctx, files)
+	if err != nil {
+		return err
+	}
+	var down []string
+	for _, service := range services {
+		if !service.Running {
+			down = append(down, service.Name)
+		}
+	}
+	if len(down) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", strings.Join(down, ", "), ErrServiceIsDown)
+}
+
+// reportMissingSecrets names the secrets the units expect and the machine does not hold.
+func reportMissingSecrets(out io.Writer, secrets, units []string) {
+	if len(units) == 0 {
+		return
+	}
+	present := make(map[string]bool, len(secrets))
+	for _, name := range secrets {
+		present[name] = true
+	}
+	var missing []string
+	for _, name := range units {
+		if !present[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "\nThese secrets are not on this machine yet, the units need them:\n")
+	for _, name := range missing {
+		fmt.Fprintf(out, "  podman secret create %s <file>\n", name)
+	}
+}
+
+// Errors a --set flag draws before an install looks at a bundle.
+var (
+	ErrBadSet     = errors.New("is not NAME=value")
+	ErrSetIsEmpty = errors.New("gives no value, and a value is never empty")
+)
+
+// ParseSet turns a repeated --set NAME=value flag into the values it names.
+func ParseSet(pairs []string) (map[string]string, error) {
+	values := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		name, value, ok := strings.Cut(pair, "=")
+		if !ok || name == "" {
+			return nil, fmt.Errorf("--set %q %w", pair, ErrBadSet)
+		}
+		if value == "" {
+			return nil, fmt.Errorf("--set %s %w", name, ErrSetIsEmpty)
+		}
+		values[name] = value
+	}
+	return values, nil
+}

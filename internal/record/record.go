@@ -1,4 +1,5 @@
-package machine
+// Package record is what a delivery put on this machine, and the history it keeps.
+package record
 
 import (
 	"encoding/json"
@@ -7,7 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Moq77111113/vessel/internal/delivery"
+	"github.com/Moq77111113/vessel/internal/atomicfile"
+	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
 const (
@@ -43,17 +45,13 @@ type Records struct {
 	dir string
 }
 
-// NewRecords returns the record store of a delivery under the target root, or refuses its name.
-func NewRecords(root, name string) (*Records, error) {
-	if err := delivery.CheckName(name); err != nil {
-		return nil, err
-	}
-	return &Records{dir: filepath.Join(root, valuesPath, name)}, nil
+// NewRecords returns the record store of a delivery under its directory.
+func NewRecords(dir string) *Records {
+	return &Records{dir: dir}
 }
 
-// Deliveries names every delivery this machine holds a record of, in order.
-func Deliveries(root string) ([]string, error) {
-	dir := filepath.Join(root, valuesPath)
+// Deliveries names every delivery a directory of them holds a record of, in order.
+func Deliveries(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -66,7 +64,7 @@ func Deliveries(root string) ([]string, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		if delivery.CheckName(entry.Name()) != nil {
+		if descriptor.CheckName(entry.Name()) != nil {
 			continue
 		}
 		if _, err := os.Stat(filepath.Join(dir, entry.Name(), recordName)); err != nil {
@@ -85,8 +83,8 @@ func (r *Records) Previous() (Record, bool, error) {
 	return read(filepath.Join(r.dir, previousName))
 }
 
-// Retire moves the record aside as the previous one, so this machine no longer claims to hold it.
-func (r *Records) Retire() error {
+// Remove takes the record off this machine, keeping it as the previous one.
+func (r *Records) Remove() error {
 	return rename(filepath.Join(r.dir, recordName), filepath.Join(r.dir, previousName))
 }
 
@@ -109,7 +107,7 @@ func (r *Records) Write(record Record) error {
 	if err != nil {
 		return fmt.Errorf("encode the record: %w", err)
 	}
-	return replace(path, body, 0o600)
+	return atomicfile.Write(path, body, 0o600)
 }
 
 func read(path string) (Record, bool, error) {
