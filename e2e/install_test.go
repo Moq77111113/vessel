@@ -114,7 +114,8 @@ func takeSystemctl(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	record := filepath.Join(dir, "calls")
-	script := "#!/bin/sh\necho \"$@\" >>" + record + "\n"
+	script := "#!/bin/sh\necho \"$@\" >>" + record + "\n" +
+		"if [ \"$1\" = is-active ]; then echo active; fi\n"
 	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

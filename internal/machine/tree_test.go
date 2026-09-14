@@ -3,6 +3,7 @@ package machine
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -98,6 +99,71 @@ func TestTreeRefusesAPathThatLeavesTheRoot(t *testing.T) {
 	file := descriptor.File{Path: "../escaped.container", Data: []byte("x")}
 	if _, err := NewTree(t.TempDir()).Write(file); err == nil {
 		t.Fatal("Write: want an error on a path leaving the root, got nil")
+	}
+}
+
+func TestTreeRemoveDeletesTheFileUnderTheRoot(t *testing.T) {
+	root := t.TempDir()
+	tree := NewTree(root)
+	if _, err := tree.Write(unit()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	removed, err := tree.Remove(unit().Path)
+	if err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if !removed {
+		t.Error("removed: got false, want true on a file that was there")
+	}
+	if _, err := os.Stat(filepath.Join(root, unit().Path)); !os.IsNotExist(err) {
+		t.Error("Remove left the file in place")
+	}
+}
+
+func TestTreeRemoveIsANoOpOnAFileAlreadyGone(t *testing.T) {
+	removed, err := NewTree(t.TempDir()).Remove("etc/containers/systemd/web.container")
+	if err != nil {
+		t.Errorf("Remove: %v, want nil on a file already gone", err)
+	}
+	if removed {
+		t.Error("removed: got true, want false on a file that was never there")
+	}
+}
+
+func TestTreeRemoveRefusesAPathThatLeavesTheRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(filepath.Dir(root), "escape.txt")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	_, err := NewTree(root).Remove("../escape.txt")
+	if !errors.Is(err, ErrPathEscapes) {
+		t.Errorf("got %v, want ErrPathEscapes", err)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Error("Remove deleted a file outside the root")
+	}
+}
+
+func TestTreeRemoveRefusesAPathThatNamesTheRootItself(t *testing.T) {
+	for _, name := range []string{"", ".", "./"} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			_, err := NewTree(root).Remove(name)
+			if !errors.Is(err, ErrPathEscapes) {
+				t.Errorf("got %v, want ErrPathEscapes", err)
+			}
+			if _, err := os.Stat(root); err != nil {
+				t.Error("Remove deleted the install root")
+			}
+		})
+	}
+}
+
+func TestTreeWriteRefusesAPathThatNamesTheRootItself(t *testing.T) {
+	file := descriptor.File{Path: "", Data: []byte("x")}
+	if _, err := NewTree(t.TempDir()).Write(file); !errors.Is(err, ErrPathEscapes) {
+		t.Errorf("got %v, want ErrPathEscapes", err)
 	}
 }
 

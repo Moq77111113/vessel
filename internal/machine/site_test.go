@@ -31,6 +31,15 @@ func TestSiteReadsNothingOnAMachineWithNoStore(t *testing.T) {
 	}
 }
 
+func TestSitePathNamesWhereTheValuesLive(t *testing.T) {
+	root := t.TempDir()
+	got := NewSite(root, "acme").Path()
+	want := filepath.Join(root, "var/lib/vessel/acme/values")
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestSiteWritesAFileNoOtherUserCanRead(t *testing.T) {
 	root := t.TempDir()
 	if err := NewSite(root, "acme").Write(map[string]string{"A": "x"}); err != nil {

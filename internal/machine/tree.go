@@ -29,7 +29,7 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if Same(path, digestOf(file.Data)) {
+	if Same(path, DigestOf(file.Data)) {
 		return false, nil
 	}
 	dir := filepath.Dir(path)
@@ -58,9 +58,24 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 	return true, nil
 }
 
+// Remove deletes the file at name under the root and reports whether it was there to delete.
+func (t *Tree) Remove(name string) (bool, error) {
+	path, err := t.resolve(name)
+	if err != nil {
+		return false, err
+	}
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("remove %s: %w", path, err)
+	}
+	return true, nil
+}
+
 func (t *Tree) resolve(name string) (string, error) {
 	clean := filepath.Clean(filepath.FromSlash(name))
-	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+	if filepath.IsAbs(clean) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("%q %w", name, ErrPathEscapes)
 	}
 	return filepath.Join(t.root, clean), nil
@@ -72,11 +87,11 @@ func Same(path, digest string) bool {
 	if err != nil {
 		return false
 	}
-	return digestOf(body) == digest
+	return DigestOf(body) == digest
 }
 
-// digestOf is the sha256 of data, in the form a bundle records.
-func digestOf(data []byte) string {
+// DigestOf is the sha256 of data, in the form a bundle records.
+func DigestOf(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }

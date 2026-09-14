@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
@@ -41,7 +42,7 @@ variables:
 	root := t.TempDir()
 	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
 	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
-		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture), dir, root, set, false); err != nil {
+		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture), dir, root, set, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "etc/acme/realm.json"))
@@ -58,7 +59,7 @@ func TestLoadWritesNothingWhenAValueIsMissing(t *testing.T) {
 	root := t.TempDir()
 	stub := &podmanStub{}
 	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
-		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, nil, false); err == nil {
+		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, nil, false, modeInstall); err == nil {
 		t.Fatal("load succeeded with no value for PUBLIC_HOST")
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd")); err == nil {
@@ -85,7 +86,7 @@ files:
 	root := t.TempDir()
 	stub := &podmanStub{watchFile: filepath.Join(root, "etc/acme/realm.json")}
 	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
-		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, nil, false); err != nil {
+		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, nil, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if !stub.sawFileAtLoad {
@@ -108,7 +109,7 @@ variables:
 	stub := &podmanStub{}
 	set := map[string]string{"DB_PASSWORD": "hunter2"}
 	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
-		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, set, false); err != nil {
+		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, set, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	created, ok := stub.secrets["DB_PASSWORD"]
@@ -131,12 +132,181 @@ func TestLoadStartsTheServicesItJustInstalled(t *testing.T) {
 	dir := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	stub := &podmanStub{}
 	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
-		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, t.TempDir(), nil, false); err != nil {
+		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, t.TempDir(), nil, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl start web.service") {
 		t.Errorf("load never started the service: %v", stub.calls)
 	}
+}
+
+func TestInstallFailsWhenAServiceDidNotStart(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	err := install(t, root, dir, []machine.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}})
+	if err == nil {
+		t.Fatal("install succeeded with a service that is down")
+	}
+	if !errors.Is(err, ErrServiceIsDown) {
+		t.Errorf("got %v, want ErrServiceIsDown", err)
+	}
+	if !strings.Contains(err.Error(), "web.service") {
+		t.Errorf("got %q, want the service name in it", err.Error())
+	}
+}
+
+func TestInstallNamesEveryServiceThatDidNotStart(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	down := []string{"db.service", "web.service"}
+	err := install(t, root, dir, []machine.Machine{downServices{quadlet.New((&podmanStub{}).run), down}})
+	if err == nil {
+		t.Fatal("install succeeded with two services down")
+	}
+	for _, name := range down {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("got %q, want %s in it", err.Error(), name)
+		}
+	}
+}
+
+func TestInstallLeavesTheRecordOpenWhenAServiceDidNotStart(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	if err := install(t, root, dir, []machine.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}}); err == nil {
+		t.Fatal("install succeeded with a service that is down")
+	}
+	record, found, err := machine.NewRecords(root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("no record after an install that failed")
+	}
+	if record.Done() {
+		t.Error("the record is closed even though a service failed to start")
+	}
+}
+
+// downServices wraps a machine.Machine and reports the named services as not running, so a test
+// drives an install past Start into a machine that never came up.
+type downServices struct {
+	machine.Machine
+	names []string
+}
+
+func (d downServices) Services(context.Context, []descriptor.File) ([]machine.Service, error) {
+	services := make([]machine.Service, 0, len(d.names))
+	for _, name := range d.names {
+		services = append(services, machine.Service{Name: name, Running: false})
+	}
+	return services, nil
+}
+
+func TestInstallWritesARecordOfWhatItPut(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+
+	if err := install(t, root, dir, nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	record, found, err := machine.NewRecords(root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("no record after an install that succeeded")
+	}
+	if record.Version != "1.4.0" {
+		t.Errorf("got %q, want %q", record.Version, "1.4.0")
+	}
+	if !record.Done() {
+		t.Error("the record is still open after an install that succeeded")
+	}
+	if len(record.Files) == 0 {
+		t.Error("the record names no file")
+	}
+	if len(record.Images) == 0 {
+		t.Error("the record names no image")
+	}
+	if !machine.Same(filepath.Join(root, record.Files[0].Path), record.Files[0].Digest) {
+		t.Errorf("the record's digest for %s does not match the file on disk", record.Files[0].Path)
+	}
+}
+
+func TestAFailedInstallLeavesAnOpenRecord(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+
+	err := installWithBrokenLoad(t, root, dir)
+	if err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	record, found, err := machine.NewRecords(root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !found {
+		t.Fatal("no record after an install that failed midway")
+	}
+	if record.Done() {
+		t.Error("the record is closed after an install that failed")
+	}
+	if len(record.Files) == 0 {
+		t.Fatal("the record names no file")
+	}
+	if !machine.Same(filepath.Join(root, record.Files[0].Path), record.Files[0].Digest) {
+		t.Errorf("%s never reached disk before the image load failed", record.Files[0].Path)
+	}
+}
+
+// writeBundle links a minimal bundle named delivery at version and returns its directory.
+func writeBundle(t *testing.T, delivery, version string) string {
+	t.Helper()
+	return linkTestBundle(t, map[string]string{
+		"vessel.yaml": fmt.Sprintf("name: %s\nversion: %s\n", delivery, version),
+	})
+}
+
+// install runs load against dir under root, through kinds (a single working podman stub when nil).
+func install(t *testing.T, root, dir string, kinds []machine.Machine) error {
+	t.Helper()
+	if kinds == nil {
+		kinds = []machine.Machine{quadlet.New((&podmanStub{}).run)}
+	}
+	return load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+		kinds, machine.NewShell(noCapture), dir, root, nil, false, modeInstall)
+}
+
+// upgrade runs load in upgrade mode against dir under root, through kinds (a single working
+// podman stub when nil).
+func upgrade(t *testing.T, root, dir string, kinds []machine.Machine) error {
+	t.Helper()
+	if kinds == nil {
+		kinds = []machine.Machine{quadlet.New((&podmanStub{}).run)}
+	}
+	return load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+		kinds, machine.NewShell(noCapture), dir, root, nil, false, modeUpgrade)
+}
+
+// installWithBrokenLoad runs install through a machine whose AddImages fails after the files
+// already reached disk.
+func installWithBrokenLoad(t *testing.T, root, dir string) error {
+	t.Helper()
+	return install(t, root, dir, []machine.Machine{brokenImages{quadlet.New((&podmanStub{}).run)}})
+}
+
+// brokenImages wraps a machine.Machine and fails AddImages, so a test drives a load that dies
+// after the files and before the images.
+type brokenImages struct {
+	machine.Machine
+}
+
+// errBrokenImageLoad is the failure brokenImages.AddImages reports.
+var errBrokenImageLoad = errors.New("broken image load")
+
+func (brokenImages) AddImages(context.Context, report.Report, *machine.Layout) ([]string, error) {
+	return nil, errBrokenImageLoad
 }
 
 // noCapture is the shell of a test where no delivery action or "from" ever runs.
@@ -163,6 +333,8 @@ func (p *podmanStub) run(_ context.Context, stdin io.Reader, name string, args .
 		return nil, nil
 	case len(args) >= 2 && args[0] == "secret" && args[1] == "ls":
 		return nil, nil
+	case len(args) >= 1 && args[0] == "is-active":
+		return []byte("active\n"), nil
 	case len(args) >= 3 && args[0] == "secret" && args[1] == "create":
 		body, _ := io.ReadAll(stdin)
 		if p.secrets == nil {
@@ -243,9 +415,9 @@ func TestLoadRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T
 	root := t.TempDir()
 	err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
 		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture),
-		unknownKindBundle(t), root, nil, false)
-	if !errors.Is(err, machine.ErrNoMachine) {
-		t.Fatalf("got %v, want ErrNoMachine", err)
+		unknownKindBundle(t), root, nil, false, modeInstall)
+	if !errors.Is(err, machine.ErrUnknownMachine) {
+		t.Fatalf("got %v, want ErrUnknownMachine", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/realm.json")); err == nil {
 		t.Error("load wrote a file for a bundle it cannot install")
@@ -254,7 +426,7 @@ func TestLoadRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T
 
 func TestLoadRefusesABundleThatCarriesNoName(t *testing.T) {
 	err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
-		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture), namelessBundle(t), t.TempDir(), nil, false)
+		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture), namelessBundle(t), t.TempDir(), nil, false, modeInstall)
 	if !errors.Is(err, ErrBundleHasNoName) {
 		t.Errorf("got %v, want ErrBundleHasNoName", err)
 	}

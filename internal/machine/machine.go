@@ -15,6 +15,9 @@ import (
 // ErrNoMachine says no machine recognized the source directory.
 var ErrNoMachine = errors.New("no descriptor found")
 
+// ErrUnknownMachine says this build carries no machine of that kind.
+var ErrUnknownMachine = errors.New("this build does not know that machine kind")
+
 // Service is one unit of a delivery and whether the machine runs it.
 type Service struct {
 	Name    string
@@ -54,7 +57,7 @@ func ByName(machines []Machine, name string) (Machine, error) {
 			return candidate, nil
 		}
 	}
-	return nil, fmt.Errorf("%w: this build cannot read %q", ErrNoMachine, name)
+	return nil, fmt.Errorf("%w: %q", ErrUnknownMachine, name)
 }
 
 // Pick returns the first machine that recognizes the directory, trying them in order.

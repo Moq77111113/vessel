@@ -25,6 +25,9 @@ func NewSite(root, name string) *Site {
 	return &Site{path: filepath.Join(root, valuesPath, name, "values")}
 }
 
+// Path is where this store keeps the values, under the target root.
+func (v *Site) Path() string { return v.path }
+
 // Read returns the values this machine holds, empty on a machine that holds none.
 func (v *Site) Read() (map[string]string, error) {
 	data, err := os.ReadFile(v.path)

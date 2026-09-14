@@ -32,6 +32,6 @@ func newVessel() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	vessel.AddCommand(newBuild(), newInspect(), newInstall())
+	vessel.AddCommand(newBuild(), newInspect(), newInstall(), newUpgrade(), newStatus(), newUninstall())
 	return vessel
 }

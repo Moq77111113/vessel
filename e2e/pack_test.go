@@ -40,12 +40,12 @@ func TestPackWritesAnExecutable(t *testing.T) {
 	}
 }
 
-func TestAPackedFileOffersInstallAndNothingToBuild(t *testing.T) {
+func TestAPackedFileOffersInstallUpgradeAndNothingToBuild(t *testing.T) {
 	output, err := exec.Command(packStack(t), "--help").CombinedOutput()
 	if err != nil {
 		t.Fatalf("--help: %v: %s", err, output)
 	}
-	for _, verb := range []string{"inspect", "install"} {
+	for _, verb := range []string{"inspect", "install", "upgrade"} {
 		if !strings.Contains(string(output), verb) {
 			t.Errorf("the packed file does not offer %q: %s", verb, output)
 		}
@@ -87,5 +87,10 @@ func TestAPackedFileInstallsAndStartsTheStack(t *testing.T) {
 	}
 	if !strings.Contains(string(asked), "start db.service web.service") {
 		t.Errorf("got %q, want it to start the services the stack carries", asked)
+	}
+	for _, service := range []string{"db.service", "web.service"} {
+		if !strings.Contains(string(asked), "is-active "+service) {
+			t.Errorf("got %q, want it to check %s is running", asked, service)
+		}
 	}
 }

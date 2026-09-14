@@ -29,8 +29,8 @@ func TestVesselReadsQuadlet(t *testing.T) {
 	}
 }
 
-func TestVesselOffersBuildInspectAndInstall(t *testing.T) {
-	want := []string{"build", "inspect", "install"}
+func TestVesselOffersBuildInspectInstallStatusUninstallAndUpgrade(t *testing.T) {
+	want := []string{"build", "inspect", "install", "status", "uninstall", "upgrade"}
 	var got []string
 	for _, command := range newVessel().Commands() {
 		got = append(got, command.Name())

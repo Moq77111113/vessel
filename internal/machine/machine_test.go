@@ -109,8 +109,8 @@ func TestByNameFindsTheMachineThatBuiltABundle(t *testing.T) {
 
 func TestByNameRefusesABundleThisBuildCannotRead(t *testing.T) {
 	_, err := machine.ByName([]machine.Machine{stub{name: "quadlet"}}, "compose")
-	if !errors.Is(err, machine.ErrNoMachine) {
-		t.Fatalf("got %v, want ErrNoMachine", err)
+	if !errors.Is(err, machine.ErrUnknownMachine) {
+		t.Fatalf("got %v, want ErrUnknownMachine", err)
 	}
 	if !strings.Contains(err.Error(), "compose") {
 		t.Errorf("got %q, want the kind it was asked for named in it", err.Error())
