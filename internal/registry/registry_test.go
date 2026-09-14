@@ -165,12 +165,12 @@ func TestImageReturnsTheManifestResolveNamed(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Image: %v", err)
 			}
-			pulled, err := image.Digest()
+			hash, err := image.Digest()
 			if err != nil {
 				t.Fatalf("Digest: %v", err)
 			}
-			if pulled.String() != digest {
-				t.Errorf("Image returned %s, Resolve returned %s", pulled, digest)
+			if hash.String() != digest {
+				t.Errorf("Image returned %s, Resolve returned %s", hash, digest)
 			}
 		})
 	}

@@ -50,7 +50,7 @@ func Pack(stub io.Reader, bundle, out string, work report.Report) error {
 		return fmt.Errorf("write the trailer of %s: %w", out, err)
 	}
 	length := make([]byte, lengthSize)
-	binary.BigEndian.PutUint64(length, uint64(counter.written))
+	binary.BigEndian.PutUint64(length, uint64(counter.bytes))
 	if _, err := file.Write(length); err != nil {
 		return fmt.Errorf("write the trailer of %s: %w", out, err)
 	}
@@ -185,12 +185,12 @@ func writeTar(out io.Writer, bundle string, work report.Report) error {
 
 // counting counts what goes through it, so the trailer can say how long the payload is.
 type counting struct {
-	writer  io.Writer
-	written int64
+	writer io.Writer
+	bytes  int64
 }
 
 func (c *counting) Write(data []byte) (int, error) {
 	n, err := c.writer.Write(data)
-	c.written += int64(n)
+	c.bytes += int64(n)
 	return n, err
 }

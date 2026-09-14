@@ -19,13 +19,13 @@ func buildVessel(t *testing.T) string {
 	return path
 }
 
-// packStack links the fixture stack and packs it into one executable.
+// packStack builds the fixture stack into one executable.
 func packStack(t *testing.T) string {
 	t.Helper()
 	vessel, out := buildVessel(t), filepath.Join(t.TempDir(), "myapp")
-	pack := exec.Command(vessel, "pack", linkStack(t), "-o", out)
-	if output, err := pack.CombinedOutput(); err != nil {
-		t.Fatalf("vessel pack: %v: %s", err, output)
+	build := exec.Command(vessel, "build", serveStack(t), "-o", out, "--name", "acme", "--version", "1.0")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("vessel build: %v: %s", err, output)
 	}
 	return out
 }
@@ -40,17 +40,17 @@ func TestPackWritesAnExecutable(t *testing.T) {
 	}
 }
 
-func TestAPackedFileOffersInstallAndNothingToBuild(t *testing.T) {
+func TestAPackedFileOffersInstallUpgradeAndNothingToBuild(t *testing.T) {
 	output, err := exec.Command(packStack(t), "--help").CombinedOutput()
 	if err != nil {
 		t.Fatalf("--help: %v: %s", err, output)
 	}
-	for _, verb := range []string{"inspect", "install"} {
+	for _, verb := range []string{"inspect", "install", "upgrade"} {
 		if !strings.Contains(string(output), verb) {
 			t.Errorf("the packed file does not offer %q: %s", verb, output)
 		}
 	}
-	for _, verb := range []string{"link", "pack"} {
+	for _, verb := range []string{"build", "link", "pack"} {
 		if strings.Contains(string(output), verb) {
 			t.Errorf("the packed file still offers %q, it should not: %s", verb, output)
 		}
@@ -66,21 +66,5 @@ func TestAPackedFileInspectsWhatItCarries(t *testing.T) {
 		if !strings.Contains(string(output), want) {
 			t.Errorf("inspect does not mention %q: %s", want, output)
 		}
-	}
-}
-
-func TestAPackedFileInstallsTheStack(t *testing.T) {
-	needPodman(t)
-
-	root := t.TempDir()
-	output, err := exec.Command(packStack(t), "install", "--root", root).CombinedOutput()
-	if err != nil {
-		t.Fatalf("install: %v: %s", err, output)
-	}
-	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd/web.container")); err != nil {
-		t.Fatalf("the unit never reached the root: %v", err)
-	}
-	if !strings.Contains(string(output), "systemctl start") {
-		t.Errorf("install does not say how to start it: %s", output)
 	}
 }

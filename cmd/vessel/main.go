@@ -10,6 +10,6 @@ import (
 func main() {
 	if err := cli.New().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "vessel:", err)
-		os.Exit(1)
+		os.Exit(cli.Code(err))
 	}
 }

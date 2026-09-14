@@ -27,7 +27,7 @@ func inspectBundle(out io.Writer, dir string) error {
 		return err
 	}
 	fmt.Fprintf(out, "%s %s, read by %s, resolved for %s\n",
-		artifact.Config.Name, artifact.Config.Version, artifact.Config.Reader, artifact.Config.Platform)
+		artifact.Config.Name, artifact.Config.Version, artifact.Config.Machine, artifact.Config.Platform)
 	lines := report.New(out)
 	for _, image := range artifact.Config.Images {
 		lines.Line("Image", fmt.Sprintf("%s %s", image.Ref, image.Digest))

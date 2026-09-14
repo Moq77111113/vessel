@@ -6,15 +6,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/installer"
+	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/quadlet"
 )
 
-// readers is the one place that names a concrete format. Pick tries them in this order.
-var readers = []descriptor.Reader{
-	quadlet.NewReader(),
+// machines is the one place that names a concrete deployment kind. Pick tries them in order.
+var machines = []machine.Machine{
+	quadlet.New(machine.Exec),
 }
+
+// machineRoot is where a verb reads and writes: this machine, never a directory beside it.
+const machineRoot = "/"
 
 // New returns the command tree this binary offers. A binary packed with a bundle
 // installs that bundle and cannot build another one.
@@ -32,6 +35,6 @@ func newVessel() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	vessel.AddCommand(newLink(), newPack(), newLoad(), newInspect())
+	vessel.AddCommand(newBuild(), newInspect(), newInstallCommand(), newUpgradeCommand(), newStatus(), newUninstall())
 	return vessel
 }

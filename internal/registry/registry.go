@@ -36,11 +36,11 @@ func (c *Client) Resolve(ctx context.Context, ref descriptor.Ref, platform strin
 	if err != nil {
 		return "", err
 	}
-	parsed, err := name.ParseReference(ref.String())
+	target, err := name.ParseReference(ref.String())
 	if err != nil {
 		return "", fmt.Errorf("%s: %w: %s", ref, ErrRefSyntax, err)
 	}
-	manifest, err := remote.Get(parsed, options...)
+	manifest, err := remote.Get(target, options...)
 	if err != nil {
 		return "", fmt.Errorf("resolve %s: %w", ref, err)
 	}
@@ -57,7 +57,7 @@ func (c *Client) Resolve(ctx context.Context, ref descriptor.Ref, platform strin
 
 // Image pulls a reference already pinned to a digest.
 func (c *Client) Image(ctx context.Context, ref descriptor.Ref) (v1.Image, error) {
-	parsed, err := name.ParseReference(ref.String())
+	target, err := name.ParseReference(ref.String())
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w: %s", ref, ErrRefSyntax, err)
 	}
@@ -65,7 +65,7 @@ func (c *Client) Image(ctx context.Context, ref descriptor.Ref) (v1.Image, error
 	if err != nil {
 		return nil, err
 	}
-	image, err := remote.Image(parsed, options...)
+	image, err := remote.Image(target, options...)
 	if err != nil {
 		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}
@@ -83,9 +83,9 @@ func remoteOptions(ctx context.Context, platform string) ([]remote.Option, error
 	if fields := strings.Split(platform, "/"); len(fields) < 2 || fields[0] == "" || fields[1] == "" {
 		return nil, fmt.Errorf("%q: %w, want os/arch", platform, ErrPlatform)
 	}
-	parsed, err := v1.ParsePlatform(platform)
+	spec, err := v1.ParsePlatform(platform)
 	if err != nil {
 		return nil, fmt.Errorf("%q: %w", platform, ErrPlatform)
 	}
-	return append(options, remote.WithPlatform(*parsed)), nil
+	return append(options, remote.WithPlatform(*spec)), nil
 }

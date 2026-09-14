@@ -36,7 +36,7 @@ func contents(t *testing.T) Contents {
 	return Contents{
 		Layout: imageLayout(t),
 		Config: Config{
-			Name: "acme", Version: "1.4.0", Reader: "quadlet", Platform: "linux/amd64",
+			Name: "acme", Version: "1.4.0", Machine: "quadlet", Platform: "linux/amd64",
 			Images: []Image{{Ref: "reg.io/app:1.0", Digest: "sha256:aaa"}},
 		},
 		Files: []descriptor.File{
@@ -210,4 +210,11 @@ func TestTheBundleRootCarriesATagSoAToolCanAddressIt(t *testing.T) {
 		return
 	}
 	t.Fatal("no bundle manifest in the index")
+}
+
+func TestAnIndexWithNoFilesManifestIsNotAVesselBundle(t *testing.T) {
+	_, err := filesEntry(index{Manifests: []entry{{ArtifactType: "application/vnd.other"}}})
+	if !errors.Is(err, ErrBundleShape) {
+		t.Errorf("got %v, want ErrBundleShape", err)
+	}
 }

@@ -4,32 +4,53 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/machine"
 )
 
-func TestVesselReadsQuadlet(t *testing.T) {
-	reader, err := descriptor.Pick(readers, os.DirFS("../quadlet/testdata/stack"))
-	if err != nil {
-		t.Fatalf("Pick: %v", err)
+func TestTheCompositionRootNamesOneMachineKind(t *testing.T) {
+	if len(machines) != 1 {
+		t.Fatalf("got %d machines, want 1", len(machines))
 	}
-	if got, want := reader.Name(), "quadlet"; got != want {
+	if got, want := machines[0].Name(), "quadlet"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
 
-func TestVesselOffersTheThreeCommands(t *testing.T) {
-	want := map[string]bool{"link": false, "load": false, "inspect": false}
-	for _, command := range New().Commands() {
-		want[command.Name()] = true
+func TestVesselReadsQuadlet(t *testing.T) {
+	kind, err := machine.Pick(machines, os.DirFS("../quadlet/testdata/stack"))
+	if err != nil {
+		t.Fatalf("Pick: %v", err)
 	}
-	for command, offered := range want {
-		if !offered {
-			t.Errorf("vessel does not offer %q", command)
-		}
+	if got, want := kind.Name(), "quadlet"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
+}
+
+func TestVesselOffersSixVerbs(t *testing.T) {
+	if got, want := len(verbs()), 6; got != want {
+		t.Errorf("got %d verbs, want %d: %v", got, want, verbs())
+	}
+}
+
+func TestVesselListsItsVerbsInOrder(t *testing.T) {
+	want := []string{"build", "inspect", "install", "status", "uninstall", "upgrade"}
+	if got := verbs(); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// verbs names the commands vessel offers, in the order it lists them.
+func verbs() []string {
+	var names []string
+	for _, command := range newVessel().Commands() {
+		names = append(names, command.Name())
+	}
+	return names
 }
 
 func TestVesselRejectsAnUnknownCommand(t *testing.T) {
@@ -42,8 +63,8 @@ func TestVesselRejectsAnUnknownCommand(t *testing.T) {
 	}
 }
 
-func TestLinkRefusesToRunWithoutAnOutputDirectory(t *testing.T) {
-	err := runVessel(t, "link", t.TempDir())
+func TestBuildRefusesToRunWithoutAnOutputFile(t *testing.T) {
+	err := runVessel(t, "build", t.TempDir())
 	if err == nil {
 		t.Fatal("want an error, got nil")
 	}
@@ -70,9 +91,9 @@ func runVessel(t *testing.T, args ...string) error {
 	return vessel.Execute()
 }
 
-func TestLoadOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
-	err := runVessel(t, "load", t.TempDir(), "--root", t.TempDir())
-	if !errors.Is(err, ErrNoBundle) {
+func TestInstallOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
+	err := runVessel(t, "install", t.TempDir())
+	if !errors.Is(err, bundle.ErrNotABundle) {
 		t.Errorf("got %v, want ErrNoBundle", err)
 	}
 }

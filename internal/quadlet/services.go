@@ -38,6 +38,18 @@ func (r *Reader) Start(files []descriptor.File) []string {
 	return lines
 }
 
+// Stop returns the systemctl lines that bring these units down, sibling units included.
+func (r *Reader) Stop(files []descriptor.File) []string {
+	var lines []string
+	if services := serviceNames(files); len(services) > 0 {
+		lines = append(lines, "systemctl stop "+strings.Join(services, " "))
+	}
+	for _, name := range siblings(files) {
+		lines = append(lines, "systemctl disable --now "+name)
+	}
+	return lines
+}
+
 // siblings names the plain systemd units these files carry, in a stable order.
 func siblings(files []descriptor.File) []string {
 	var names []string

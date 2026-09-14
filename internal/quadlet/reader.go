@@ -1,4 +1,4 @@
-// Package quadlet reads a directory of systemd quadlet units.
+// Package quadlet reads a directory of systemd quadlet units and runs them on podman.
 package quadlet
 
 import (
@@ -22,15 +22,14 @@ const siblingPath = "etc/systemd/system"
 
 const imageKey = "Image"
 
-// ErrNoUnit says the source directory holds no quadlet unit at all.
 var ErrNoUnit = errors.New("no quadlet unit in the source directory")
 
 var unitSuffixes = []string{".container", ".network", ".volume", ".pod", ".build", ".image", ".kube"}
 
 var siblingSuffixes = []string{".timer", ".socket", ".path"}
 
-// carriedSuffixes is every unit file kind vessel takes out of a source directory.
-var carriedSuffixes = slices.Concat(unitSuffixes, siblingSuffixes)
+// suffixes is every unit file kind vessel takes out of a source directory.
+var suffixes = slices.Concat(unitSuffixes, siblingSuffixes)
 
 // pathFor returns where a unit file goes under the target root.
 func pathFor(name string) string {
@@ -122,7 +121,7 @@ func unitNames(dir fs.FS) ([]string, error) {
 }
 
 func carries(name string) bool {
-	for _, suffix := range carriedSuffixes {
+	for _, suffix := range suffixes {
 		if strings.HasSuffix(name, suffix) {
 			return true
 		}
@@ -155,11 +154,11 @@ func imageRelocations(index int, data []byte) ([]descriptor.Relocation, error) {
 }
 
 func imageValue(line []byte) (int, []byte) {
-	trimmed := bytes.TrimLeft(line, " \t")
-	if len(trimmed) == 0 || trimmed[0] == '#' || trimmed[0] == ';' {
+	rest := bytes.TrimLeft(line, " \t")
+	if len(rest) == 0 || rest[0] == '#' || rest[0] == ';' {
 		return -1, nil
 	}
-	rest, ok := cutKey(trimmed, imageKey)
+	rest, ok := cutKey(rest, imageKey)
 	if !ok {
 		return -1, nil
 	}
