@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/quadlet"
@@ -136,7 +138,7 @@ func TestUninstallNamesTheSiteValuesItLeaves(t *testing.T) {
 	if err := uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
-	if !strings.Contains(out.String(), machine.NewSite(root, "acme").Path()) {
+	if !strings.Contains(out.String(), siteFor(t, root, "acme").Path()) {
 		t.Errorf("got %q, want the site values path named", out.String())
 	}
 }
@@ -182,5 +184,29 @@ func writeFile(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+func TestUninstallRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
+	err := uninstall(context.Background(), io.Discard, testKinds(), t.TempDir(), "../../../etc/cron.daily")
+	if !errors.Is(err, delivery.ErrDeliveryName) {
+		t.Errorf("got %v, want ErrDeliveryName", err)
+	}
+}
+
+func TestUninstallDisablesATimerTheDeliveryCarried(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "etc/systemd/system/backup.timer"), "[Timer]\n")
+	writeRecord(t, root, machine.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet",
+		Files: []machine.Entry{{Path: "etc/systemd/system/backup.timer"}},
+		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
+	})
+	stub := &podmanStub{}
+	if err := uninstall(context.Background(), io.Discard, []machine.Machine{quadlet.New(stub.run)}, root, "acme"); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	if !slices.Contains(stub.calls, "systemctl disable --now backup.timer") {
+		t.Errorf("uninstall never disabled the timer: %v", stub.calls)
 	}
 }

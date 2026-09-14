@@ -1,6 +1,7 @@
 package machine_test
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -8,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/machine"
 )
 
 func TestARecordSurvivesAWriteAndARead(t *testing.T) {
 	root := t.TempDir()
-	records := machine.NewRecords(root, "acme")
+	records := recordsFor(t, root, "acme")
 	want := machine.Record{
 		Name:    "acme",
 		Version: "1.4.0",
@@ -41,7 +43,7 @@ func TestARecordSurvivesAWriteAndARead(t *testing.T) {
 }
 
 func TestReadReportsNoRecordOnAMachineThatHoldsNone(t *testing.T) {
-	_, found, err := machine.NewRecords(t.TempDir(), "acme").Read()
+	_, found, err := recordsFor(t, t.TempDir(), "acme").Read()
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -51,7 +53,7 @@ func TestReadReportsNoRecordOnAMachineThatHoldsNone(t *testing.T) {
 }
 
 func TestAWriteKeepsThePreviousRecord(t *testing.T) {
-	records := machine.NewRecords(t.TempDir(), "acme")
+	records := recordsFor(t, t.TempDir(), "acme")
 	if err := records.Write(machine.Record{Name: "acme", Version: "1.3.0"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -68,7 +70,7 @@ func TestAWriteKeepsThePreviousRecord(t *testing.T) {
 }
 
 func TestAnOpenRecordSaysTheInstallNeverFinished(t *testing.T) {
-	records := machine.NewRecords(t.TempDir(), "acme")
+	records := recordsFor(t, t.TempDir(), "acme")
 	if err := records.Write(machine.Record{Name: "acme", Start: time.Now().UTC()}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -82,7 +84,7 @@ func TestAnOpenRecordSaysTheInstallNeverFinished(t *testing.T) {
 }
 
 func TestClosingARecordAtTheSameVersionKeepsThePreviousRecord(t *testing.T) {
-	records := machine.NewRecords(t.TempDir(), "acme")
+	records := recordsFor(t, t.TempDir(), "acme")
 	if err := records.Write(machine.Record{Name: "acme", Version: "1.3.0"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -102,7 +104,7 @@ func TestClosingARecordAtTheSameVersionKeepsThePreviousRecord(t *testing.T) {
 }
 
 func TestRetireMovesTheRecordToPrevious(t *testing.T) {
-	records := machine.NewRecords(t.TempDir(), "acme")
+	records := recordsFor(t, t.TempDir(), "acme")
 	if err := records.Write(machine.Record{Name: "acme", Version: "1.4.0"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -156,7 +158,7 @@ func TestAFailedWriteLeavesTheDamagedRecordOnDisk(t *testing.T) {
 // damagedRecord writes a valid record, then replaces it on disk with bytes that are not JSON.
 func damagedRecord(t *testing.T, root string) (records *machine.Records, path string, damaged []byte) {
 	t.Helper()
-	records = machine.NewRecords(root, "acme")
+	records = recordsFor(t, root, "acme")
 	if err := records.Write(machine.Record{Name: "acme", Version: "1.3.0"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -174,7 +176,7 @@ func assertNoTempFile(t *testing.T, root string) {
 		if err != nil {
 			return err
 		}
-		if !entry.IsDir() && strings.HasPrefix(entry.Name(), ".record-") {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), ".vessel-") {
 			t.Errorf("leftover temp file %s", path)
 		}
 		return nil
@@ -182,4 +184,20 @@ func assertNoTempFile(t *testing.T, root string) {
 	if err != nil {
 		t.Fatalf("walk %s: %v", root, err)
 	}
+}
+
+func TestNewRecordsRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
+	_, err := machine.NewRecords(t.TempDir(), "../../../etc/cron.daily")
+	if !errors.Is(err, delivery.ErrDeliveryName) {
+		t.Errorf("got %v, want ErrDeliveryName", err)
+	}
+}
+
+func recordsFor(t *testing.T, root, name string) *machine.Records {
+	t.Helper()
+	records, err := machine.NewRecords(root, name)
+	if err != nil {
+		t.Fatalf("NewRecords: %v", err)
+	}
+	return records
 }

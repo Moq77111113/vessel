@@ -119,3 +119,18 @@ func TestStopAsksNothingWhenNoUnitStartsAService(t *testing.T) {
 		t.Errorf("got %v, want no command", system.lines)
 	}
 }
+
+func TestStopDisablesATimerTheDeliveryCarries(t *testing.T) {
+	system := &calls{}
+	files := []descriptor.File{
+		{Path: "etc/containers/systemd/web.container"},
+		{Path: "etc/systemd/system/backup.timer"},
+	}
+	if err := quadlet.New(system.run).Stop(context.Background(), files); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	want := []string{"systemctl stop web.service", "systemctl disable --now backup.timer"}
+	if !slices.Equal(system.lines, want) {
+		t.Errorf("got %v, want %v", system.lines, want)
+	}
+}

@@ -24,7 +24,6 @@ var (
 	ErrTargetNotAbsolute = errors.New("a file target is not an absolute path")
 	ErrTargetEscapes     = errors.New("a file target leaves the target root")
 	ErrTargetNotClean    = errors.New("a file target is not a clean path")
-	ErrSecretAsks        = errors.New("a secret is never asked on screen, declare a from: or pass --set")
 	ErrTargetIsRoot      = errors.New("a file target names no file")
 	ErrFileSource        = errors.New("a file carries no source")
 )
@@ -44,10 +43,10 @@ type File struct {
 
 // Variable is a site value the machine supplies at install time.
 type Variable struct {
-	Name   string `yaml:"name" json:"name"`
-	Ask    string `yaml:"ask,omitempty" json:"ask,omitempty"`
-	From   string `yaml:"from,omitempty" json:"from,omitempty"`
-	Secret bool   `yaml:"secret,omitempty" json:"secret,omitempty"`
+	Name        string `yaml:"name" json:"name"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	From        string `yaml:"from,omitempty" json:"from,omitempty"`
+	Secret      bool   `yaml:"secret,omitempty" json:"secret,omitempty"`
 }
 
 // Delivery is what vessel.yaml declares.
@@ -114,9 +113,6 @@ func Read(dir fs.FS) (Delivery, error) {
 	for _, variable := range declaration.Variables {
 		if !variableName.MatchString(variable.Name) {
 			return Delivery{}, fmt.Errorf("%q: %w", variable.Name, ErrVariableName)
-		}
-		if variable.Secret && variable.Ask != "" {
-			return Delivery{}, fmt.Errorf("%s: %w", variable.Name, ErrSecretAsks)
 		}
 	}
 	for _, file := range declaration.Files {

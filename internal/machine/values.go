@@ -1,20 +1,17 @@
 package machine
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"sort"
-	"strings"
 
 	"github.com/Moq77111113/vessel/internal/delivery"
 )
 
 // Errors Resolve returns.
 var (
-	ErrNoValue      = errors.New("no value for this variable")
+	ErrNoValue      = errors.New("is not set")
 	ErrSetIsUnknown = errors.New("--set names a variable this delivery never declared")
 	ErrSecretHeld   = errors.New("this machine already holds this secret, --set cannot replace it")
 )
@@ -31,25 +28,15 @@ type Values struct {
 	shell   *Shell
 	set     map[string]string
 	secrets map[string]bool
-	out     io.Writer
-	ask     *bufio.Reader
 }
 
-// NewValues returns the values of one run, read from this machine, this delivery and this operator.
-func NewValues(site *Site, shell *Shell, set map[string]string, secrets []string,
-	out io.Writer, ask io.Reader) *Values {
+// NewValues returns the values of one run: --set, what a previous install stored, then from:.
+func NewValues(site *Site, shell *Shell, set map[string]string, secrets []string) *Values {
 	machineSecrets := make(map[string]bool, len(secrets))
 	for _, name := range secrets {
 		machineSecrets[name] = true
 	}
-	return &Values{
-		site:    site,
-		shell:   shell,
-		set:     set,
-		secrets: machineSecrets,
-		out:     out,
-		ask:     bufio.NewReader(ask),
-	}
+	return &Values{site: site, shell: shell, set: set, secrets: machineSecrets}
 }
 
 // Resolve answers every variable, or names the first one it cannot.
@@ -113,23 +100,19 @@ func (v *Values) value(ctx context.Context, variable delivery.Variable,
 		return value, nil
 	}
 	if variable.From != "" {
-		return v.shell.Value(ctx, variable.From)
+		value, err := v.shell.Value(ctx, variable.From)
+		if err != nil {
+			return "", fmt.Errorf("%s %w: %s", variable.Name, ErrNoValue, err)
+		}
+		return value, nil
 	}
-	if variable.Ask != "" {
-		return v.question(variable)
-	}
-	return "", fmt.Errorf("%s: %w", variable.Name, ErrNoValue)
+	return "", noValue(variable)
 }
 
-func (v *Values) question(variable delivery.Variable) (string, error) {
-	fmt.Fprintf(v.out, "%s (%s): ", variable.Name, variable.Ask)
-	line, err := v.ask.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read the answer for %s: %w", variable.Name, err)
+// noValue refuses a variable nothing answers, naming it and what it is.
+func noValue(variable delivery.Variable) error {
+	if variable.Description == "" {
+		return fmt.Errorf("%s %w", variable.Name, ErrNoValue)
 	}
-	answer := strings.TrimSpace(line)
-	if answer == "" {
-		return "", fmt.Errorf("%s: %w", variable.Name, ErrNoValue)
-	}
-	return answer, nil
+	return fmt.Errorf("%s %w: %s", variable.Name, ErrNoValue, variable.Description)
 }

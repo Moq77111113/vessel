@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
+	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
 	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/quadlet"
@@ -35,13 +36,13 @@ files:
     target: /etc/acme/realm.json
 variables:
   - name: PUBLIC_HOST
-    ask: public address
+    description: public address
 `,
 		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
 	})
 	root := t.TempDir()
 	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
-	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture), dir, root, set, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestLoadWritesNothingWhenAValueIsMissing(t *testing.T) {
 	dir := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
 	root := t.TempDir()
 	stub := &podmanStub{}
-	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, nil, false, modeInstall); err == nil {
 		t.Fatal("load succeeded with no value for PUBLIC_HOST")
 	}
@@ -85,7 +86,7 @@ files:
 	})
 	root := t.TempDir()
 	stub := &podmanStub{watchFile: filepath.Join(root, "etc/acme/realm.json")}
-	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, nil, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -108,7 +109,7 @@ variables:
 	root := t.TempDir()
 	stub := &podmanStub{}
 	set := map[string]string{"DB_PASSWORD": "hunter2"}
-	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, root, set, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -131,7 +132,7 @@ variables:
 func TestLoadStartsTheServicesItJustInstalled(t *testing.T) {
 	dir := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	stub := &podmanStub{}
-	if err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New(stub.run)}, machine.NewShell(noCapture), dir, t.TempDir(), nil, false, modeInstall); err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestInstallLeavesTheRecordOpenWhenAServiceDidNotStart(t *testing.T) {
 	if err := install(t, root, dir, []machine.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}}); err == nil {
 		t.Fatal("install succeeded with a service that is down")
 	}
-	record, found, err := machine.NewRecords(root, "acme").Read()
+	record, found, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestInstallWritesARecordOfWhatItPut(t *testing.T) {
 	if err := install(t, root, dir, nil); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	record, found, err := machine.NewRecords(root, "acme").Read()
+	record, found, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -242,7 +243,7 @@ func TestAFailedInstallLeavesAnOpenRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
-	record, found, err := machine.NewRecords(root, "acme").Read()
+	record, found, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -274,7 +275,7 @@ func install(t *testing.T, root, dir string, kinds []machine.Machine) error {
 	if kinds == nil {
 		kinds = []machine.Machine{quadlet.New((&podmanStub{}).run)}
 	}
-	return load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	return load(context.Background(), io.Discard, report.New(io.Discard),
 		kinds, machine.NewShell(noCapture), dir, root, nil, false, modeInstall)
 }
 
@@ -285,7 +286,7 @@ func upgrade(t *testing.T, root, dir string, kinds []machine.Machine) error {
 	if kinds == nil {
 		kinds = []machine.Machine{quadlet.New((&podmanStub{}).run)}
 	}
-	return load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	return load(context.Background(), io.Discard, report.New(io.Discard),
 		kinds, machine.NewShell(noCapture), dir, root, nil, false, modeUpgrade)
 }
 
@@ -413,7 +414,7 @@ func TestSetRefusesAnEmptyValue(t *testing.T) {
 
 func TestLoadRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T) {
 	root := t.TempDir()
-	err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture),
 		unknownKindBundle(t), root, nil, false, modeInstall)
 	if !errors.Is(err, machine.ErrUnknownMachine) {
@@ -425,7 +426,7 @@ func TestLoadRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T
 }
 
 func TestLoadRefusesABundleThatCarriesNoName(t *testing.T) {
-	err := load(context.Background(), io.Discard, report.New(io.Discard), strings.NewReader(""),
+	err := load(context.Background(), io.Discard, report.New(io.Discard),
 		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture), namelessBundle(t), t.TempDir(), nil, false, modeInstall)
 	if !errors.Is(err, ErrBundleHasNoName) {
 		t.Errorf("got %v, want ErrBundleHasNoName", err)
@@ -479,3 +480,155 @@ func emptyLayout(t *testing.T) string {
 	write("index.json", `{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`)
 	return layout
 }
+
+func TestInstallRefusesABundleWhoseNameLeavesTheTargetRoot(t *testing.T) {
+	root := t.TempDir()
+	err := install(t, root, hostileBundle(t, "../../../etc/cron.daily"), nil)
+	if !errors.Is(err, delivery.ErrDeliveryName) {
+		t.Fatalf("got %v, want ErrDeliveryName", err)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("got %v, want an untouched root", entries)
+	}
+}
+
+// hostileBundle writes a bundle carrying name, a name link itself would never let through.
+func hostileBundle(t *testing.T, name string) string {
+	t.Helper()
+	layout := t.TempDir()
+	writeFile(t, filepath.Join(layout, "index.json"),
+		`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[]}`)
+	writeFile(t, filepath.Join(layout, "oci-layout"), `{"imageLayoutVersion":"1.0.0"}`)
+	dir := filepath.Join(t.TempDir(), "bundle")
+	contents := bundle.Contents{
+		Config: bundle.Config{Name: name, Version: "1.0.0", Reader: "quadlet"},
+		Layout: layout,
+	}
+	if err := bundle.Write(dir, contents); err != nil {
+		t.Fatalf("bundle.Write: %v", err)
+	}
+	return dir
+}
+
+func TestTheRecordNamesOnlyTheSecretsThisInstallCreated(t *testing.T) {
+	dir := linkTestDelivery(t, "Secret=OLD_PASSWORD,type=env,target=OLD\nSecret=NEW_PASSWORD,type=env,target=NEW\n",
+		map[string]string{
+			"vessel.yaml": `
+name: acme
+version: 1.4.0
+variables:
+  - name: OLD_PASSWORD
+    secret: true
+  - name: NEW_PASSWORD
+    secret: true
+`,
+		})
+	root := t.TempDir()
+	kinds := []machine.Machine{heldSecrets{quadlet.New((&podmanStub{}).run), []string{"OLD_PASSWORD"}}}
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
+		kinds, machine.NewShell(noCapture), dir, root,
+		map[string]string{"NEW_PASSWORD": "hunter2"}, false, modeInstall); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	record, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !slices.Equal(record.Secrets, []string{"NEW_PASSWORD"}) {
+		t.Errorf("got %v, want only the secret this install created", record.Secrets)
+	}
+}
+
+func TestASecondInstallStillNamesTheSecretTheFirstCreated(t *testing.T) {
+	dir := linkTestDelivery(t, "Secret=NEW_PASSWORD,type=env,target=NEW\n",
+		map[string]string{
+			"vessel.yaml": `
+name: acme
+version: 1.4.0
+variables:
+  - name: NEW_PASSWORD
+    secret: true
+`,
+		})
+	root := t.TempDir()
+	set := map[string]string{"NEW_PASSWORD": "hunter2"}
+	first := []machine.Machine{quadlet.New((&podmanStub{}).run)}
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
+		first, machine.NewShell(noCapture), dir, root, set, false, modeInstall); err != nil {
+		t.Fatalf("first load: %v", err)
+	}
+	second := []machine.Machine{heldSecrets{quadlet.New((&podmanStub{}).run), []string{"NEW_PASSWORD"}}}
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
+		second, machine.NewShell(noCapture), dir, root, nil, false, modeUpgrade); err != nil {
+		t.Fatalf("second load: %v", err)
+	}
+	record, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !slices.Equal(record.Secrets, []string{"NEW_PASSWORD"}) {
+		t.Errorf("got %v, want the secret the first install created still named", record.Secrets)
+	}
+}
+
+func TestTheRecordNamesThePlatformTheBundleWasLinkedFor(t *testing.T) {
+	root := t.TempDir()
+	if err := install(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	record, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if record.Platform != "linux/amd64" {
+		t.Errorf("got %q, want linux/amd64", record.Platform)
+	}
+}
+
+func TestAnInstallThatDiesWritingAFileStoresTheSiteValues(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "etc/acme"), "an ordinary file where the delivery wants a directory")
+	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
+	if err := load(context.Background(), io.Discard, report.New(io.Discard),
+		testKinds(), machine.NewShell(noCapture), blockedFileBundle(t), root, set, false, modeInstall); err == nil {
+		t.Fatal("install succeeded even though no file could be written")
+	}
+	values, err := siteFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the site values: %v", err)
+	}
+	if values["PUBLIC_HOST"] != "dmas.acme.local" {
+		t.Errorf("got %v, want the answer stored for an unattended re-run", values)
+	}
+}
+
+// blockedFileBundle links a bundle whose one file can never be written: the directory it needs
+// is already an ordinary file.
+func blockedFileBundle(t *testing.T) string {
+	t.Helper()
+	return linkTestBundle(t, map[string]string{
+		"vessel.yaml": `
+name: acme
+version: 1.4.0
+files:
+  - source: realm.json
+    target: /etc/acme/realm.json
+variables:
+  - name: PUBLIC_HOST
+    description: public address
+`,
+		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
+	})
+}
+
+// heldSecrets wraps a machine.Machine and reports secrets the machine already holds.
+type heldSecrets struct {
+	machine.Machine
+	names []string
+}
+
+func (h heldSecrets) Secrets(context.Context) ([]string, error) { return h.names, nil }

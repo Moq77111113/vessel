@@ -17,7 +17,7 @@ files:
     target: /etc/dmas/realm.json
 variables:
   - name: PUBLIC_HOST
-    ask: public address of this machine
+    description: public address of this machine
   - name: DB_PASSWORD
     secret: true
     from: openssl rand -hex 32
@@ -147,19 +147,6 @@ func TestReadAcceptsAnOrdinaryName(t *testing.T) {
 	dir := fstest.MapFS{Name: {Data: []byte("name: dmas\n")}}
 	if _, err := Read(dir); err != nil {
 		t.Errorf("Read: %v", err)
-	}
-}
-
-func TestReadRejectsASecretThatAsksTheOperator(t *testing.T) {
-	dir := fstest.MapFS{Name: {Data: []byte(`
-name: dmas
-variables:
-  - name: DB_PASSWORD
-    secret: true
-    ask: the database password
-`)}}
-	if _, err := Read(dir); !errors.Is(err, ErrSecretAsks) {
-		t.Errorf("got %v, want ErrSecretAsks", err)
 	}
 }
 

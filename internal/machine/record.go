@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/Moq77111113/vessel/internal/delivery"
 )
 
 const (
@@ -21,15 +23,16 @@ type Entry struct {
 
 // Record is what one delivery put on this machine.
 type Record struct {
-	Name    string    `json:"name"`
-	Version string    `json:"version"`
-	Machine string    `json:"machine"`
-	Root    string    `json:"root"`
-	Files   []Entry   `json:"files"`
-	Images  []string  `json:"images"`
-	Secrets []string  `json:"secrets"`
-	Start   time.Time `json:"start"`
-	End     time.Time `json:"end,omitzero"`
+	Name     string    `json:"name"`
+	Version  string    `json:"version"`
+	Machine  string    `json:"machine"`
+	Platform string    `json:"platform"`
+	Root     string    `json:"root"`
+	Files    []Entry   `json:"files"`
+	Images   []string  `json:"images"`
+	Secrets  []string  `json:"secrets"`
+	Start    time.Time `json:"start"`
+	End      time.Time `json:"end,omitzero"`
 }
 
 // Done reports whether the install that opened this record ran to its end.
@@ -40,9 +43,38 @@ type Records struct {
 	dir string
 }
 
-// NewRecords returns the record store of a delivery under the target root.
-func NewRecords(root, name string) *Records {
-	return &Records{dir: filepath.Join(root, valuesPath, name)}
+// NewRecords returns the record store of a delivery under the target root, or refuses its name.
+func NewRecords(root, name string) (*Records, error) {
+	if err := delivery.CheckName(name); err != nil {
+		return nil, err
+	}
+	return &Records{dir: filepath.Join(root, valuesPath, name)}, nil
+}
+
+// Deliveries names every delivery this machine holds a record of, in order.
+func Deliveries(root string) ([]string, error) {
+	dir := filepath.Join(root, valuesPath)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if delivery.CheckName(entry.Name()) != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, entry.Name(), recordName)); err != nil {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names, nil
 }
 
 // Read returns the record this machine holds, and whether it holds one.
@@ -77,23 +109,7 @@ func (r *Records) Write(record Record) error {
 	if err != nil {
 		return fmt.Errorf("encode the record: %w", err)
 	}
-	temp, err := os.CreateTemp(r.dir, ".record-*")
-	if err != nil {
-		return fmt.Errorf("create a temporary file in %s: %w", r.dir, err)
-	}
-	defer os.Remove(temp.Name())
-
-	if _, err := temp.Write(body); err != nil {
-		temp.Close()
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", path, err)
-	}
-	if err := os.Chmod(temp.Name(), 0o600); err != nil {
-		return fmt.Errorf("set the mode of %s: %w", path, err)
-	}
-	return rename(temp.Name(), path)
+	return replace(path, body, 0o600)
 }
 
 func read(path string) (Record, bool, error) {

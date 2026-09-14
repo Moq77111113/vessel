@@ -53,7 +53,7 @@ func newPacked(self string) *cobra.Command {
 
 	upgrade := &cobra.Command{
 		Use:   "upgrade",
-		Short: "Install a newer version and remove what it no longer carries",
+		Short: "Install a newer version, refusing a machine that holds no record of this delivery",
 		Args:  cobra.NoArgs,
 		RunE:  runLoad(self, &upgradeRoot, &upgradeSet, modeUpgrade),
 	}
@@ -105,7 +105,7 @@ func runLoad(self string, root *string, set *[]string, run mode) func(*cobra.Com
 		}
 		work := report.New(command.ErrOrStderr())
 		return withPayload(self, func(dir string) error {
-			return load(command.Context(), command.OutOrStdout(), work, command.InOrStdin(),
+			return load(command.Context(), command.OutOrStdout(), work,
 				machines, machine.NewShell(machine.Sh), dir, *root, values, false, run)
 		})
 	}

@@ -28,7 +28,14 @@ func newUninstall() *cobra.Command {
 
 // uninstall stops the services, removes exactly the files the record names, then retires the record.
 func uninstall(ctx context.Context, out io.Writer, kinds []machine.Machine, root, name string) error {
-	records := machine.NewRecords(root, name)
+	records, err := machine.NewRecords(root, name)
+	if err != nil {
+		return err
+	}
+	site, err := machine.NewSite(root, name)
+	if err != nil {
+		return err
+	}
 	record, found, err := records.Read()
 	if err != nil {
 		return err
@@ -68,12 +75,12 @@ func uninstall(ctx context.Context, out io.Writer, kinds []machine.Machine, root
 
 	lines := report.New(out)
 	lines.Line("Finished", fmt.Sprintf("%s %s removed: %d files", record.Name, record.Version, removed))
-	reportWhatStays(out, root, name, record)
+	reportWhatStays(out, site.Path(), record)
 	return nil
 }
 
 // reportWhatStays names the secrets, the images, and the site values an uninstall leaves behind.
-func reportWhatStays(out io.Writer, root, name string, record machine.Record) {
+func reportWhatStays(out io.Writer, values string, record machine.Record) {
 	if len(record.Secrets) > 0 {
 		fmt.Fprintln(out, "\nThese secrets stay on this machine, another delivery may read them:")
 		for _, secret := range record.Secrets {
@@ -86,5 +93,5 @@ func reportWhatStays(out io.Writer, root, name string, record machine.Record) {
 			fmt.Fprintf(out, "  %s\n", image)
 		}
 	}
-	fmt.Fprintf(out, "\nSite values stay at %s, a later install may read them.\n", machine.NewSite(root, name).Path())
+	fmt.Fprintf(out, "\nSite values stay at %s, a later install may read them.\n", values)
 }

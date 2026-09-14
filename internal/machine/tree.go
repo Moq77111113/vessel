@@ -36,24 +36,8 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return false, fmt.Errorf("create %s: %w", dir, err)
 	}
-	temp, err := os.CreateTemp(dir, ".vessel-*")
-	if err != nil {
-		return false, fmt.Errorf("create a temporary file in %s: %w", dir, err)
-	}
-	defer os.Remove(temp.Name())
-
-	if _, err := temp.Write(file.Data); err != nil {
-		temp.Close()
-		return false, fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := temp.Close(); err != nil {
-		return false, fmt.Errorf("close %s: %w", path, err)
-	}
-	if err := os.Chmod(temp.Name(), 0o644); err != nil {
-		return false, fmt.Errorf("set the mode of %s: %w", path, err)
-	}
-	if err := os.Rename(temp.Name(), path); err != nil {
-		return false, fmt.Errorf("move into %s: %w", path, err)
+	if err := replace(path, file.Data, 0o644); err != nil {
+		return false, err
 	}
 	return true, nil
 }

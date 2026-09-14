@@ -122,8 +122,6 @@ func TestUpgradeRefusesAMachineWithNoRecord(t *testing.T) {
 	}
 }
 
-// TestUpgradeStopsTheServiceOfAUnitItDrops installs a delivery carrying two units, then a version
-// dropping one of them, and checks the dropped unit's service is stopped, not just its file removed.
 func TestUpgradeStopsTheServiceOfAUnitItDrops(t *testing.T) {
 	root := t.TempDir()
 	first := linkTestBundle(t, map[string]string{
@@ -144,8 +142,6 @@ func TestUpgradeStopsTheServiceOfAUnitItDrops(t *testing.T) {
 	}
 }
 
-// TestUpgradeDoesNotReportAFileAlreadyGoneByHand checks the Removing line is gated on the file
-// actually having been there, not printed just because the record still names it.
 func TestUpgradeDoesNotReportAFileAlreadyGoneByHand(t *testing.T) {
 	root := t.TempDir()
 	first := linkTestBundle(t, map[string]string{
@@ -167,7 +163,7 @@ files:
 
 	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	var out bytes.Buffer
-	err := load(context.Background(), io.Discard, report.New(&out), strings.NewReader(""),
+	err := load(context.Background(), io.Discard, report.New(&out),
 		[]machine.Machine{quadlet.New((&podmanStub{}).run)}, machine.NewShell(noCapture),
 		second, root, nil, false, modeUpgrade)
 	if err != nil {
@@ -204,5 +200,59 @@ files:
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); err != nil {
 		t.Errorf("a.txt was removed before the failing action ran: %v", err)
+	}
+}
+
+func TestUpgradeDisablesATimerItDrops(t *testing.T) {
+	root := t.TempDir()
+	first := linkTestBundle(t, map[string]string{
+		"vessel.yaml":  "name: acme\nversion: 1.3.0\n",
+		"backup.timer": "[Timer]\nOnCalendar=daily\n",
+	})
+	if err := install(t, root, first, nil); err != nil {
+		t.Fatalf("install 1.3.0: %v", err)
+	}
+
+	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
+	stub := &podmanStub{}
+	if err := upgrade(t, root, second, []machine.Machine{quadlet.New(stub.run)}); err != nil {
+		t.Fatalf("upgrade 1.4.0: %v", err)
+	}
+	if !slices.Contains(stub.calls, "systemctl disable --now backup.timer") {
+		t.Errorf("upgrade never disabled the timer it dropped: %v", stub.calls)
+	}
+}
+
+// TestAnUpgradeRetriedAfterAFailureStillRemovesTheStaleFile drives an upgrade that dies on its
+// action, then runs the same version again, and checks the file 1.3.0 put is gone.
+func TestAnUpgradeRetriedAfterAFailureStillRemovesTheStaleFile(t *testing.T) {
+	root := t.TempDir()
+	first := linkTestBundle(t, map[string]string{
+		"vessel.yaml": `
+name: acme
+version: 1.3.0
+files:
+  - source: a.txt
+    target: /etc/acme/a.txt
+`,
+		"a.txt": "old-a",
+	})
+	if err := install(t, root, first, nil); err != nil {
+		t.Fatalf("install 1.3.0: %v", err)
+	}
+
+	dying := linkTestBundle(t, map[string]string{
+		"vessel.yaml": "name: acme\nversion: 1.4.0\nactions:\n  - echo hi\n",
+	})
+	if err := upgrade(t, root, dying, nil); err == nil {
+		t.Fatal("upgrade succeeded despite a shell that refuses every action")
+	}
+
+	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
+	if err := upgrade(t, root, second, nil); err != nil {
+		t.Fatalf("upgrade 1.4.0 again: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); !os.IsNotExist(err) {
+		t.Errorf("a.txt is still on disk after the retry, err=%v", err)
 	}
 }

@@ -48,8 +48,7 @@ func newUpgrade() *cobra.Command {
 			"delivery: run install there instead.")
 }
 
-// mode says whether load runs as an install, which accepts a bare machine, or an upgrade,
-// which requires an existing record to move forward from.
+// mode says whether load runs as an install or an upgrade.
 type mode int
 
 const (
@@ -76,7 +75,7 @@ func newLoadCommand(run mode, use, short, long string) *cobra.Command {
 				return err
 			}
 			work := report.New(command.ErrOrStderr())
-			return load(command.Context(), command.OutOrStdout(), work, command.InOrStdin(),
+			return load(command.Context(), command.OutOrStdout(), work,
 				machines, machine.NewShell(machine.Sh), args[0], root, values, true, run)
 		},
 	}
@@ -109,7 +108,7 @@ func parseSet(pairs []string) (map[string]string, error) {
 
 // load installs a bundle. verify is false when the bundle rode inside this executable:
 // a binary cannot vouch for the payload it carries, so the operator checks the file itself.
-func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
+func load(ctx context.Context, out io.Writer, work report.Report,
 	kinds []machine.Machine, shell *machine.Shell, dir, root string,
 	set map[string]string, verify bool, run mode) error {
 	if verify {
@@ -125,7 +124,10 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
 		return fmt.Errorf("%s: %w", dir, ErrBundleHasNoName)
 	}
 
-	records := machine.NewRecords(root, artifact.Config.Name)
+	records, err := machine.NewRecords(root, artifact.Config.Name)
+	if err != nil {
+		return err
+	}
 	current, found, err := records.Read()
 	if err != nil {
 		return err
@@ -146,8 +148,11 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
 	if err != nil {
 		return err
 	}
-	site := machine.NewSite(root, artifact.Config.Name)
-	values := machine.NewValues(site, shell, set, secrets, out, in)
+	site, err := machine.NewSite(root, artifact.Config.Name)
+	if err != nil {
+		return err
+	}
+	values := machine.NewValues(site, shell, set, secrets)
 	resolution, err := values.Resolve(ctx, artifact.Config.Variables)
 	if err != nil {
 		return err
@@ -159,22 +164,28 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
 	}
 
 	record := machine.Record{
-		Name:    artifact.Config.Name,
-		Version: artifact.Config.Version,
-		Machine: artifact.Config.Reader,
-		Root:    artifact.Root,
-		Files:   entriesOf(files),
-		Images:  digestsOf(artifact.Config.Images),
-		Secrets: delivery.SecretNames(artifact.Config.Variables),
-		Start:   time.Now().UTC(),
+		Name:     artifact.Config.Name,
+		Version:  artifact.Config.Version,
+		Machine:  artifact.Config.Reader,
+		Platform: artifact.Config.Platform,
+		Root:     artifact.Root,
+		Files:    entriesOf(files),
+		Images:   digestsOf(artifact.Config.Images),
+		Secrets:  unionNames(current.Secrets, namesOf(resolution.Secrets)),
+		Start:    time.Now().UTC(),
 	}
-	if err := records.Write(record); err != nil {
+	opening := record
+	opening.Files = union(current.Files, record.Files)
+	if err := records.Write(opening); err != nil {
 		return err
+	}
+	if err := site.Write(resolution.Values); err != nil {
+		return partway(err)
 	}
 
 	for _, action := range artifact.Config.Actions {
 		if err := shell.Do(ctx, action); err != nil {
-			return err
+			return partway(err)
 		}
 	}
 
@@ -183,7 +194,7 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
 	for _, file := range files {
 		changed, err := tree.Write(file)
 		if err != nil {
-			return err
+			return partway(err)
 		}
 		if changed {
 			changes++
@@ -191,43 +202,89 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
 	}
 	if found {
 		if err := dropStale(ctx, work, kind, tree, current.Files, record.Files); err != nil {
-			return err
+			return partway(err)
 		}
-	}
-	if err := site.Write(resolution.Values); err != nil {
-		return err
 	}
 	for name, value := range resolution.Secrets {
 		if err := kind.AddSecret(ctx, name, value); err != nil {
-			return err
+			return partway(err)
 		}
 	}
 
 	layout, err := machine.OpenLayout(artifact.LayoutDir)
 	if err != nil {
-		return err
+		return partway(err)
 	}
 	images, err := kind.AddImages(ctx, work, layout)
 	if err != nil {
-		return err
+		return partway(err)
 	}
 
 	reportMissingSecrets(ctx, out, kind, kind.Requires(files))
 	if err := kind.Start(ctx, files); err != nil {
-		return err
+		return partway(err)
 	}
 	if err := checkServicesUp(ctx, kind, files); err != nil {
-		return err
+		return partway(err)
 	}
 
 	record.End = time.Now().UTC()
 	if err := records.Write(record); err != nil {
-		return err
+		return partway(err)
 	}
 
 	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %d of %d files changed",
 		artifact.Config.Name, artifact.Config.Version, len(images), changes, len(files)))
 	return nil
+}
+
+// ErrPartlyInstalled says the machine was already changed when this install stopped.
+var ErrPartlyInstalled = errors.New("this machine is partway through the install")
+
+// partway marks an error the machine was already changed for, leaving a known class alone.
+func partway(err error) error {
+	if Code(err) != 4 {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrPartlyInstalled, err)
+}
+
+// namesOf names the secrets this install created, in a stable order.
+func namesOf(secrets map[string]string) []string {
+	names := make([]string, 0, len(secrets))
+	for name := range secrets {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// unionNames merges two name lists, sorted and without duplicates.
+func unionNames(previous, next []string) []string {
+	names := make(map[string]bool, len(previous)+len(next))
+	for _, name := range previous {
+		names[name] = true
+	}
+	for _, name := range next {
+		names[name] = true
+	}
+	merged := make([]string, 0, len(names))
+	for name := range names {
+		merged = append(merged, name)
+	}
+	slices.Sort(merged)
+	return merged
+}
+
+// union names every file the machine holds for this delivery and every file the new version carries.
+func union(previous, next []machine.Entry) []machine.Entry {
+	entries := slices.Clone(next)
+	for _, entry := range previous {
+		if !slices.ContainsFunc(next, func(carried machine.Entry) bool { return carried.Path == entry.Path }) {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 // ErrServiceIsDown says a service the install started did not come up.
@@ -279,8 +336,7 @@ func onlyIn(previous, next []machine.Entry) []string {
 	return stale
 }
 
-// dropStale stops the services a file the new version no longer carries used to generate,
-// then removes that file, so nothing on disk still points to a service nothing can stop again.
+// dropStale stops the services of a file the new version no longer carries, then removes it.
 func dropStale(ctx context.Context, work report.Report, kind machine.Target, tree *machine.Tree,
 	previous, next []machine.Entry) error {
 	stale := onlyIn(previous, next)

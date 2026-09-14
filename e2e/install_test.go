@@ -68,7 +68,7 @@ files:
     target: /etc/acme/realm.json
 variables:
   - name: PUBLIC_HOST
-    ask: public address
+    description: public address
 `,
 		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
 	})

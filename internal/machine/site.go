@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/Moq77111113/vessel/internal/delivery"
 )
 
 // valuesPath is where a machine keeps the site values it was given, under the target root.
@@ -20,9 +22,12 @@ type Site struct {
 	path string
 }
 
-// NewSite returns the value store of a delivery under the target root.
-func NewSite(root, name string) *Site {
-	return &Site{path: filepath.Join(root, valuesPath, name, "values")}
+// NewSite returns the value store of a delivery under the target root, or refuses its name.
+func NewSite(root, name string) (*Site, error) {
+	if err := delivery.CheckName(name); err != nil {
+		return nil, err
+	}
+	return &Site{path: filepath.Join(root, valuesPath, name, "values")}, nil
 }
 
 // Path is where this store keeps the values, under the target root.
@@ -71,8 +76,5 @@ func (v *Site) Write(values map[string]string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	if err := os.WriteFile(v.path, []byte(body.String()), 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", v.path, err)
-	}
-	return nil
+	return replace(v.path, []byte(body.String()), 0o600)
 }

@@ -47,7 +47,12 @@ func (m *Machine) AddImages(ctx context.Context, work report.Report, layout *mac
 
 // Start brings the services these units generate up, in order.
 func (m *Machine) Start(ctx context.Context, files []descriptor.File) error {
-	for _, line := range m.reader.Start(files) {
+	return m.do(ctx, m.reader.Start(files))
+}
+
+// do runs each systemctl line, naming the one that failed.
+func (m *Machine) do(ctx context.Context, lines []string) error {
+	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
@@ -77,16 +82,7 @@ func (m *Machine) Services(ctx context.Context, files []descriptor.File) ([]mach
 	return services, nil
 }
 
-// Stop brings the services these units generate down.
+// Stop brings the services these units generate down, and disables the sibling units.
 func (m *Machine) Stop(ctx context.Context, files []descriptor.File) error {
-	names := serviceNames(files)
-	if len(names) == 0 {
-		return nil
-	}
-	args := append([]string{"stop"}, names...)
-	output, err := m.podman.run(ctx, nil, "systemctl", args...)
-	if err != nil {
-		return fmt.Errorf("systemctl stop: %w: %s", machine.ErrAction, strings.TrimSpace(string(output)))
-	}
-	return nil
+	return m.do(ctx, m.reader.Stop(files))
 }

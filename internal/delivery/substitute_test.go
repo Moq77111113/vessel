@@ -96,7 +96,7 @@ func TestCheckMarkersRefusesASecretWrittenIntoAFile(t *testing.T) {
 
 func TestCheckMarkersAcceptsAFileWhoseMarkersAreDeclared(t *testing.T) {
 	files := []descriptor.File{{Path: "etc/acme/realm.json", Data: []byte("###PUBLIC_HOST###")}}
-	if err := CheckMarkers(files, []Variable{{Name: "PUBLIC_HOST", Ask: "address"}}); err != nil {
+	if err := CheckMarkers(files, []Variable{{Name: "PUBLIC_HOST", Description: "address"}}); err != nil {
 		t.Errorf("CheckMarkers: %v", err)
 	}
 }
