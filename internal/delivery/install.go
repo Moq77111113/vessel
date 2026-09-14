@@ -25,45 +25,64 @@ type Install struct {
 	Shell    *machine.Shell
 }
 
-// Upgrade installs a newer version, refusing a machine that holds no record of this delivery.
-func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report) error {
-	name := i.Artifact.Config.Name
+// prelude carries what both Run and Upgrade need before either touches the machine.
+type prelude struct {
+	dir     string
+	host    machine.Machine
+	records *record.Records
+	current record.Record
+	found   bool
+}
+
+// prepare checks the machine is ready, then reads the record this delivery may already hold.
+func (i Install) prepare(ctx context.Context, name, machineName string) (prelude, error) {
 	dir, err := dirFor(i.Root, name)
 	if err != nil {
-		return err
+		return prelude{}, err
 	}
-	_, found, err := record.NewRecords(dir).Read()
+	host, err := i.checkMachine(ctx, machineName)
+	if err != nil {
+		return prelude{}, err
+	}
+	records := record.NewRecords(dir)
+	current, found, err := records.Read()
+	if err != nil {
+		return prelude{}, err
+	}
+	return prelude{dir: dir, host: host, records: records, current: current, found: found}, nil
+}
+
+// Upgrade installs a newer version, refusing a machine that holds no record of this delivery.
+func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report) error {
+	config := i.Artifact.Config
+	before, err := i.prepare(ctx, config.Name, config.Machine)
 	if err != nil {
 		return err
 	}
-	if !found {
-		return fmt.Errorf("%s: %w, run install instead", name, ErrNoRecord)
+	if !before.found {
+		return fmt.Errorf("%s: %w, run install instead", config.Name, ErrNoRecord)
 	}
-	return i.Run(ctx, out, work)
+	return i.run(ctx, out, work, before)
 }
 
 // Run puts the images, the files and the secrets on the machine, then starts the services once.
 func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) error {
 	config := i.Artifact.Config
-	dir, err := dirFor(i.Root, config.Name)
+	before, err := i.prepare(ctx, config.Name, config.Machine)
 	if err != nil {
 		return err
 	}
-	records := record.NewRecords(dir)
-	current, found, err := records.Read()
-	if err != nil {
-		return err
-	}
+	return i.run(ctx, out, work, before)
+}
 
-	host, err := i.checkMachine(ctx, config.Machine)
+// run installs or upgrades once the machine is known ready and the record is known read.
+func (i Install) run(ctx context.Context, out io.Writer, work report.Report, before prelude) error {
+	config := i.Artifact.Config
+	secrets, err := before.host.Secrets(ctx)
 	if err != nil {
 		return err
 	}
-	secrets, err := host.Secrets(ctx)
-	if err != nil {
-		return err
-	}
-	store, resolution, err := i.resolveValues(ctx, dir, config, secrets)
+	store, resolution, err := i.resolveValues(ctx, before.dir, config, secrets)
 	if err != nil {
 		return err
 	}
@@ -81,18 +100,18 @@ func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) err
 		Root:     i.Artifact.Root,
 		Files:    entriesOf(files),
 		Images:   digestsOf(config.Images),
-		Secrets:  unionNames(current.Secrets, namesOf(resolution.Secrets)),
+		Secrets:  unionNames(before.current.Secrets, namesOf(resolution.Secrets)),
 		Start:    time.Now().UTC(),
 	}
-	if err := openRecord(records, current, next); err != nil {
+	if err := openRecord(before.records, before.current, next); err != nil {
 		return err
 	}
 	images, changes, err := i.applyToMachine(ctx, out, work, machineChange{
-		host:       host,
-		records:    records,
-		current:    current,
+		host:       before.host,
+		records:    before.records,
+		current:    before.current,
 		next:       next,
-		found:      found,
+		found:      before.found,
 		store:      store,
 		resolution: resolution,
 		secrets:    secrets,

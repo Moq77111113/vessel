@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"aead.dev/minisign"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
@@ -27,7 +28,7 @@ type puller interface {
 }
 
 func Link(ctx context.Context, work, summary report.Report, kinds []machine.Machine,
-	source, out, platform, name, version, key string) error {
+	source, out, platform, name, version string, key *minisign.PrivateKey) error {
 	source = filepath.Clean(source)
 	definition, err := descriptor.Read(os.DirFS(source))
 	if err != nil && !errors.Is(err, descriptor.ErrNoDelivery) {

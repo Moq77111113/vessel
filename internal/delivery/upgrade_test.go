@@ -120,6 +120,35 @@ func TestUpgradeRefusesAMachineWithNoRecord(t *testing.T) {
 	}
 }
 
+func TestUpgradeReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, permissions cannot make the record unreadable")
+	}
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	recordDir := filepath.Join(root, "var/lib/vessel/acme")
+	if err := os.MkdirAll(recordDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(recordDir, "record.json")
+	if err := os.WriteFile(recordPath, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(recordPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(recordPath, 0o644); err != nil {
+			t.Errorf("chmod: %v", err)
+		}
+	})
+	kinds := []machine.Machine{unreadyMachine{quadlet.New((&podmanStub{}).run)}}
+	err := runUpgrade(t, root, dir, kinds)
+	if !errors.Is(err, quadlet.ErrNotReady) {
+		t.Fatalf("got %v, want the machine-not-ready error", err)
+	}
+}
+
 func TestUpgradeStopsTheServiceOfAUnitItDrops(t *testing.T) {
 	root := t.TempDir()
 	first := linkTestBundle(t, map[string]string{

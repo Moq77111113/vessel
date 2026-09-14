@@ -464,7 +464,7 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 		}
 	}
 	out := filepath.Join(t.TempDir(), "bundle")
-	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), source, out, "linux/amd64", "", "", ""); err != nil {
+	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), source, out, "linux/amd64", "", "", nil); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
@@ -693,6 +693,42 @@ variables:
 		"realm.json": `{"realm":"###PUBLIC_HOST###"}`,
 	})
 }
+
+func TestInstallReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, permissions cannot make the record unreadable")
+	}
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	recordDir := filepath.Join(root, "var/lib/vessel/acme")
+	if err := os.MkdirAll(recordDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recordPath := filepath.Join(recordDir, "record.json")
+	if err := os.WriteFile(recordPath, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(recordPath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(recordPath, 0o644); err != nil {
+			t.Errorf("chmod: %v", err)
+		}
+	})
+	kinds := []machine.Machine{unreadyMachine{quadlet.New((&podmanStub{}).run)}}
+	err := runInstall(t, root, dir, kinds)
+	if !errors.Is(err, quadlet.ErrNotReady) {
+		t.Fatalf("got %v, want the machine-not-ready error", err)
+	}
+}
+
+// unreadyMachine wraps a machine.Machine and fails Check, as an operator's own machine would.
+type unreadyMachine struct {
+	machine.Machine
+}
+
+func (unreadyMachine) Check(context.Context, string) error { return quadlet.ErrNotReady }
 
 // heldSecrets wraps a machine.Machine and reports secrets the machine already holds.
 type heldSecrets struct {

@@ -74,6 +74,23 @@ func TestBuildWritesTheLayoutWhenAskedForIt(t *testing.T) {
 	}
 }
 
+func TestBuildWithAMissingKeyFailsBeforeResolvingAnyImage(t *testing.T) {
+	source := t.TempDir()
+	writeUnits(t, source)
+	out := filepath.Join(t.TempDir(), "myapp")
+
+	var work bytes.Buffer
+	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0",
+		Key: filepath.Join(t.TempDir(), "missing.key")}
+	err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job)
+	if err == nil {
+		t.Fatal("build succeeded with a key file that does not exist")
+	}
+	if strings.Contains(work.String(), "Resolving") {
+		t.Errorf("got %q, want no image resolved before the key is known good", work.String())
+	}
+}
+
 func TestBuildWithoutAKeyWarnsTheExecutableIsUnsigned(t *testing.T) {
 	source := t.TempDir()
 	writeUnits(t, source)

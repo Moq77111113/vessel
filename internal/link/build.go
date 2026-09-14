@@ -25,7 +25,11 @@ type Job struct {
 
 // Build resolves the descriptor into a bundle, then folds that bundle into one executable.
 func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []machine.Machine, job Job) error {
-	out, key := job.Out, job.Key
+	out := job.Out
+	key, err := resolveKey(job.Key)
+	if err != nil {
+		return err
+	}
 	dir := job.Layout
 	if dir == "" {
 		temp, err := os.MkdirTemp("", "vessel-bundle-*")
@@ -60,7 +64,7 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 		return fmt.Errorf("read %s: %w", out, err)
 	}
 	report.New(stdout).Line("Finished", fmt.Sprintf("%s, %d MB, run it on the target machine", out, info.Size()/(1<<20)))
-	if key != "" {
+	if key != nil {
 		fmt.Fprintf(stdout, "%s.minisig, ship it alongside\n", out)
 		return nil
 	}
