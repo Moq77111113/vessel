@@ -1,4 +1,4 @@
-// Package quadlet reads a directory of systemd quadlet units.
+// Package quadlet reads a directory of systemd quadlet units and runs them on podman.
 package quadlet
 
 import (

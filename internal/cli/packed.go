@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/installer"
+	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/report"
-	"github.com/Moq77111113/vessel/internal/target"
 )
 
 // newPacked is the command tree of an executable that carries its own bundle.
@@ -46,11 +46,10 @@ func newPacked(self string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			m := machine{loader: target.NewLoader(target.Exec), shell: target.NewShell(target.Sh)}
 			work := report.New(command.ErrOrStderr())
 			return withPayload(self, func(dir string) error {
 				return load(command.Context(), command.OutOrStdout(), work, command.InOrStdin(),
-					m, dir, root, values, false)
+					machines, machine.NewShell(machine.Sh), dir, root, values, false)
 			})
 		},
 	}

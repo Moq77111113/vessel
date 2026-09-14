@@ -1,6 +1,4 @@
-// Package target puts a bundle on the machine it is installed on: podman, the shell, the file
-// tree, the site values it keeps, and the checks that run before any of it.
-package target
+package machine
 
 import (
 	"archive/tar"
@@ -17,8 +15,8 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
-// refNameAnnotation is the key podman reads to name an image it takes in.
-const refNameAnnotation = "org.opencontainers.image.ref.name"
+// RefNameAnnotation is the key a runtime reads to name an image it takes in.
+const RefNameAnnotation = "org.opencontainers.image.ref.name"
 
 // Errors a layout returns when its content does not hold together.
 var (
@@ -102,7 +100,7 @@ func (l *Layout) images() []manifest {
 		case bundle.ArtifactType, bundle.FilesType:
 			continue
 		}
-		if entry.Annotations[refNameAnnotation] != "" {
+		if entry.Annotations[RefNameAnnotation] != "" {
 			images = append(images, entry)
 		}
 	}
@@ -114,7 +112,7 @@ func (l *Layout) Names() ([]string, error) {
 	images := l.images()
 	names := make([]string, 0, len(images))
 	for _, entry := range images {
-		names = append(names, entry.Annotations[refNameAnnotation])
+		names = append(names, entry.Annotations[RefNameAnnotation])
 	}
 	return names, nil
 }

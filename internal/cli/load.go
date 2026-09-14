@@ -14,9 +14,8 @@ import (
 	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/delivery"
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/report"
-	"github.com/Moq77111113/vessel/internal/target"
 )
 
 // publicKey is stamped in at build time and is the only key a bundle is trusted against.
@@ -39,7 +38,7 @@ func newInstall() *cobra.Command {
 		Use:   "install <bundle>",
 		Short: "Install a bundle on this machine",
 		Long: "Checks the machine, verifies the bundle, puts its images into local storage\n" +
-			"and its files on disk, then prints the command that starts everything.\n\n" +
+			"and its files on disk, then starts the services once.\n\n" +
 			"For an operator, prefer an executable made by build: it needs no vessel binary.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -50,24 +49,15 @@ func newInstall() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			m := machine{loader: target.NewLoader(target.Exec), shell: target.NewShell(target.Sh)}
 			work := report.New(command.ErrOrStderr())
 			return load(command.Context(), command.OutOrStdout(), work, command.InOrStdin(),
-				m, args[0], root, values, true)
+				machines, machine.NewShell(machine.Sh), args[0], root, values, true)
 		},
 	}
 	install.Flags().StringVar(&root, "root", "/", "install under this directory instead of /")
 	install.Flags().MarkHidden("root")
 	install.Flags().StringArrayVar(&set, "set", nil, "answer a variable: --set NAME=value")
 	return install
-}
-
-// machine is the two channels load reaches this machine through: podman and the shell.
-// The composition root builds them; load only uses what it is given, so a test drives
-// both without podman.
-type machine struct {
-	loader *target.Loader
-	shell  *target.Shell
 }
 
 // Errors a --set flag draws before load looks at a bundle.
@@ -94,12 +84,9 @@ func parseSet(pairs []string) (map[string]string, error) {
 
 // load installs a bundle. verify is false when the bundle rode inside this executable:
 // a binary cannot vouch for the payload it carries, so the operator checks the file itself.
-func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader, m machine, dir, root string,
+func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader,
+	kinds []machine.Machine, shell *machine.Shell, dir, root string,
 	set map[string]string, verify bool) error {
-	loader, shell := m.loader, m.shell
-	if err := target.Preflight(ctx, loader, root); err != nil {
-		return err
-	}
 	if verify {
 		if err := verifyBundle(dir); err != nil {
 			return err
@@ -112,14 +99,21 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader, 
 	if artifact.Config.Name == "" {
 		return fmt.Errorf("%s: %w", dir, ErrBundleHasNoName)
 	}
-
-	secrets, err := loader.Secrets(ctx)
+	kind, err := machine.ByName(kinds, artifact.Config.Reader)
 	if err != nil {
 		return err
 	}
-	values := target.NewValues(root, artifact.Config.Name)
-	resolver := target.NewResolver(values, shell, set, secrets, out, in)
-	resolution, err := resolver.Resolve(ctx, artifact.Config.Variables)
+	if err := kind.Check(ctx, root); err != nil {
+		return err
+	}
+
+	secrets, err := kind.Secrets(ctx)
+	if err != nil {
+		return err
+	}
+	site := machine.NewSite(root, artifact.Config.Name)
+	values := machine.NewValues(site, shell, set, secrets, out, in)
+	resolution, err := values.Resolve(ctx, artifact.Config.Variables)
 	if err != nil {
 		return err
 	}
@@ -135,7 +129,7 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader, 
 		}
 	}
 
-	tree := target.NewTree(root)
+	tree := machine.NewTree(root)
 	changes := 0
 	for _, file := range files {
 		changed, err := tree.Write(file)
@@ -146,38 +140,29 @@ func load(ctx context.Context, out io.Writer, work report.Report, in io.Reader, 
 			changes++
 		}
 	}
-	if err := values.Write(resolution.Values); err != nil {
+	if err := site.Write(resolution.Values); err != nil {
 		return err
 	}
 	for name, value := range resolution.Secrets {
-		if err := loader.CreateSecret(ctx, name, value); err != nil {
+		if err := kind.AddSecret(ctx, name, value); err != nil {
 			return err
 		}
 	}
 
-	layout, err := target.OpenLayout(artifact.LayoutDir)
+	layout, err := machine.OpenLayout(artifact.LayoutDir)
 	if err != nil {
 		return err
 	}
-	images, err := loader.Load(ctx, work, layout)
+	images, err := kind.AddImages(ctx, work, layout)
 	if err != nil {
 		return err
 	}
 
 	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed: %d images, %d of %d files changed",
 		artifact.Config.Name, artifact.Config.Version, len(images), changes, len(files)))
-	reader, err := descriptor.ByName(readers, artifact.Config.Reader)
-	if err != nil {
-		return err
-	}
-	reportMissingSecrets(ctx, out, loader, reader.Requires(files))
+	reportMissingSecrets(ctx, out, kind, kind.Requires(files))
 
-	commands := reader.Start(files)
-	if len(commands) == 0 {
-		return nil
-	}
-	fmt.Fprintf(out, "\nStart it:\n  %s\n", strings.Join(commands, "\n  "))
-	return nil
+	return kind.Start(ctx, files)
 }
 
 func verifyBundle(dir string) error {
@@ -204,21 +189,21 @@ func verifyBundle(dir string) error {
 
 // reportMissingSecrets names the secrets the units expect and the machine does not hold.
 // It never fails the install: the operator may be about to create them.
-func reportMissingSecrets(ctx context.Context, out io.Writer, loader *target.Loader, units []string) {
+func reportMissingSecrets(ctx context.Context, out io.Writer, target machine.Target, units []string) {
 	if len(units) == 0 {
 		return
 	}
-	secrets, err := loader.Secrets(ctx)
+	secrets, err := target.Secrets(ctx)
 	if err != nil {
 		return
 	}
-	machine := make(map[string]bool, len(secrets))
+	present := make(map[string]bool, len(secrets))
 	for _, name := range secrets {
-		machine[name] = true
+		present[name] = true
 	}
 	var missing []string
 	for _, name := range units {
-		if !machine[name] {
+		if !present[name] {
 			missing = append(missing, name)
 		}
 	}

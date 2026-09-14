@@ -1,4 +1,4 @@
-package target
+package machine
 
 import (
 	"archive/tar"
@@ -48,7 +48,7 @@ func twoImageLayout(t *testing.T) string {
 			"mediaType":   "application/vnd.oci.image.manifest.v1+json",
 			"digest":      digest,
 			"size":        len(body),
-			"annotations": map[string]string{refNameAnnotation: name},
+			"annotations": map[string]string{RefNameAnnotation: name},
 		})
 	}
 	index, err := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": manifests})

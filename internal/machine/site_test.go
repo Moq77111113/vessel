@@ -1,4 +1,4 @@
-package target
+package machine
 
 import (
 	"errors"
@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestValuesReadsBackWhatItWrote(t *testing.T) {
-	values := NewValues(t.TempDir(), "acme")
+func TestSiteReadsBackWhatItWrote(t *testing.T) {
+	values := NewSite(t.TempDir(), "acme")
 	if err := values.Write(map[string]string{"PUBLIC_HOST": "dmas.acme.local"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -21,8 +21,8 @@ func TestValuesReadsBackWhatItWrote(t *testing.T) {
 	}
 }
 
-func TestValuesReadsNothingOnAMachineWithNoStore(t *testing.T) {
-	got, err := NewValues(t.TempDir(), "acme").Read()
+func TestSiteReadsNothingOnAMachineWithNoStore(t *testing.T) {
+	got, err := NewSite(t.TempDir(), "acme").Read()
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -31,9 +31,9 @@ func TestValuesReadsNothingOnAMachineWithNoStore(t *testing.T) {
 	}
 }
 
-func TestValuesWritesAFileNoOtherUserCanRead(t *testing.T) {
+func TestSiteWritesAFileNoOtherUserCanRead(t *testing.T) {
 	root := t.TempDir()
-	if err := NewValues(root, "acme").Write(map[string]string{"A": "x"}); err != nil {
+	if err := NewSite(root, "acme").Write(map[string]string{"A": "x"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	info, err := os.Stat(filepath.Join(root, "var/lib/vessel/acme/values"))
@@ -45,8 +45,8 @@ func TestValuesWritesAFileNoOtherUserCanRead(t *testing.T) {
 	}
 }
 
-func TestValuesKeepsAValueHoldingAnEqualsSign(t *testing.T) {
-	values := NewValues(t.TempDir(), "acme")
+func TestSiteKeepsAValueHoldingAnEqualsSign(t *testing.T) {
+	values := NewSite(t.TempDir(), "acme")
 	if err := values.Write(map[string]string{"A": "x=y=z"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -59,17 +59,17 @@ func TestValuesKeepsAValueHoldingAnEqualsSign(t *testing.T) {
 	}
 }
 
-func TestValuesRefusesAValueHoldingANewline(t *testing.T) {
-	values := NewValues(t.TempDir(), "acme")
+func TestSiteRefusesAValueHoldingANewline(t *testing.T) {
+	values := NewSite(t.TempDir(), "acme")
 	err := values.Write(map[string]string{"A": "one\ntwo"})
 	if !errors.Is(err, ErrValueHasANewline) {
 		t.Fatalf("got %v, want ErrValueHasANewline", err)
 	}
 }
 
-func TestValuesRefusalLeavesNoFileBehind(t *testing.T) {
+func TestSiteRefusalLeavesNoFileBehind(t *testing.T) {
 	root := t.TempDir()
-	if err := NewValues(root, "acme").Write(map[string]string{"A": "one\ntwo"}); !errors.Is(err, ErrValueHasANewline) {
+	if err := NewSite(root, "acme").Write(map[string]string{"A": "one\ntwo"}); !errors.Is(err, ErrValueHasANewline) {
 		t.Fatalf("got %v, want ErrValueHasANewline", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "var/lib/vessel/acme/values")); !os.IsNotExist(err) {
@@ -77,8 +77,8 @@ func TestValuesRefusalLeavesNoFileBehind(t *testing.T) {
 	}
 }
 
-func TestValuesRefusalDoesNotLoseAnEarlierSuccessfulWrite(t *testing.T) {
-	values := NewValues(t.TempDir(), "acme")
+func TestSiteRefusalDoesNotLoseAnEarlierSuccessfulWrite(t *testing.T) {
+	values := NewSite(t.TempDir(), "acme")
 	if err := values.Write(map[string]string{"PUBLIC_HOST": "dmas.acme.local"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}

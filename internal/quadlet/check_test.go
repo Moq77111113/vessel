@@ -1,4 +1,4 @@
-package target
+package quadlet
 
 import (
 	"context"
@@ -58,11 +58,11 @@ func TestReadVersionTakesTheNumberOutOfThePodmanBanner(t *testing.T) {
 	}
 }
 
-func TestPreflightNamesEveryProblemAtOnce(t *testing.T) {
-	podman := &recorder{output: "podman version 4.3.1\n"}
-	err := Preflight(context.Background(), NewLoader(podman.run), filepath.Join(t.TempDir(), "root"))
+func TestCheckNamesEveryProblemAtOnce(t *testing.T) {
+	engine := &recorder{output: "podman version 4.3.1\n"}
+	err := New(engine.run).Check(context.Background(), filepath.Join(t.TempDir(), "root"))
 	if err == nil {
-		t.Fatal("Preflight: want an error, got nil")
+		t.Fatal("Check: want an error, got nil")
 	}
 	if !strings.Contains(err.Error(), "4.3.1") {
 		t.Errorf("the version found is missing from %v", err)
@@ -75,29 +75,29 @@ func TestPreflightNamesEveryProblemAtOnce(t *testing.T) {
 	}
 }
 
-func TestPreflightPutsOneProblemPerLine(t *testing.T) {
-	podman := &recorder{output: "podman version 4.3.1\n"}
-	err := Preflight(context.Background(), NewLoader(podman.run), "/proc/nope")
+func TestCheckPutsOneProblemPerLine(t *testing.T) {
+	engine := &recorder{output: "podman version 4.3.1\n"}
+	err := New(engine.run).Check(context.Background(), "/proc/nope")
 	if err == nil {
-		t.Fatal("Preflight: want an error, got nil")
+		t.Fatal("Check: want an error, got nil")
 	}
 	if got := strings.Count(err.Error(), "\n"); got < 2 {
 		t.Errorf("got %d line breaks in %q, want one problem per line", got, err)
 	}
 }
 
-func TestPreflightPassesOnAMachineThatHasEverything(t *testing.T) {
+func TestCheckPassesOnAMachineThatHasEverything(t *testing.T) {
 	if !systemdIsHere() {
 		t.Skip("no systemd on this machine")
 	}
-	podman := &recorder{output: "podman version 5.4.2\n"}
-	if err := Preflight(context.Background(), NewLoader(podman.run), t.TempDir()); err != nil {
-		t.Errorf("Preflight: %v", err)
+	engine := &recorder{output: "podman version 5.4.2\n"}
+	if err := New(engine.run).Check(context.Background(), t.TempDir()); err != nil {
+		t.Errorf("Check: %v", err)
 	}
 }
 
-func TestPreflightRefusesARootItCannotWriteTo(t *testing.T) {
-	podman := &recorder{output: "podman version 5.4.2\n"}
+func TestCheckRefusesARootItCannotWriteTo(t *testing.T) {
+	engine := &recorder{output: "podman version 5.4.2\n"}
 	root := filepath.Join(t.TempDir(), "locked")
 	if err := os.MkdirAll(root, 0o500); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -105,7 +105,7 @@ func TestPreflightRefusesARootItCannotWriteTo(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes anywhere")
 	}
-	err := Preflight(context.Background(), NewLoader(podman.run), root)
+	err := New(engine.run).Check(context.Background(), root)
 	if err == nil || !strings.Contains(err.Error(), ErrRootReadOnly.Error()) {
 		t.Errorf("got %v, want it to name the write failure", err)
 	}
@@ -116,10 +116,10 @@ func systemdIsHere() bool {
 	return err == nil
 }
 
-func TestPreflightRefusesAPodmanThatCannotRun(t *testing.T) {
-	podman := &recorder{output: "podman version 6.1.1\n"}
-	podman.failAfter = 1
-	err := Preflight(context.Background(), NewLoader(podman.run), t.TempDir())
+func TestCheckRefusesAPodmanThatCannotRun(t *testing.T) {
+	engine := &recorder{output: "podman version 6.1.1\n"}
+	engine.failAfter = 1
+	err := New(engine.run).Check(context.Background(), t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), ErrPodmanBroken.Error()) {
 		t.Errorf("got %v, want it to name the broken podman", err)
 	}

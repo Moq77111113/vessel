@@ -1,7 +1,8 @@
-package target
+package machine
 
 import (
-	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -13,9 +14,6 @@ import (
 
 // ErrPathEscapes says a bundle file asked for a path outside the target root.
 var ErrPathEscapes = errors.New("leaves the target root")
-
-// systemdPath is where quadlet units live under the target root.
-const systemdPath = "etc/containers/systemd"
 
 // Tree is the file tree of the target machine, rooted where a bundle is written.
 type Tree struct {
@@ -31,7 +29,7 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if same(path, file.Data) {
+	if Same(path, digestOf(file.Data)) {
 		return false, nil
 	}
 	dir := filepath.Dir(path)
@@ -68,10 +66,17 @@ func (t *Tree) resolve(name string) (string, error) {
 	return filepath.Join(t.root, clean), nil
 }
 
-func same(path string, data []byte) bool {
-	current, err := os.ReadFile(path)
+// Same reports whether the file at path still hashes to digest.
+func Same(path, digest string) bool {
+	body, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	return bytes.Equal(current, data)
+	return digestOf(body) == digest
+}
+
+// digestOf is the sha256 of data, in the form a bundle records.
+func digestOf(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }

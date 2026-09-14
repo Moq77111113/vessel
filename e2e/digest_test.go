@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
-	"github.com/Moq77111113/vessel/internal/target"
+	"github.com/Moq77111113/vessel/internal/machine"
 )
 
 // The invariant the whole design rests on: the digest a unit pins is the digest of
@@ -89,7 +89,7 @@ func TestEveryImageCutsIntoItsOwnArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	layout, err := target.OpenLayout(artifact.LayoutDir)
+	layout, err := machine.OpenLayout(artifact.LayoutDir)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}

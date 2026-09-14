@@ -1,4 +1,4 @@
-package target
+package machine
 
 import (
 	"context"
@@ -10,18 +10,18 @@ import (
 	"github.com/Moq77111113/vessel/internal/delivery"
 )
 
-func resolver(t *testing.T, set map[string]string, secrets []string, answers string) *Resolver {
+func newValues(t *testing.T, set map[string]string, secrets []string, answers string) *Values {
 	t.Helper()
 	shell := NewShell(func(ctx context.Context, command string) ([]byte, error) {
 		return []byte("from-command"), nil
 	})
-	return NewResolver(NewValues(t.TempDir(), "acme"), shell, set, secrets,
+	return NewValues(NewSite(t.TempDir(), "acme"), shell, set, secrets,
 		io.Discard, strings.NewReader(answers))
 }
 
 func TestResolvePrefersWhatTheOperatorPassed(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", Ask: "address", From: "printf other"}}
-	got, err := resolver(t, map[string]string{"PUBLIC_HOST": "given"}, nil, "").
+	got, err := newValues(t, map[string]string{"PUBLIC_HOST": "given"}, nil, "").
 		Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -33,7 +33,7 @@ func TestResolvePrefersWhatTheOperatorPassed(t *testing.T) {
 
 func TestResolveRunsTheCommandWhenNothingElseAnswers(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", From: "openssl rand -hex 32", Secret: true}}
-	got, err := resolver(t, nil, nil, "").Resolve(context.Background(), variables)
+	got, err := newValues(t, nil, nil, "").Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestResolveRunsTheCommandWhenNothingElseAnswers(t *testing.T) {
 
 func TestResolveAsksTheOperatorWhenThereIsNoCommand(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", Ask: "public address"}}
-	got, err := resolver(t, nil, nil, "dmas.acme.local\n").Resolve(context.Background(), variables)
+	got, err := newValues(t, nil, nil, "dmas.acme.local\n").Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestResolveAsksTheOperatorWhenThereIsNoCommand(t *testing.T) {
 
 func TestResolveAcceptsAnAnswerWithNoTrailingNewline(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", Ask: "public address"}}
-	got, err := resolver(t, nil, nil, "dmas.acme.local").Resolve(context.Background(), variables)
+	got, err := newValues(t, nil, nil, "dmas.acme.local").Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestResolveReportsAReadFailureRatherThanNoValue(t *testing.T) {
 	shell := NewShell(func(ctx context.Context, command string) ([]byte, error) {
 		return []byte("from-command"), nil
 	})
-	r := NewResolver(NewValues(t.TempDir(), "acme"), shell, nil, nil, io.Discard, failingReader{err: readErr})
+	r := NewValues(NewSite(t.TempDir(), "acme"), shell, nil, nil, io.Discard, failingReader{err: readErr})
 
 	_, err := r.Resolve(context.Background(), variables)
 	if !errors.Is(err, readErr) {
@@ -90,7 +90,7 @@ func TestResolveReportsAReadFailureRatherThanNoValue(t *testing.T) {
 
 func TestResolveKeepsASecretPassedWithSetOutOfThePlainValues(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", Secret: true}}
-	got, err := resolver(t, map[string]string{"DB_PASSWORD": "x"}, nil, "").
+	got, err := newValues(t, map[string]string{"DB_PASSWORD": "x"}, nil, "").
 		Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -104,12 +104,12 @@ func TestResolveKeepsASecretPassedWithSetOutOfThePlainValues(t *testing.T) {
 }
 
 func TestResolveNeverAnswersASecretFromTheStore(t *testing.T) {
-	values := NewValues(t.TempDir(), "acme")
+	values := NewSite(t.TempDir(), "acme")
 	if err := values.Write(map[string]string{"DB_PASSWORD": "stored"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	shell := NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
-	r := NewResolver(values, shell, nil, nil, io.Discard, strings.NewReader(""))
+	r := NewValues(values, shell, nil, nil, io.Discard, strings.NewReader(""))
 
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", Secret: true}}
 	_, err := r.Resolve(context.Background(), variables)
@@ -119,12 +119,12 @@ func TestResolveNeverAnswersASecretFromTheStore(t *testing.T) {
 }
 
 func TestResolveSetOutranksAStoredValue(t *testing.T) {
-	values := NewValues(t.TempDir(), "acme")
+	values := NewSite(t.TempDir(), "acme")
 	if err := values.Write(map[string]string{"PUBLIC_HOST": "stored"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	shell := NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
-	r := NewResolver(values, shell, map[string]string{"PUBLIC_HOST": "given"}, nil, io.Discard, strings.NewReader(""))
+	r := NewValues(values, shell, map[string]string{"PUBLIC_HOST": "given"}, nil, io.Discard, strings.NewReader(""))
 
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST"}}
 	got, err := r.Resolve(context.Background(), variables)
@@ -138,7 +138,7 @@ func TestResolveSetOutranksAStoredValue(t *testing.T) {
 
 func TestResolveNamesAVariableItCannotAnswer(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST"}}
-	_, err := resolver(t, nil, nil, "").Resolve(context.Background(), variables)
+	_, err := newValues(t, nil, nil, "").Resolve(context.Background(), variables)
 	if !errors.Is(err, ErrNoValue) {
 		t.Fatalf("got %v, want ErrNoValue", err)
 	}
@@ -149,7 +149,7 @@ func TestResolveNamesAVariableItCannotAnswer(t *testing.T) {
 
 func TestResolveLeavesASecretTheMachineAlreadyHolds(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", From: "printf x", Secret: true}}
-	got, err := resolver(t, nil, []string{"DB_PASSWORD"}, "").Resolve(context.Background(), variables)
+	got, err := newValues(t, nil, []string{"DB_PASSWORD"}, "").Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -160,10 +160,10 @@ func TestResolveLeavesASecretTheMachineAlreadyHolds(t *testing.T) {
 
 func TestResolveDoesNotAskTwiceAcrossTwoInstalls(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", Ask: "public address"}}
-	values := NewValues(t.TempDir(), "acme")
+	values := NewSite(t.TempDir(), "acme")
 	shell := NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
 
-	first := NewResolver(values, shell, nil, nil, io.Discard, strings.NewReader("dmas.acme.local\n"))
+	first := NewValues(values, shell, nil, nil, io.Discard, strings.NewReader("dmas.acme.local\n"))
 	got, err := first.Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -172,7 +172,7 @@ func TestResolveDoesNotAskTwiceAcrossTwoInstalls(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	second := NewResolver(values, shell, nil, nil, io.Discard, strings.NewReader(""))
+	second := NewValues(values, shell, nil, nil, io.Discard, strings.NewReader(""))
 	again, err := second.Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -184,7 +184,7 @@ func TestResolveDoesNotAskTwiceAcrossTwoInstalls(t *testing.T) {
 
 func TestResolveRefusesASetTheDeliveryNeverDeclared(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", Ask: "address"}}
-	_, err := resolver(t, map[string]string{"TYPO_HOST": "x"}, nil, "dmas\n").
+	_, err := newValues(t, map[string]string{"TYPO_HOST": "x"}, nil, "dmas\n").
 		Resolve(context.Background(), variables)
 	if !errors.Is(err, ErrSetIsUnknown) {
 		t.Fatalf("got %v, want ErrSetIsUnknown", err)
@@ -198,7 +198,7 @@ func TestResolveRefusesASetTheDeliveryNeverDeclared(t *testing.T) {
 // carry sudo, or an operator running it unprivileged reaches an empty store and finds nothing.
 func TestResolveRefusesToReplaceASecretTheMachineHolds(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", From: "printf x", Secret: true}}
-	_, err := resolver(t, map[string]string{"DB_PASSWORD": "new"}, []string{"DB_PASSWORD"}, "").
+	_, err := newValues(t, map[string]string{"DB_PASSWORD": "new"}, []string{"DB_PASSWORD"}, "").
 		Resolve(context.Background(), variables)
 	if !errors.Is(err, ErrSecretHeld) {
 		t.Fatalf("got %v, want ErrSecretHeld", err)

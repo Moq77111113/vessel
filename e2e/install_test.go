@@ -8,11 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/target"
+	"github.com/Moq77111113/vessel/internal/machine"
+	"github.com/Moq77111113/vessel/internal/quadlet"
 )
 
 func TestAQuadletStackReachesACleanRootFromABundle(t *testing.T) {
 	needPodman(t)
+	takeSystemctl(t)
 
 	root := t.TempDir()
 	if err := runVessel("install", "--root", root, buildStack(t)); err != nil {
@@ -30,6 +32,7 @@ func TestAQuadletStackReachesACleanRootFromABundle(t *testing.T) {
 
 func TestInstallingTwiceChangesNothingTheSecondTime(t *testing.T) {
 	needPodman(t)
+	takeSystemctl(t)
 
 	root, bundle := t.TempDir(), buildStack(t)
 	if err := runVessel("install", "--root", root, bundle); err != nil {
@@ -54,6 +57,7 @@ func TestInstallingTwiceChangesNothingTheSecondTime(t *testing.T) {
 
 func TestInstallPutsTheValueTheOperatorGaveIntoTheFile(t *testing.T) {
 	needPodman(t)
+	takeSystemctl(t)
 
 	dir := buildDelivery(t, map[string]string{
 		"vessel.yaml": `
@@ -83,6 +87,7 @@ variables:
 
 func TestInstallWritesNothingWhenAValueIsMissing(t *testing.T) {
 	needPodman(t)
+	takeSystemctl(t)
 
 	dir := buildDelivery(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
 	root := t.TempDir()
@@ -97,16 +102,24 @@ func TestInstallWritesNothingWhenAValueIsMissing(t *testing.T) {
 // needPodman skips the test unless podman is here, new enough, and able to start.
 func needPodman(t *testing.T) {
 	t.Helper()
-	version, err := target.NewLoader(target.Exec).Version(context.Background())
-	if err != nil {
-		t.Skipf("no podman on this machine: %v", err)
+	if err := quadlet.New(machine.Exec).Check(context.Background(), t.TempDir()); err != nil {
+		t.Skipf("this machine cannot run a quadlet stack: %v", err)
 	}
-	if err := target.CheckPodman(version); err != nil {
-		t.Skipf("podman %s, this test needs 5.0 or newer", version)
+}
+
+// takeSystemctl puts a systemctl on PATH that records its arguments, and returns that record.
+// Install ends by starting what it wrote, and units under a temporary root are units the
+// machine's own systemd never sees.
+func takeSystemctl(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	record := filepath.Join(dir, "calls")
+	script := "#!/bin/sh\necho \"$@\" >>" + record + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
-	if output, err := exec.Command("podman", "image", "ls").CombinedOutput(); err != nil {
-		t.Skipf("podman %s cannot run here: %s", version, strings.TrimSpace(string(output)))
-	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return record
 }
 
 func imageOf(t *testing.T, unit string) string {

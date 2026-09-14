@@ -1,4 +1,4 @@
-package target
+package machine
 
 import (
 	"bufio"
@@ -25,9 +25,9 @@ type Resolution struct {
 	Secrets map[string]string
 }
 
-// Resolver answers the variables a delivery declares, from this machine and this operator.
-type Resolver struct {
-	values  *Values
+// Values answers the variables a delivery declares, from this machine and this operator.
+type Values struct {
+	site    *Site
 	shell   *Shell
 	set     map[string]string
 	secrets map[string]bool
@@ -35,38 +35,38 @@ type Resolver struct {
 	ask     *bufio.Reader
 }
 
-// NewResolver returns a resolver over one machine's store, shell and operator.
-func NewResolver(values *Values, shell *Shell, set map[string]string, secrets []string,
-	out io.Writer, ask io.Reader) *Resolver {
-	machine := make(map[string]bool, len(secrets))
+// NewValues returns the values of one run, read from this machine, this delivery and this operator.
+func NewValues(site *Site, shell *Shell, set map[string]string, secrets []string,
+	out io.Writer, ask io.Reader) *Values {
+	machineSecrets := make(map[string]bool, len(secrets))
 	for _, name := range secrets {
-		machine[name] = true
+		machineSecrets[name] = true
 	}
-	return &Resolver{
-		values:  values,
+	return &Values{
+		site:    site,
 		shell:   shell,
 		set:     set,
-		secrets: machine,
+		secrets: machineSecrets,
 		out:     out,
 		ask:     bufio.NewReader(ask),
 	}
 }
 
 // Resolve answers every variable, or names the first one it cannot.
-func (r *Resolver) Resolve(ctx context.Context, variables []delivery.Variable) (Resolution, error) {
-	values, err := r.values.Read()
+func (v *Values) Resolve(ctx context.Context, variables []delivery.Variable) (Resolution, error) {
+	values, err := v.site.Read()
 	if err != nil {
 		return Resolution{}, err
 	}
-	if err := r.checkTheSetLands(variables); err != nil {
+	if err := v.checkTheSetLands(variables); err != nil {
 		return Resolution{}, err
 	}
 	resolution := Resolution{Values: map[string]string{}, Secrets: map[string]string{}}
 	for _, variable := range variables {
-		if variable.Secret && r.secrets[variable.Name] {
+		if variable.Secret && v.secrets[variable.Name] {
 			continue
 		}
-		value, err := r.value(ctx, variable, values)
+		value, err := v.value(ctx, variable, values)
 		if err != nil {
 			return Resolution{}, err
 		}
@@ -81,13 +81,13 @@ func (r *Resolver) Resolve(ctx context.Context, variables []delivery.Variable) (
 
 // checkTheSetLands refuses a --set that cannot reach the install: one naming a variable the
 // delivery never declared, and one naming a secret this machine already holds.
-func (r *Resolver) checkTheSetLands(variables []delivery.Variable) error {
+func (v *Values) checkTheSetLands(variables []delivery.Variable) error {
 	byName := make(map[string]delivery.Variable, len(variables))
 	for _, variable := range variables {
 		byName[variable.Name] = variable
 	}
-	names := make([]string, 0, len(r.set))
-	for name := range r.set {
+	names := make([]string, 0, len(v.set))
+	for name := range v.set {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -96,7 +96,7 @@ func (r *Resolver) checkTheSetLands(variables []delivery.Variable) error {
 		if !ok {
 			return fmt.Errorf("--set %s: %w", name, ErrSetIsUnknown)
 		}
-		if variable.Secret && r.secrets[name] {
+		if variable.Secret && v.secrets[name] {
 			return fmt.Errorf("--set %s: remove it with sudo podman secret rm %s, then install again: %w",
 				name, name, ErrSecretHeld)
 		}
@@ -104,26 +104,26 @@ func (r *Resolver) checkTheSetLands(variables []delivery.Variable) error {
 	return nil
 }
 
-func (r *Resolver) value(ctx context.Context, variable delivery.Variable,
+func (v *Values) value(ctx context.Context, variable delivery.Variable,
 	values map[string]string) (string, error) {
-	if value, ok := r.set[variable.Name]; ok {
+	if value, ok := v.set[variable.Name]; ok {
 		return value, nil
 	}
 	if value, ok := values[variable.Name]; ok && !variable.Secret {
 		return value, nil
 	}
 	if variable.From != "" {
-		return r.shell.Value(ctx, variable.From)
+		return v.shell.Value(ctx, variable.From)
 	}
 	if variable.Ask != "" {
-		return r.question(variable)
+		return v.question(variable)
 	}
 	return "", fmt.Errorf("%s: %w", variable.Name, ErrNoValue)
 }
 
-func (r *Resolver) question(variable delivery.Variable) (string, error) {
-	fmt.Fprintf(r.out, "%s (%s): ", variable.Name, variable.Ask)
-	line, err := r.ask.ReadString('\n')
+func (v *Values) question(variable delivery.Variable) (string, error) {
+	fmt.Fprintf(v.out, "%s (%s): ", variable.Name, variable.Ask)
+	line, err := v.ask.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("read the answer for %s: %w", variable.Name, err)
 	}

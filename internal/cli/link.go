@@ -16,6 +16,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/registry"
 	"github.com/Moq77111113/vessel/internal/report"
 )
@@ -61,11 +62,11 @@ func link(ctx context.Context, work, summary report.Report, source, out, platfor
 		units = filepath.Join(source, definition.Units)
 	}
 	dir := os.DirFS(units)
-	reader, err := descriptor.Pick(readers, dir)
+	kind, err := machine.Pick(machines, dir)
 	if err != nil {
 		return err
 	}
-	manifest, err := reader.Read(dir)
+	manifest, err := kind.Read(dir)
 	if err != nil {
 		return err
 	}
@@ -76,10 +77,10 @@ func link(ctx context.Context, work, summary report.Report, source, out, platfor
 	if err := checkNoCollision(manifest.Files, plain); err != nil {
 		return err
 	}
-	if err := checkOutsideTheUnitDirectories(reader, plain); err != nil {
+	if err := checkOutsideTheUnitDirectories(kind, plain); err != nil {
 		return err
 	}
-	if err := checkEverySecretIsRead(reader.Requires(manifest.Files), definition.Variables); err != nil {
+	if err := checkEverySecretIsRead(kind.Requires(manifest.Files), definition.Variables); err != nil {
 		return err
 	}
 	manifest.Files = append(manifest.Files, plain...)
@@ -107,7 +108,7 @@ func link(ctx context.Context, work, summary report.Report, source, out, platfor
 		Config: bundle.Config{
 			Name:      name,
 			Version:   version,
-			Reader:    reader.Name(),
+			Reader:    kind.Name(),
 			Platform:  platform,
 			Images:    imagesOf(digests),
 			Variables: definition.Variables,
@@ -206,9 +207,9 @@ func checkNoCollision(units, files []descriptor.File) error {
 
 // checkOutsideTheUnitDirectories refuses a plain file that lands where the reader writes its
 // units: link never reads it as a unit, so nothing pins the image it may name.
-func checkOutsideTheUnitDirectories(reader descriptor.Reader, files []descriptor.File) error {
+func checkOutsideTheUnitDirectories(kind machine.Source, files []descriptor.File) error {
 	for _, file := range files {
-		if reader.Owns(file.Path) {
+		if kind.Owns(file.Path) {
 			return fmt.Errorf("%s: %w", file.Path, ErrTargetInUnitDirectory)
 		}
 	}

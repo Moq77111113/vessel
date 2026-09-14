@@ -1,4 +1,4 @@
-package target
+package quadlet
 
 import (
 	"context"
@@ -15,7 +15,7 @@ const (
 	minPodmanMinor = 0
 )
 
-// Errors the preflight returns before a bundle touches the disk.
+// Errors Check returns before a bundle touches the disk.
 var (
 	ErrPodmanTooOld  = errors.New("podman is too old for quadlet")
 	ErrPodmanVersion = errors.New("unreadable podman version")
@@ -26,15 +26,15 @@ var (
 	ErrNotReady      = errors.New("this machine is not ready")
 )
 
-// Preflight reports everything wrong with the machine at once, so one run names every fix.
-func Preflight(ctx context.Context, loader *Loader, root string) error {
+// Check reports everything wrong with the machine at once, so one run names every fix.
+func (m *Machine) Check(ctx context.Context, root string) error {
 	var problems []error
-	version, err := loader.Version(ctx)
+	version, err := m.podman.Version(ctx)
 	if err != nil {
 		problems = append(problems, err)
 	} else if err := CheckPodman(version); err != nil {
 		problems = append(problems, err)
-	} else if err := loader.Ready(ctx); err != nil {
+	} else if err := m.podman.Ready(ctx); err != nil {
 		problems = append(problems, err)
 	}
 	if err := checkSystemd(); err != nil {
@@ -74,7 +74,7 @@ func checkSystemd() error {
 }
 
 // checkWritable probes the deepest directory that already exists, so a failed
-// preflight leaves nothing behind.
+// check leaves nothing behind.
 func checkWritable(root string) error {
 	target := filepath.Join(root, systemdPath)
 	dir := target

@@ -1,4 +1,4 @@
-package target
+package machine
 
 import (
 	"errors"
@@ -15,18 +15,18 @@ const valuesPath = "var/lib/vessel"
 // ErrValueHasANewline says a value cannot be stored because the file keeps one value per line.
 var ErrValueHasANewline = errors.New("a value cannot hold a newline")
 
-// Values is the site values one delivery already holds on this machine.
-type Values struct {
+// Site is the site values one delivery already holds on this machine.
+type Site struct {
 	path string
 }
 
-// NewValues returns the value store of a delivery under the target root.
-func NewValues(root, name string) *Values {
-	return &Values{path: filepath.Join(root, valuesPath, name, "values")}
+// NewSite returns the value store of a delivery under the target root.
+func NewSite(root, name string) *Site {
+	return &Site{path: filepath.Join(root, valuesPath, name, "values")}
 }
 
 // Read returns the values this machine holds, empty on a machine that holds none.
-func (v *Values) Read() (map[string]string, error) {
+func (v *Site) Read() (map[string]string, error) {
 	data, err := os.ReadFile(v.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -47,7 +47,7 @@ func (v *Values) Read() (map[string]string, error) {
 }
 
 // Write replaces the store with these values.
-func (v *Values) Write(values map[string]string) error {
+func (v *Site) Write(values map[string]string) error {
 	names := make([]string, 0, len(values))
 	for name := range values {
 		names = append(names, name)

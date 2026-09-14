@@ -7,15 +7,24 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/internal/machine"
 )
 
+func TestTheCompositionRootNamesOneMachineKind(t *testing.T) {
+	if len(machines) != 1 {
+		t.Fatalf("got %d machines, want 1", len(machines))
+	}
+	if got, want := machines[0].Name(), "quadlet"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestVesselReadsQuadlet(t *testing.T) {
-	reader, err := descriptor.Pick(readers, os.DirFS("../quadlet/testdata/stack"))
+	kind, err := machine.Pick(machines, os.DirFS("../quadlet/testdata/stack"))
 	if err != nil {
 		t.Fatalf("Pick: %v", err)
 	}
-	if got, want := reader.Name(), "quadlet"; got != want {
+	if got, want := kind.Name(), "quadlet"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }

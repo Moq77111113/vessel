@@ -1,6 +1,8 @@
-package target
+package machine
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"testing"
@@ -96,5 +98,30 @@ func TestTreeRefusesAPathThatLeavesTheRoot(t *testing.T) {
 	file := descriptor.File{Path: "../escaped.container", Data: []byte("x")}
 	if _, err := NewTree(t.TempDir()).Write(file); err == nil {
 		t.Fatal("Write: want an error on a path leaving the root, got nil")
+	}
+}
+
+func TestSameRefusesAFileEditedSinceItWasWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "web.container")
+	if err := os.WriteFile(path, []byte("first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256([]byte("first"))
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+
+	if !Same(path, digest) {
+		t.Error("an untouched file does not match its digest")
+	}
+	if err := os.WriteFile(path, []byte("second"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if Same(path, digest) {
+		t.Error("an edited file still matches its digest")
+	}
+}
+
+func TestSameRefusesAFileThatIsGone(t *testing.T) {
+	if Same(filepath.Join(t.TempDir(), "absent"), "sha256:0000") {
+		t.Error("a missing file matches a digest")
 	}
 }
