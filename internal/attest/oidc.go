@@ -23,9 +23,7 @@ type oidcTokenSource struct {
 	client *http.Client
 }
 
-// NewOIDCTokenSource creates a token source.
-// The lookup function is called to read environment variables.
-// If client is nil, http.DefaultClient is used.
+// NewOIDCTokenSource creates a token source reading env via lookup; a nil client means http.DefaultClient.
 func NewOIDCTokenSource(lookup func(string) string, client *http.Client) TokenSource {
 	if client == nil {
 		client = http.DefaultClient
@@ -44,10 +42,7 @@ func githubRequestURL(rawURL string) (string, error) {
 	return u.String(), nil
 }
 
-// Token returns the OIDC token for Sigstore.
-// It first tries to read VESSEL_SIGSTORE_ID_TOKEN (GitLab).
-// If not found, it tries GitHub Actions via ACTIONS_ID_TOKEN_REQUEST_URL and ACTIONS_ID_TOKEN_REQUEST_TOKEN.
-// If neither is available, it returns ErrNoOIDCToken.
+// Token returns the CI OIDC token, trying GitLab's VESSEL_SIGSTORE_ID_TOKEN before the GitHub Actions endpoint.
 func (s *oidcTokenSource) Token(ctx context.Context) (string, error) {
 	if token := s.lookup("VESSEL_SIGSTORE_ID_TOKEN"); token != "" {
 		return token, nil
