@@ -3,7 +3,6 @@ module github.com/Moq77111113/vessel
 go 1.26
 
 require (
-	aead.dev/minisign v0.3.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/spf13/cobra v1.10.2

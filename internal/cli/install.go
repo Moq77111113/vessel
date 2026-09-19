@@ -17,7 +17,7 @@ func newInstallCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "install <bundle>",
 		Short: "Install a bundle on this machine",
-		Long: "Checks the machine, verifies the bundle, puts its images into local storage and\n" +
+		Long: "Checks the machine, opens the bundle, puts its images into local storage and\n" +
 			"its files on disk, removes any file a previous version put that this one does\n" +
 			"not carry, then starts the services once.\n\n" +
 			"For an operator, prefer an executable made by build: it needs no vessel binary.",
@@ -34,7 +34,7 @@ func newInstallCommand() *cobra.Command {
 	return command
 }
 
-// jobOnDisk reads the bundle an operator named, verifying its signature before anything else.
+// jobOnDisk reads the bundle an operator named, checking it carries digests and a name first.
 func jobOnDisk(dir string, set []string) (delivery.Install, error) {
 	if !bundle.IsBundle(dir) {
 		return delivery.Install{}, fmt.Errorf("%s %w", dir, bundle.ErrNotABundle)
@@ -43,7 +43,7 @@ func jobOnDisk(dir string, set []string) (delivery.Install, error) {
 	if err != nil {
 		return delivery.Install{}, err
 	}
-	artifact, err := bundle.OpenVerified(dir)
+	artifact, err := bundle.OpenNamed(dir)
 	if err != nil {
 		return delivery.Install{}, err
 	}
