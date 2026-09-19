@@ -1,0 +1,79 @@
+package attest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+// ErrNoOIDCToken is returned when no OIDC token can be obtained.
+var ErrNoOIDCToken = errors.New("no OIDC token available")
+
+// TokenSource obtains OIDC tokens for Sigstore.
+type TokenSource interface {
+	Token(context.Context) (string, error)
+}
+
+type oidcTokenSource struct {
+	lookup func(string) string
+	client *http.Client
+}
+
+// NewOIDCTokenSource creates a token source.
+// The lookup function is called to read environment variables.
+// If client is nil, http.DefaultClient is used.
+func NewOIDCTokenSource(lookup func(string) string, client *http.Client) TokenSource {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &oidcTokenSource{lookup: lookup, client: client}
+}
+
+// Token returns the OIDC token for Sigstore.
+// It first tries to read VESSEL_SIGSTORE_ID_TOKEN (GitLab).
+// If not found, it tries GitHub Actions via ACTIONS_ID_TOKEN_REQUEST_URL and ACTIONS_ID_TOKEN_REQUEST_TOKEN.
+// If neither is available, it returns ErrNoOIDCToken.
+func (s *oidcTokenSource) Token(ctx context.Context) (string, error) {
+	if token := s.lookup("VESSEL_SIGSTORE_ID_TOKEN"); token != "" {
+		return token, nil
+	}
+
+	url := s.lookup("ACTIONS_ID_TOKEN_REQUEST_URL")
+	requestToken := s.lookup("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+	if url == "" || requestToken == "" {
+		return "", ErrNoOIDCToken
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"?audience=sigstore", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create OIDC request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+requestToken)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch OIDC token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("OIDC request failed with status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read OIDC response: %w", err)
+	}
+
+	var data struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", fmt.Errorf("failed to decode OIDC response: %w", err)
+	}
+
+	return data.Value, nil
+}
