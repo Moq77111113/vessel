@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 // ErrNoOIDCToken is returned when no OIDC token can be obtained.
@@ -32,6 +33,17 @@ func NewOIDCTokenSource(lookup func(string) string, client *http.Client) TokenSo
 	return &oidcTokenSource{lookup: lookup, client: client}
 }
 
+func githubRequestURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse OIDC request URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("audience", "sigstore")
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 // Token returns the OIDC token for Sigstore.
 // It first tries to read VESSEL_SIGSTORE_ID_TOKEN (GitLab).
 // If not found, it tries GitHub Actions via ACTIONS_ID_TOKEN_REQUEST_URL and ACTIONS_ID_TOKEN_REQUEST_TOKEN.
@@ -41,13 +53,18 @@ func (s *oidcTokenSource) Token(ctx context.Context) (string, error) {
 		return token, nil
 	}
 
-	url := s.lookup("ACTIONS_ID_TOKEN_REQUEST_URL")
+	rawURL := s.lookup("ACTIONS_ID_TOKEN_REQUEST_URL")
 	requestToken := s.lookup("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-	if url == "" || requestToken == "" {
+	if rawURL == "" || requestToken == "" {
 		return "", ErrNoOIDCToken
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"?audience=sigstore", nil)
+	reqURL, err := githubRequestURL(rawURL)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create OIDC request: %w", err)
 	}

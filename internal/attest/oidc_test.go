@@ -59,6 +59,45 @@ func TestOIDCTokenReturnsMissingTokenError(t *testing.T) {
 	}
 }
 
+func TestOIDCTokenWithPreexistingQueryString(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer request-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		// Check that both query parameters are present
+		if r.URL.Query().Get("audience") != "sigstore" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("missing or wrong audience"))
+			return
+		}
+		if r.URL.Query().Get("api-version") != "2.0" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("missing or wrong api-version"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"value": "github-token"})
+	}))
+	defer server.Close()
+
+	source := NewOIDCTokenSource(func(k string) string {
+		switch k {
+		case "VESSEL_SIGSTORE_ID_TOKEN":
+			return ""
+		case "ACTIONS_ID_TOKEN_REQUEST_URL":
+			return server.URL + "?api-version=2.0"
+		case "ACTIONS_ID_TOKEN_REQUEST_TOKEN":
+			return "request-token"
+		}
+		return ""
+	}, nil)
+	got, err := source.Token(context.Background())
+	if err != nil || got != "github-token" {
+		t.Fatalf("Token: %q, %v", got, err)
+	}
+}
+
 func TestOIDCTokenErrorContainsNoCredentials(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
