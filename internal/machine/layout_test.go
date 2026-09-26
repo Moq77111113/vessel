@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -144,4 +145,23 @@ func countBlobs(names map[string]bool) int {
 		}
 	}
 	return count
+}
+
+func TestArchiveStreamsALayerInsteadOfHoldingIt(t *testing.T) {
+	const size = 32 << 20
+	dir, root := layouttest.OneImage(t, size)
+	layout, err := machine.OpenLayout(dir, root)
+	if err != nil {
+		t.Fatalf("OpenLayout: %v", err)
+	}
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	if err := layout.Archive(0, io.Discard); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > size/4 {
+		t.Errorf("allocated %d bytes to archive a %d byte layer, want at most a quarter of it", allocated, size)
+	}
 }

@@ -12,22 +12,55 @@ import (
 	"github.com/Moq77111113/vessel/internal/machine"
 )
 
-// TwoImages writes an OCI layout holding two images that share one layer, and returns its directory and the digest of its index.
-func TwoImages(t *testing.T) (string, string) {
+// OneImage writes an OCI layout holding one image whose single layer is size bytes, and returns its directory and the digest of its index.
+func OneImage(t *testing.T, size int) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
-	blobs := filepath.Join(dir, "blobs", "sha256")
-	if err := os.MkdirAll(blobs, 0o755); err != nil {
+	put := blobs(t, dir)
+	layer := put(make([]byte, size))
+	config := put([]byte(`{"architecture":"amd64","os":"linux"}`))
+	body, err := json.Marshal(map[string]any{
+		"schemaVersion": 2,
+		"mediaType":     "application/vnd.oci.image.manifest.v1+json",
+		"config":        map[string]any{"mediaType": "application/vnd.oci.image.config.v1+json", "digest": config, "size": 1},
+		"layers":        []map[string]any{{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": layer, "size": size}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	image := put(body)
+	index, err := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json",
+		"manifests": []map[string]any{{"mediaType": "application/vnd.oci.image.manifest.v1+json", "digest": image, "size": len(body),
+			"annotations": map[string]string{machine.RefNameAnnotation: "registry.example.com/acme/big:1.0"}}}})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	write(t, filepath.Join(dir, "oci-layout"), []byte(`{"imageLayoutVersion":"1.0.0"}`))
+	return dir, put(index)
+}
+
+// blobs returns a function that writes a blob under dir and returns its digest.
+func blobs(t *testing.T, dir string) func([]byte) string {
+	t.Helper()
+	path := filepath.Join(dir, "blobs", "sha256")
+	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	put := func(body []byte) string {
+	return func(body []byte) string {
 		sum := sha256.Sum256(body)
 		digest := hex.EncodeToString(sum[:])
-		if err := os.WriteFile(filepath.Join(blobs, digest), body, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(path, digest), body, 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
 		return "sha256:" + digest
 	}
+}
+
+// TwoImages writes an OCI layout holding two images that share one layer, and returns its directory and the digest of its index.
+func TwoImages(t *testing.T) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	put := blobs(t, dir)
 	layer := put([]byte("a layer both images carry"))
 
 	var manifests []map[string]any
