@@ -11,7 +11,7 @@ import (
 )
 
 func newResumeCommand() *cobra.Command {
-	var set []string
+	var values answers
 	var skip bool
 	var dry bool
 
@@ -22,14 +22,14 @@ func newResumeCommand() *cobra.Command {
 			"Refuses when an action may have stopped halfway: check it, then --skip-action.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			job, err := jobOnDisk(args[0], set)
+			job, err := jobOnDisk(args[0], values)
 			if err != nil {
 				return err
 			}
 			return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), preview(job, dry), skip)
 		},
 	}
-	bindSetFlag(command, &set)
+	values.bind(command)
 	bindSkipFlag(command, &skip)
 	bindDryRunFlag(command, &dry)
 	return command

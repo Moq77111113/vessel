@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -22,6 +24,7 @@ type Install struct {
 	Artifact *bundle.Bundle
 	Root     string
 	Set      map[string]string
+	SetFile  map[string]string
 	Machines []machine.Machine
 	Shell    *machine.Shell
 	preview  bool
@@ -394,8 +397,12 @@ func (i Install) checkMachine(ctx context.Context, name string) (machine.Machine
 // resolveValues answers every variable the delivery declares, from this machine and this operator.
 func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Config,
 	secrets []string) (*site.Store, site.Resolution, error) {
+	values, err := answers(config.Variables, i.Set, i.SetFile)
+	if err != nil {
+		return nil, site.Resolution{}, err
+	}
 	store := site.NewStore(dir)
-	resolution, err := site.NewValues(store, i.shell(), i.Set, secrets).Resolve(ctx, config.Variables)
+	resolution, err := site.NewValues(store, i.shell(), values, secrets).Resolve(ctx, config.Variables)
 	if err != nil {
 		return nil, site.Resolution{}, err
 	}
@@ -535,10 +542,13 @@ func reportMissingSecrets(out io.Writer, secrets, units []string) {
 	}
 }
 
-// Errors a --set flag draws before an install looks at a bundle.
+// Errors a --set or --set-file flag draws.
 var (
-	ErrBadSet     = errors.New("is not NAME=value")
-	ErrSetIsEmpty = errors.New("gives no value, and a value is never empty")
+	ErrBadSet              = errors.New("is not NAME=value")
+	ErrSetIsEmpty          = errors.New("gives no value, and a value is never empty")
+	ErrSecretFileOpen      = errors.New("is readable by other users, chmod 600 it")
+	ErrSecretOnCommandLine = errors.New("is a secret, pass it with --set-file so it never shows on a command line")
+	ErrSetFilePlain        = errors.New("is not a secret, pass it with --set")
 )
 
 // ParseSet turns a repeated --set NAME=value flag into the values it names.
@@ -554,5 +564,59 @@ func ParseSet(pairs []string) (map[string]string, error) {
 		}
 		values[name] = value
 	}
+	return values, nil
+}
+
+// ReadSetFile turns a repeated --set-file NAME=path flag into the values those files hold.
+func ReadSetFile(pairs []string) (map[string]string, error) {
+	values := make(map[string]string, len(pairs))
+	for _, pair := range pairs {
+		name, path, ok := strings.Cut(pair, "=")
+		if !ok || name == "" || path == "" {
+			return nil, fmt.Errorf("--set-file %q %w", pair, ErrBadSet)
+		}
+		body, err := readSecret(path)
+		if err != nil {
+			return nil, fmt.Errorf("--set-file %s: %w", name, err)
+		}
+		value := strings.TrimSuffix(string(body), "\n")
+		if value == "" {
+			return nil, fmt.Errorf("--set-file %s %w", name, ErrSetIsEmpty)
+		}
+		values[name] = value
+	}
+	return values, nil
+}
+
+// readSecret reads a file no other user can read, through one handle so it cannot change in between.
+func readSecret(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%s %w", path, ErrSecretFileOpen)
+	}
+	return io.ReadAll(file)
+}
+
+// answers joins --set and --set-file, refusing a secret on the command line and a plain value in a file.
+func answers(variables []descriptor.Variable, set, files map[string]string) (map[string]string, error) {
+	values := make(map[string]string, len(set)+len(files))
+	for _, variable := range variables {
+		if _, ok := set[variable.Name]; ok && variable.Secret {
+			return nil, fmt.Errorf("--set %s %w", variable.Name, ErrSecretOnCommandLine)
+		}
+		if _, ok := files[variable.Name]; ok && !variable.Secret {
+			return nil, fmt.Errorf("--set-file %s %w", variable.Name, ErrSetFilePlain)
+		}
+	}
+	maps.Copy(values, set)
+	maps.Copy(values, files)
 	return values, nil
 }

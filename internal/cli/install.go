@@ -12,7 +12,7 @@ import (
 )
 
 func newInstallCommand() *cobra.Command {
-	var set []string
+	var values answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -24,48 +24,60 @@ func newInstallCommand() *cobra.Command {
 			"For an operator, prefer an executable made by build: it needs no vessel binary.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			job, err := jobOnDisk(args[0], set)
+			job, err := jobOnDisk(args[0], values)
 			if err != nil {
 				return err
 			}
 			return preview(job, dry).Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 		},
 	}
-	bindSetFlag(command, &set)
+	values.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
 // jobOnDisk reads the bundle an operator named, checking it carries digests and a name first.
-func jobOnDisk(dir string, set []string) (delivery.Install, error) {
+func jobOnDisk(dir string, values answers) (delivery.Install, error) {
 	if !bundle.IsBundle(dir) {
 		return delivery.Install{}, fmt.Errorf("%s %w", dir, bundle.ErrNotABundle)
-	}
-	values, err := delivery.ParseSet(set)
-	if err != nil {
-		return delivery.Install{}, err
 	}
 	artifact, err := bundle.OpenNamed(dir)
 	if err != nil {
 		return delivery.Install{}, err
 	}
-	return newInstall(artifact, values), nil
+	return values.job(artifact)
 }
 
-// newInstall wires an install to this machine, the machines this build knows and the system shell.
-func newInstall(artifact *bundle.Bundle, set map[string]string) delivery.Install {
+// answers is what an operator gives the variables: plain values with --set, secrets with --set-file.
+type answers struct {
+	set   []string
+	files []string
+}
+
+// bind gives command the repeated --set and --set-file flags.
+func (a *answers) bind(command *cobra.Command) {
+	command.Flags().StringArrayVar(&a.set, "set", nil, "answer a plain variable: --set NAME=value")
+	command.Flags().StringArrayVar(&a.files, "set-file", nil, "answer a secret from a file only root reads: --set-file NAME=path")
+}
+
+// job wires an install of artifact to this machine, the machines this build knows and the system shell.
+func (a answers) job(artifact *bundle.Bundle) (delivery.Install, error) {
+	set, err := delivery.ParseSet(a.set)
+	if err != nil {
+		return delivery.Install{}, err
+	}
+	files, err := delivery.ReadSetFile(a.files)
+	if err != nil {
+		return delivery.Install{}, err
+	}
 	return delivery.Install{
 		Artifact: artifact,
 		Root:     machineRoot,
 		Set:      set,
+		SetFile:  files,
 		Machines: machines,
 		Shell:    machine.NewShell(machine.Sh),
-	}
-}
-
-// bindSetFlag gives command the repeated --set flag an install answers its variables with.
-func bindSetFlag(command *cobra.Command, set *[]string) {
-	command.Flags().StringArrayVar(set, "set", nil, "answer a variable: --set NAME=value")
+	}, nil
 }
 
 // bindDryRunFlag gives command the --dry-run flag that prints the plan and changes nothing.

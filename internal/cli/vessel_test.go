@@ -125,3 +125,13 @@ func TestEveryVerbThatChangesTheMachineOffersDryRun(t *testing.T) {
 		}
 	}
 }
+
+func TestEveryVerbThatTakesValuesOffersSetFile(t *testing.T) {
+	commands := []*cobra.Command{newInstallCommand(), newUpgradeCommand(), newResumeCommand(),
+		packedInstall("myapp"), packedUpgrade("myapp"), packedResume("myapp")}
+	for _, command := range commands {
+		if command.Flags().Lookup("set-file") == nil {
+			t.Errorf("%s offers no --set-file", command.Name())
+		}
+	}
+}

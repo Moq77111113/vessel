@@ -19,7 +19,8 @@ import (
 func TestADryRunChangesNothingOnTheMachine(t *testing.T) {
 	root := t.TempDir()
 	stub := &podmanStub{}
-	job := jobFor(t, root, dryRunBundle(t), []machine.Machine{quadlet.New(stub.run)}, map[string]string{"DB_PASSWORD": "hunter2"})
+	job := jobFor(t, root, dryRunBundle(t), []machine.Machine{quadlet.New(stub.run)}, nil)
+	job.SetFile = dbPassword
 	if err := job.Preview().Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
@@ -132,6 +133,9 @@ func readOnly(call string) bool {
 }
 
 // dryRunBundle links testdata/dry-run with a unit that reads DB_PASSWORD.
+// dbPassword answers the secret the dry-run fixture declares, as --set-file would.
+var dbPassword = map[string]string{"DB_PASSWORD": "hunter2"}
+
 func dryRunBundle(t *testing.T) string {
 	t.Helper()
 	return linkTestDelivery(t, "Secret=DB_PASSWORD,type=env,target=DB\n", fixture(t, "dry-run"))
@@ -141,7 +145,8 @@ func dryRunBundle(t *testing.T) string {
 func dryRun(t *testing.T, root, dir string) string {
 	t.Helper()
 	var out bytes.Buffer
-	job := jobFor(t, root, dir, nil, map[string]string{"DB_PASSWORD": "hunter2"})
+	job := jobFor(t, root, dir, nil, nil)
+	job.SetFile = dbPassword
 	if err := job.Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
@@ -247,7 +252,8 @@ func TestADryRunWithNoServiceSaysNothingAboutHealth(t *testing.T) {
 }
 
 func TestADryRunRunsNoFromEvenWithAShellSetAfterPreview(t *testing.T) {
-	job := jobFor(t, t.TempDir(), dryRunBundle(t), nil, map[string]string{"DB_PASSWORD": "hunter2"}).Preview()
+	job := jobFor(t, t.TempDir(), dryRunBundle(t), nil, nil).Preview()
+	job.SetFile = dbPassword
 	job.Shell = machine.NewShell(noCapture)
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("the dry run ran a from: command: %v", err)

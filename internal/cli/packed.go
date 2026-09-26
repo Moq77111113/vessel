@@ -45,7 +45,7 @@ func packedInspect(self string) *cobra.Command {
 }
 
 func packedInstall(self string) *cobra.Command {
-	var set []string
+	var values answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -53,18 +53,18 @@ func packedInstall(self string) *cobra.Command {
 		Short: "Put the images and files on this machine",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return withJob(self, set, func(job delivery.Install) error {
+			return withJob(self, values, func(job delivery.Install) error {
 				return preview(job, dry).Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 			})
 		},
 	}
-	bindSetFlag(command, &set)
+	values.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
 func packedResume(self string) *cobra.Command {
-	var set []string
+	var values answers
 	var skip bool
 	var dry bool
 
@@ -73,19 +73,19 @@ func packedResume(self string) *cobra.Command {
 		Short: "Finish an install this executable started and never finished",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return withJob(self, set, func(job delivery.Install) error {
+			return withJob(self, values, func(job delivery.Install) error {
 				return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), preview(job, dry), skip)
 			})
 		},
 	}
-	bindSetFlag(command, &set)
+	values.bind(command)
 	bindSkipFlag(command, &skip)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
 func packedUpgrade(self string) *cobra.Command {
-	var set []string
+	var values answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -93,12 +93,12 @@ func packedUpgrade(self string) *cobra.Command {
 		Short: "Install a newer version, refusing a machine that holds no record of this delivery",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return withJob(self, set, func(job delivery.Install) error {
+			return withJob(self, values, func(job delivery.Install) error {
 				return preview(job, dry).Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 			})
 		},
 	}
-	bindSetFlag(command, &set)
+	values.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
@@ -141,17 +141,17 @@ func packedUninstall(self string) *cobra.Command {
 
 // withJob lays the carried bundle down and hands the install it describes to run. A binary
 // cannot vouch for the payload it carries, so the operator checks the file itself.
-func withJob(self string, set []string, run func(delivery.Install) error) error {
-	values, err := delivery.ParseSet(set)
-	if err != nil {
-		return err
-	}
+func withJob(self string, values answers, run func(delivery.Install) error) error {
 	return withPayload(self, func(dir string) error {
 		artifact, err := bundle.OpenNamed(dir)
 		if err != nil {
 			return err
 		}
-		return run(newInstall(artifact, values))
+		job, err := values.job(artifact)
+		if err != nil {
+			return err
+		}
+		return run(job)
 	})
 }
 
