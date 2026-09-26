@@ -8,6 +8,7 @@ import (
 
 func newUpgradeCommand() *cobra.Command {
 	var set []string
+	var dry bool
 
 	command := &cobra.Command{
 		Use:   "upgrade <bundle>",
@@ -20,9 +21,10 @@ func newUpgradeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return job.Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			return preview(job, dry).Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 		},
 	}
 	bindSetFlag(command, &set)
+	bindDryRunFlag(command, &dry)
 	return command
 }

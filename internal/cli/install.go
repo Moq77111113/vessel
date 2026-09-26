@@ -13,6 +13,7 @@ import (
 
 func newInstallCommand() *cobra.Command {
 	var set []string
+	var dry bool
 
 	command := &cobra.Command{
 		Use:   "install <bundle>",
@@ -27,10 +28,11 @@ func newInstallCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return job.Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			return preview(job, dry).Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 		},
 	}
 	bindSetFlag(command, &set)
+	bindDryRunFlag(command, &dry)
 	return command
 }
 
@@ -64,4 +66,17 @@ func newInstall(artifact *bundle.Bundle, set map[string]string) delivery.Install
 // bindSetFlag gives command the repeated --set flag an install answers its variables with.
 func bindSetFlag(command *cobra.Command, set *[]string) {
 	command.Flags().StringArrayVar(set, "set", nil, "answer a variable: --set NAME=value")
+}
+
+// bindDryRunFlag gives command the --dry-run flag that prints the plan and changes nothing.
+func bindDryRunFlag(command *cobra.Command, dry *bool) {
+	command.Flags().BoolVar(dry, "dry-run", false, "check and print what would change, change nothing")
+}
+
+// preview turns job into its dry run when the flag asks for one.
+func preview(job delivery.Install, dry bool) delivery.Install {
+	if dry {
+		return job.Preview()
+	}
+	return job
 }

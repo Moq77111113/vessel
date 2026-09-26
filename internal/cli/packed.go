@@ -42,6 +42,7 @@ func packedInspect(self string) *cobra.Command {
 
 func packedInstall(self string) *cobra.Command {
 	var set []string
+	var dry bool
 
 	command := &cobra.Command{
 		Use:   "install",
@@ -49,17 +50,19 @@ func packedInstall(self string) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return withJob(self, set, func(job delivery.Install) error {
-				return job.Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+				return preview(job, dry).Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 			})
 		},
 	}
 	bindSetFlag(command, &set)
+	bindDryRunFlag(command, &dry)
 	return command
 }
 
 func packedResume(self string) *cobra.Command {
 	var set []string
 	var skip bool
+	var dry bool
 
 	command := &cobra.Command{
 		Use:   "resume",
@@ -67,17 +70,19 @@ func packedResume(self string) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return withJob(self, set, func(job delivery.Install) error {
-				return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), job, skip)
+				return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), preview(job, dry), skip)
 			})
 		},
 	}
 	bindSetFlag(command, &set)
 	bindSkipFlag(command, &skip)
+	bindDryRunFlag(command, &dry)
 	return command
 }
 
 func packedUpgrade(self string) *cobra.Command {
 	var set []string
+	var dry bool
 
 	command := &cobra.Command{
 		Use:   "upgrade",
@@ -85,11 +90,12 @@ func packedUpgrade(self string) *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return withJob(self, set, func(job delivery.Install) error {
-				return job.Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+				return preview(job, dry).Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 			})
 		},
 	}
 	bindSetFlag(command, &set)
+	bindDryRunFlag(command, &dry)
 	return command
 }
 

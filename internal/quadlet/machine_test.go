@@ -130,3 +130,16 @@ func TestStopDisablesATimerTheDeliveryCarries(t *testing.T) {
 		t.Errorf("got %v, want %v", system.lines, want)
 	}
 }
+
+func TestServicesNamesATimerTheDeliveryCarries(t *testing.T) {
+	system := &calls{answer: map[string]string{"systemctl is-active backup.timer": "active\n"}}
+	services, err := quadlet.New(system.run).Services(context.Background(),
+		[]descriptor.File{{Path: "etc/systemd/system/backup.timer"}})
+	if err != nil {
+		t.Fatalf("Services: %v", err)
+	}
+	want := []machine.Service{{Name: "backup.timer", Running: true}}
+	if !slices.Equal(services, want) {
+		t.Errorf("got %v, want %v", services, want)
+	}
+}
