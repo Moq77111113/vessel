@@ -66,36 +66,40 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 	}
 	defer stub.Close()
 
-	temp, err := os.CreateTemp(filepath.Dir(job.Out), ".vessel-build-*")
-	if err != nil {
-		return fmt.Errorf("create a temporary file next to %s: %w", job.Out, err)
-	}
-	defer os.Remove(temp.Name())
-	digest, err := pack(stub, dir, temp, work)
+	binary, err := pack(stub, dir, job.Out, work)
 	if err != nil {
 		return err
 	}
+	defer os.Remove(binary.temp)
 	if job.InsecureUnsigned {
-		return publishInsecure(stdout, temp.Name(), job.Out)
+		return binary.publishInsecure(stdout)
 	}
-	return publishSigned(stdout, temp.Name(), digest, job.Out, layout, key)
+	return binary.publishSigned(stdout, key, layout)
 }
 
-// pack writes the executable into temp, closes it, and returns the sha256 of exactly the bytes written.
-func pack(stub io.Reader, dir string, temp *os.File, work report.Report) ([]byte, error) {
+// executable is a packed file waiting beside the path it is published at, with the sha256 of its bytes.
+type executable struct {
+	temp   string
+	out    string
+	digest []byte
+}
+
+// pack writes the executable next to out through one handle, hashing exactly the bytes it writes.
+func pack(stub io.Reader, dir, out string, work report.Report) (executable, error) {
+	temp, err := os.CreateTemp(filepath.Dir(out), ".vessel-build-*")
+	if err != nil {
+		return executable{}, fmt.Errorf("create a temporary file next to %s: %w", out, err)
+	}
 	hash := sha256.New()
-	if err := installer.Pack(stub, dir, io.MultiWriter(temp, hash), work); err != nil {
-		temp.Close()
-		return nil, err
+	err = installer.Pack(stub, dir, io.MultiWriter(temp, hash), work)
+	if err == nil {
+		err = temp.Chmod(0o755)
 	}
-	if err := temp.Chmod(0o755); err != nil {
-		temp.Close()
-		return nil, fmt.Errorf("make %s executable: %w", temp.Name(), err)
+	if err := errors.Join(err, temp.Close()); err != nil {
+		os.Remove(temp.Name())
+		return executable{}, err
 	}
-	if err := temp.Close(); err != nil {
-		return nil, fmt.Errorf("close %s: %w", temp.Name(), err)
-	}
-	return hash.Sum(nil), nil
+	return executable{temp: temp.Name(), out: out, digest: hash.Sum(nil)}, nil
 }
 
 // Errors Build returns for a bundle given as its source.
@@ -193,21 +197,18 @@ func openSelf() (*os.File, error) {
 	return stub, nil
 }
 
-// publishInsecure moves the unsigned artifact into place; no sidecar is ever written.
-func publishInsecure(stdout io.Writer, temp, out string) error {
-	if err := os.Rename(temp, out); err != nil {
-		return fmt.Errorf("publish %s: %w", out, err)
-	}
-	if err := announceFinished(stdout, out); err != nil {
+// publishInsecure moves the executable into place with no signature.
+func (e executable) publishInsecure(stdout io.Writer) error {
+	if err := e.move(stdout); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, bundle.InsecureWarning)
 	return nil
 }
 
-// publishSigned signs the kept layout, then writes the executable's signature, and only then moves the executable into place.
-func publishSigned(stdout io.Writer, temp string, digest []byte, out, layout string, key *attest.Key) error {
-	signature, err := key.Sign(digest)
+// publishSigned signs the kept layout, writes the executable's signature, and only then moves the executable into place.
+func (e executable) publishSigned(stdout io.Writer, key *attest.Key, layout string) error {
+	signature, err := key.Sign(e.digest)
 	if err != nil {
 		return err
 	}
@@ -216,27 +217,28 @@ func publishSigned(stdout io.Writer, temp string, digest []byte, out, layout str
 			return err
 		}
 	}
-	if err := atomicfile.Write(out+attest.SignatureSuffix, signature, 0o644); err != nil {
+	if err := atomicfile.Write(e.out+attest.SignatureSuffix, signature, 0o644); err != nil {
 		return err
 	}
-	if err := os.Rename(temp, out); err != nil {
-		return fmt.Errorf("publish %s: %w", out, err)
-	}
-	if err := announceFinished(stdout, out); err != nil {
+	if err := e.move(stdout); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "%s, ship it alongside\n", out+attest.SignatureSuffix)
+	fmt.Fprintf(stdout, "%s, ship it alongside\n", e.out+attest.SignatureSuffix)
 	if layout != "" {
 		fmt.Fprintf(stdout, "%s, verify the layout against it\n", filepath.Join(layout, "index.json"+attest.SignatureSuffix))
 	}
 	return nil
 }
 
-func announceFinished(stdout io.Writer, out string) error {
-	info, err := os.Stat(out)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", out, err)
+// move renames the executable to the path it is published at, and says so.
+func (e executable) move(stdout io.Writer) error {
+	if err := os.Rename(e.temp, e.out); err != nil {
+		return fmt.Errorf("publish %s: %w", e.out, err)
 	}
-	report.New(stdout).Line("Finished", fmt.Sprintf("%s, %d MB, run it on the target machine", out, info.Size()/(1<<20)))
+	info, err := os.Stat(e.out)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", e.out, err)
+	}
+	report.New(stdout).Line("Finished", fmt.Sprintf("%s, %d MB, run it on the target machine", e.out, info.Size()/(1<<20)))
 	return nil
 }
