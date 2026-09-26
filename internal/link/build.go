@@ -23,11 +23,14 @@ type Job struct {
 	InsecureUnsigned bool
 }
 
-func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []machine.Machine, job Job) error {
+// Signing returns the signer a release build uses, and fails before any image is resolved.
+type Signing func(context.Context) (attest.ArtifactSigner, error)
+
+func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []machine.Machine, job Job, signing Signing) error {
 	var signer attest.ArtifactSigner
 	if !job.InsecureUnsigned {
 		var err error
-		if signer, err = preflightSigner(ctx); err != nil {
+		if signer, err = signing(ctx); err != nil {
 			return err
 		}
 	}
@@ -37,6 +40,9 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 		return err
 	}
 	defer cleanup()
+	if err := dropLayoutSignature(dir); err != nil {
+		return err
+	}
 
 	if err := Link(ctx, work, report.New(io.Discard), kinds, job, dir); err != nil {
 		return err
@@ -61,11 +67,29 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 	if job.InsecureUnsigned {
 		return publishInsecure(stdout, temp, job.Out)
 	}
-	return publishSigned(ctx, stdout, temp, job.Out, signer)
+	return publishSigned(ctx, stdout, temp, job.Out, job.Layout, signer)
 }
 
-// preflightSigner fails fast on a missing CI identity, before any image is resolved.
-func preflightSigner(ctx context.Context) (attest.ArtifactSigner, error) {
+// signLayout signs the index.json of the layout the operator keeps, and leaves the signature beside it.
+func signLayout(ctx context.Context, layout string, signer attest.ArtifactSigner) error {
+	if layout == "" {
+		return nil
+	}
+	_, err := attest.SignFile(ctx, filepath.Join(layout, "index.json"), signer)
+	return err
+}
+
+// dropLayoutSignature removes a signature an earlier build left, since this build changes what it covers.
+func dropLayoutSignature(layout string) error {
+	err := os.Remove(filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
+	if err == nil || os.IsNotExist(err) {
+		return nil
+	}
+	return fmt.Errorf("remove the old layout signature: %w", err)
+}
+
+// Sigstore signs through Fulcio with the CI's OIDC identity, and fails fast without one.
+func Sigstore(ctx context.Context) (attest.ArtifactSigner, error) {
 	tokens := attest.NewOIDCTokenSource(os.Getenv, nil)
 	if _, err := tokens.Token(ctx); err != nil {
 		return nil, fmt.Errorf("sign vessel releases by default: %w", err)
@@ -120,10 +144,13 @@ func publishInsecure(stdout io.Writer, temp, out string) error {
 	return nil
 }
 
-// publishSigned signs the packed bytes, then moves the installer and its sidecar into place.
-func publishSigned(ctx context.Context, stdout io.Writer, temp, out string, signer attest.ArtifactSigner) error {
+// publishSigned signs the executable, then the kept layout, and only then moves the executable into place.
+func publishSigned(ctx context.Context, stdout io.Writer, temp, out, layout string, signer attest.ArtifactSigner) error {
 	sidecar, err := attest.SignFile(ctx, temp, signer)
 	if err != nil {
+		return err
+	}
+	if err := signLayout(ctx, layout, signer); err != nil {
 		return err
 	}
 	if err := os.Rename(temp, out); err != nil {
@@ -136,6 +163,9 @@ func publishSigned(ctx context.Context, stdout io.Writer, temp, out string, sign
 		return err
 	}
 	fmt.Fprintf(stdout, "%s, ship it alongside\n", out+attest.SigstoreSuffix)
+	if layout != "" {
+		fmt.Fprintf(stdout, "%s, verify the layout against it\n", filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
+	}
 	return nil
 }
 

@@ -18,7 +18,7 @@ func newBuild() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			job.Source = args[0]
-			return link.Build(c.Context(), report.New(c.ErrOrStderr()), c.OutOrStdout(), machines, job)
+			return link.Build(c.Context(), report.New(c.ErrOrStderr()), c.OutOrStdout(), machines, job, link.Sigstore)
 		},
 	}
 	flags := command.Flags()
