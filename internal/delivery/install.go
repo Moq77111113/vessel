@@ -150,7 +150,7 @@ func (i Install) SkipAction(ctx context.Context, out io.Writer, work report.Repo
 	return i.run(ctx, out, work, before)
 }
 
-// checkResume refuses a resume the record cannot carry through: nothing open, another bundle, an older format, a late --set.
+// checkResume refuses a record this bundle and these flags cannot resume.
 func (i Install) checkResume(before prelude) error {
 	if !before.found || before.current.Done() {
 		return fmt.Errorf("%s: %w", i.Artifact.Config.Name, ErrNothingToResume)
@@ -162,15 +162,20 @@ func (i Install) checkResume(before prelude) error {
 	if before.current.Format < record.Format {
 		return fmt.Errorf("%s %s, run uninstall: %w", before.current.Name, before.current.Version, ErrRecordTooOld)
 	}
-	if !before.current.Has(record.StepValues) {
-		return nil
-	}
-	for _, variable := range i.Artifact.Config.Variables {
-		if _, ok := i.Set[variable.Name]; ok && !variable.Secret {
-			return fmt.Errorf("--set %s: %w", variable.Name, ErrSetAfterValues)
-		}
+	if name := plainSet(i.Artifact.Config.Variables, i.Set); name != "" && before.current.Has(record.StepValues) {
+		return fmt.Errorf("--set %s: %w", name, ErrSetAfterValues)
 	}
 	return nil
+}
+
+// plainSet names the first variable a --set answers that is not a secret, or nothing.
+func plainSet(variables []descriptor.Variable, set map[string]string) string {
+	for _, variable := range variables {
+		if _, ok := set[variable.Name]; ok && !variable.Secret {
+			return variable.Name
+		}
+	}
+	return ""
 }
 
 var ErrRecordOpen = errors.New("the last install on this machine never finished")
