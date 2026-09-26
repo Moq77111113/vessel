@@ -251,9 +251,8 @@ func TestLinkRefusesALinkThatLeadsOutsideTheDelivery(t *testing.T) {
 	if err := os.Symlink("/etc/hostname", filepath.Join(source, "hostname")); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
-	body := "name: acme\nversion: 1.0.0\nfiles:\n  - source: hostname\n    target: /etc/acme/hostname\n"
-	if err := os.WriteFile(filepath.Join(source, "vessel.yaml"), []byte(body), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
+	if err := os.CopyFS(source, os.DirFS("testdata/outside-link")); err != nil {
+		t.Fatalf("copy the fixture: %v", err)
 	}
 	err := runVessel("build", "-o", filepath.Join(t.TempDir(), "myapp"), "--insecure-unsigned", source)
 	if err == nil {

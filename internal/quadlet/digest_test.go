@@ -1,12 +1,16 @@
 package quadlet
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -26,8 +30,8 @@ func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
 	m := New(machine.Exec)
 	skipUnlessPodmanReady(t, m)
 
-	dir, digest := realImageLayout(t, realImageRef)
-	lay, err := machine.OpenLayout(dir)
+	dir, digest, root := realImageLayout(t, realImageRef)
+	lay, err := machine.OpenLayout(dir, root)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}
@@ -60,7 +64,7 @@ func skipUnlessPodmanReady(t *testing.T, m *Machine) {
 
 // realImageLayout writes an OCI layout holding one real, podman-loadable image at ref,
 // and returns its directory and the digest of the image manifest it carries.
-func realImageLayout(t *testing.T, ref string) (string, string) {
+func realImageLayout(t *testing.T, ref string) (string, string, string) {
 	t.Helper()
 	base := mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), types.OCIConfigJSON)
 	body, err := random.Layer(128, types.OCILayer)
@@ -85,7 +89,18 @@ func realImageLayout(t *testing.T, ref string) (string, string) {
 	if err := path.AppendImage(image, layout.WithAnnotations(annotations)); err != nil {
 		t.Fatalf("AppendImage: %v", err)
 	}
-	return dir, digest.String()
+	index, err := os.ReadFile(filepath.Join(dir, "index.json"))
+	if err != nil {
+		t.Fatalf("read the index: %v", err)
+	}
+	root, _, err := v1.SHA256(bytes.NewReader(index))
+	if err != nil {
+		t.Fatalf("hash the index: %v", err)
+	}
+	if err := path.WriteBlob(root, io.NopCloser(bytes.NewReader(index))); err != nil {
+		t.Fatalf("write the index blob: %v", err)
+	}
+	return dir, digest.String(), root.String()
 }
 
 // podmanImageDigest asks podman itself for the manifest digest it holds ref at.

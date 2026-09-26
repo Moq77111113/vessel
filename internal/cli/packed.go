@@ -15,7 +15,7 @@ import (
 
 // newPacked is the command tree of an executable that carries its own bundle.
 func newPacked(self string) *cobra.Command {
-	name := filepath.Base(self)
+	name := filepath.Base(os.Args[0])
 	command := &cobra.Command{
 		Use:           name,
 		Short:         "Install " + name + " on this machine",

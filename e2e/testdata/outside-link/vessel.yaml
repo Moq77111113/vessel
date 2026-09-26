@@ -1,0 +1,5 @@
+name: acme
+version: 1.0.0
+files:
+  - source: hostname
+    target: /etc/acme/hostname

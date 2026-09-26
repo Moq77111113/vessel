@@ -3,6 +3,7 @@ package descriptor
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"testing"
 	"testing/fstest"
 )
@@ -188,15 +189,13 @@ func TestSecretNamesLeavesThePlainVariablesOut(t *testing.T) {
 }
 
 func TestReadRefusesASourceThatLeavesTheDeliveryDirectory(t *testing.T) {
-	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: acme\nfiles:\n  - source: ../secret\n    target: /etc/acme/secret\n")}}
-	if _, err := Read(dir); !errors.Is(err, ErrSourceEscapes) {
+	if _, err := Read(os.DirFS("testdata/source-escapes")); !errors.Is(err, ErrSourceEscapes) {
 		t.Errorf("got %v, want ErrSourceEscapes", err)
 	}
 }
 
 func TestReadRefusesAUnitDirectoryThatLeavesTheDeliveryDirectory(t *testing.T) {
-	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: acme\nunits: ..\n")}}
-	if _, err := Read(dir); !errors.Is(err, ErrSourceEscapes) {
+	if _, err := Read(os.DirFS("testdata/units-escapes")); !errors.Is(err, ErrSourceEscapes) {
 		t.Errorf("got %v, want ErrSourceEscapes", err)
 	}
 }
