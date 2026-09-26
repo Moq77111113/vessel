@@ -31,14 +31,14 @@ func TestVesselReadsQuadlet(t *testing.T) {
 	}
 }
 
-func TestVesselOffersSixVerbs(t *testing.T) {
-	if got, want := len(verbs()), 6; got != want {
+func TestVesselOffersSevenVerbs(t *testing.T) {
+	if got, want := len(verbs()), 7; got != want {
 		t.Errorf("got %d verbs, want %d: %v", got, want, verbs())
 	}
 }
 
 func TestVesselListsItsVerbsInOrder(t *testing.T) {
-	want := []string{"build", "inspect", "install", "status", "uninstall", "upgrade"}
+	want := []string{"build", "inspect", "install", "resume", "status", "uninstall", "upgrade"}
 	if got := verbs(); !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -95,5 +95,21 @@ func TestInstallOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
 	err := runVessel(t, "install", t.TempDir())
 	if !errors.Is(err, bundle.ErrNotABundle) {
 		t.Errorf("got %v, want ErrNoBundle", err)
+	}
+}
+
+func TestAPackedInstallerOffersResume(t *testing.T) {
+	var names []string
+	for _, command := range newPacked("myapp").Commands() {
+		names = append(names, command.Name())
+	}
+	if !slices.Contains(names, "resume") {
+		t.Errorf("got %v, want resume among them", names)
+	}
+}
+
+func TestResumeOffersSkipAction(t *testing.T) {
+	if newResumeCommand().Flags().Lookup("skip-action") == nil {
+		t.Error("resume offers no --skip-action")
 	}
 }

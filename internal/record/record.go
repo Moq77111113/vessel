@@ -36,6 +36,12 @@ type Action struct {
 	End     time.Time `json:"end,omitzero"`
 }
 
+// Release is one version of a delivery and the bundle root that carried it.
+type Release struct {
+	Version string `json:"version"`
+	Root    string `json:"root"`
+}
+
 // Entry is one file a delivery put on this machine.
 type Entry struct {
 	Path   string `json:"path"`
@@ -55,6 +61,7 @@ type Record struct {
 	Insecure bool      `json:"insecure,omitempty"`
 	Steps    []Step    `json:"steps,omitempty"`
 	Actions  []Action  `json:"actions,omitempty"`
+	Prior    Release   `json:"prior,omitzero"`
 	Start    time.Time `json:"start"`
 	End      time.Time `json:"end,omitzero"`
 }

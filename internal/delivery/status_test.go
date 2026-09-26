@@ -366,14 +366,29 @@ func TestStatusNamesAnActionThatMayHaveStoppedHalfway(t *testing.T) {
 	}
 }
 
-func TestStatusOnAnOpenRecordNamesAVerbThisBuildOffers(t *testing.T) {
+func TestStatusOnAnOpenRecordOffersResume(t *testing.T) {
 	root := t.TempDir()
 	writeRecord(t, root, record.Record{Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC()})
 	var out bytes.Buffer
 	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if !strings.Contains(out.String(), "run uninstall") || strings.Contains(out.String(), "resume") {
-		t.Errorf("got %q, want uninstall named and no verb this build lacks", out.String())
+	if !strings.Contains(out.String(), "run resume") {
+		t.Errorf("got %q, want resume offered", out.String())
+	}
+}
+
+func TestStatusNamesTheVersionToRollBackTo(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(3, 0).UTC(),
+		Prior: record.Release{Version: "1.3.0", Root: "sha256:aa"},
+	})
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "the 1.3.0 installer") {
+		t.Errorf("got %q, want the version to roll back to", out.String())
 	}
 }
