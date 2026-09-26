@@ -102,6 +102,18 @@ func TestPackAnnouncesEachFileBeforeWritingIt(t *testing.T) {
 	}
 }
 
+func TestPackRefusesALink(t *testing.T) {
+	dir := bundleDir(t)
+	if err := os.Symlink("/etc/hostname", filepath.Join(dir, "linked")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "acme-1.4.0")
+	err := Pack(bytes.NewReader(stub()), dir, out, report.New(io.Discard))
+	if !errors.Is(err, ErrNotAFile) {
+		t.Fatalf("got %v, want ErrNotAFile", err)
+	}
+}
+
 func TestPackKeepsTheStubRunnable(t *testing.T) {
 	data, err := os.ReadFile(packed(t))
 	if err != nil {

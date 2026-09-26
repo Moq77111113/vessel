@@ -287,7 +287,7 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %s",
 		config.Name, config.Version, len(config.Images), summary))
 	if config.Insecure {
-		fmt.Fprintln(out, InsecureWarning)
+		fmt.Fprintln(out, bundle.InsecureWarning)
 	}
 	return nil
 }

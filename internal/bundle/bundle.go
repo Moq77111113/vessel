@@ -15,6 +15,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+
 	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
@@ -46,6 +48,9 @@ var (
 	ErrEvidenceTwice    = errors.New("the bundle already carries other evidence of that name")
 	ErrEvidenceSameName = errors.New("two evidence files share one name")
 )
+
+// InsecureWarning is the line every command prints about a bundle built with --insecure-unsigned.
+const InsecureWarning = "insecure: built with --insecure-unsigned, for development use only"
 
 // Image is one image reference and the digest it resolved to.
 type Image struct {
@@ -83,7 +88,7 @@ type Bundle struct {
 	Root string
 }
 
-// Write turns the image layout into a bundle by adding the files and the bundle index.
+// Write turns the image layout into a bundle by adding the files and the bundle index, dropping any blob an older bundle left in dir.
 func Write(dir string, contents Contents) error {
 	if err := copyTree(contents.Layout, dir); err != nil {
 		return err
@@ -105,7 +110,7 @@ func Write(dir string, contents Contents) error {
 	if err != nil {
 		return err
 	}
-	return writeIndex(dir, index{
+	err = writeIndex(dir, index{
 		SchemaVersion: 2,
 		MediaType:     indexType,
 		Manifests: []entry{{
@@ -116,6 +121,25 @@ func Write(dir string, contents Contents) error {
 			Annotations:  map[string]string{refNameAnnotation: contents.Config.Name + ":" + contents.Config.Version},
 		}},
 	})
+	if err != nil {
+		return err
+	}
+	return prune(dir)
+}
+
+// prune removes the blobs an older bundle left in dir.
+func prune(dir string) error {
+	oci := layout.Path(dir)
+	stale, err := oci.GarbageCollect()
+	if err != nil {
+		return fmt.Errorf("find the blobs no index reaches: %w", err)
+	}
+	for _, hash := range stale {
+		if err := oci.RemoveBlob(hash); err != nil {
+			return fmt.Errorf("remove %s: %w", hash, err)
+		}
+	}
+	return nil
 }
 
 // Open reads a bundle and refuses any part whose digest left its manifest behind.

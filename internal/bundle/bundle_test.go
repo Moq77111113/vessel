@@ -11,23 +11,32 @@ import (
 	"github.com/Moq77111113/vessel/internal/descriptor"
 )
 
-// imageLayout writes the OCI layout a fetch run would leave behind.
+// imageLayout writes the OCI layout a fetch run would leave behind: one image manifest and its config.
 func imageLayout(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, blobsDir), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
+	config, err := putBlob(dir, []byte("{}"))
+	if err != nil {
+		t.Fatalf("put the config: %v", err)
 	}
-	write := func(name, body string) {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-			t.Fatalf("WriteFile: %v", err)
-		}
+	image, err := putBlob(dir, mustMarshal(manifest{
+		SchemaVersion: 2,
+		MediaType:     manifestType,
+		Config:        blob{MediaType: "application/vnd.oci.image.config.v1+json", Digest: config.Digest, Size: config.Size},
+		Layers:        []blob{},
+	}))
+	if err != nil {
+		t.Fatalf("put the manifest: %v", err)
 	}
-	write(layoutName, `{"imageLayoutVersion":"1.0.0"}`)
-	write(indexName, `{"schemaVersion":2,"mediaType":"`+indexType+`","manifests":[`+
-		`{"mediaType":"`+manifestType+`","digest":"sha256:aaa","size":1,`+
-		`"annotations":{"org.opencontainers.image.ref.name":"reg.io/app@sha256:aaa"}}]}`)
-	write(filepath.Join(blobsDir, "aaa"), "a manifest")
+	if err := os.WriteFile(filepath.Join(dir, layoutName), []byte(`{"imageLayoutVersion":"1.0.0"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := writeIndex(dir, index{SchemaVersion: 2, MediaType: indexType, Manifests: []entry{{
+		MediaType: manifestType, Digest: image.Digest, Size: image.Size,
+		Annotations: map[string]string{refNameAnnotation: "reg.io/app@" + image.Digest},
+	}}}); err != nil {
+		t.Fatalf("write the index: %v", err)
+	}
 	return dir
 }
 
@@ -119,9 +128,6 @@ func TestEveryBlobSitsUnderItsOwnDigest(t *testing.T) {
 		t.Fatalf("ReadDir: %v", err)
 	}
 	for _, entry := range entries {
-		if entry.Name() == "aaa" {
-			continue
-		}
 		if _, err := readBlob(dir, "sha256:"+entry.Name()); err != nil {
 			t.Errorf("%s: %v", entry.Name(), err)
 		}
@@ -216,5 +222,18 @@ func TestAnIndexWithNoFilesManifestIsNotAVesselBundle(t *testing.T) {
 	_, err := filesEntry(index{Manifests: []entry{{ArtifactType: "application/vnd.other"}}})
 	if !errors.Is(err, ErrBundleShape) {
 		t.Errorf("got %v, want ErrBundleShape", err)
+	}
+}
+
+func TestWriteOverAnOldBundleDropsItsBlobs(t *testing.T) {
+	dir := built(t)
+	old := topIndex(t, dir).Manifests[0].Digest
+	next := contents(t)
+	next.Config.Version = "1.5.0"
+	if err := Write(dir, next); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, blobsDir, strings.TrimPrefix(old, "sha256:"))); !os.IsNotExist(err) {
+		t.Errorf("the old root blob is still there, err=%v", err)
 	}
 }

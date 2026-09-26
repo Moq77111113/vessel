@@ -28,6 +28,7 @@ const (
 var (
 	ErrNoPayload   = errors.New("this file carries no bundle")
 	ErrPathEscapes = errors.New("leaves the target directory")
+	ErrNotAFile    = errors.New("is not a regular file")
 )
 
 // Pack writes stub followed by the bundle and a trailer, as one executable file. It announces
@@ -148,39 +149,50 @@ func resolve(dir, name string) (string, error) {
 	return filepath.Join(dir, clean), nil
 }
 
+// writeTar archives every regular file of bundle, reading through a root so no link leaves it.
 func writeTar(out io.Writer, bundle string, work report.Report) error {
+	root, err := os.OpenRoot(bundle)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", bundle, err)
+	}
+	defer root.Close()
 	archive := tar.NewWriter(out)
-	err := filepath.WalkDir(bundle, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
+	err = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
 			return err
-		}
-		name, err := filepath.Rel(bundle, path)
-		if err != nil {
-			return err
-		}
-		if name == "." {
-			return nil
-		}
-		name = filepath.ToSlash(name)
-		if entry.IsDir() {
-			return archive.WriteHeader(&tar.Header{Name: name + "/", Mode: 0o755, Typeflag: tar.TypeDir})
 		}
 		work.Line("Writing", name)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
+		if err := writePart(archive, root, name); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
 		}
-		header := &tar.Header{Name: name, Mode: 0o644, Size: int64(len(data)), Typeflag: tar.TypeReg}
-		if err := archive.WriteHeader(header); err != nil {
-			return err
-		}
-		_, err = archive.Write(data)
-		return err
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("pack %s: %w", bundle, err)
 	}
 	return archive.Close()
+}
+
+// writePart streams one regular file of root into the archive.
+func writePart(archive *tar.Writer, root *os.Root, name string) error {
+	info, err := root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return ErrNotAFile
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	header := &tar.Header{Name: name, Mode: 0o644, Size: info.Size(), Typeflag: tar.TypeReg}
+	if err := archive.WriteHeader(header); err != nil {
+		return err
+	}
+	_, err = io.Copy(archive, file)
+	return err
 }
 
 // counting counts what goes through it, so the trailer can say how long the payload is.

@@ -145,47 +145,6 @@ func attachEvidence(dir string, paths []string) error {
 	return bundle.Attach(dir, evidence)
 }
 
-// layouts returns the layout to pack and the one to sign: the bundle the job names, or one linked from its descriptor.
-func layouts(ctx context.Context, work report.Report, kinds []machine.Machine, job Job) (string, string, func(), error) {
-	if bundle.IsBundle(job.Source) {
-		if err := checkBundleSource(job); err != nil {
-			return "", "", nil, err
-		}
-		return job.Source, job.Source, func() {}, dropLayoutSignature(job.Source)
-	}
-	if len(job.Evidence) > 0 {
-		return "", "", nil, ErrEvidenceNeedsBundle
-	}
-	dir, cleanup, err := layoutDir(job.Layout)
-	if err != nil {
-		return "", "", nil, err
-	}
-	if err := dropLayoutSignature(dir); err != nil {
-		cleanup()
-		return "", "", nil, err
-	}
-	if err := Link(ctx, work, report.New(io.Discard), kinds, job, dir); err != nil {
-		cleanup()
-		return "", "", nil, err
-	}
-	return dir, job.Layout, cleanup, nil
-}
-
-// checkBundleSource refuses flags a bundle already answers, and a signing mode its config contradicts.
-func checkBundleSource(job Job) error {
-	if job.Name != "" || job.Version != "" || job.Layout != "" {
-		return ErrBundleSourceFlags
-	}
-	artifact, err := bundle.Open(job.Source)
-	if err != nil {
-		return err
-	}
-	if artifact.Config.Insecure != job.InsecureUnsigned {
-		return fmt.Errorf("%s says insecure=%v: %w", job.Source, artifact.Config.Insecure, ErrSigningMismatch)
-	}
-	return nil
-}
-
 // signLayout signs the index.json of the layout the operator keeps, and leaves the signature beside it.
 func signLayout(ctx context.Context, layout string, signer attest.ArtifactSigner) error {
 	if layout == "" {
@@ -256,7 +215,7 @@ func publishInsecure(stdout io.Writer, temp, out string) error {
 	if err := announceFinished(stdout, out); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "INSECURE: %s is unsigned, development use only\n", out)
+	fmt.Fprintln(stdout, bundle.InsecureWarning)
 	return nil
 }
 
