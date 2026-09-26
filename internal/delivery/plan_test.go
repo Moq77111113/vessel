@@ -265,3 +265,19 @@ func TestADryRunRunsNoFromEvenWithAShellSetAfterPreview(t *testing.T) {
 		t.Fatalf("the dry run ran a from: command: %v", err)
 	}
 }
+
+func TestADryRunUpgradeKeepsAFileEditedOnThisMachine(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+		t.Fatalf("install 1.3.0: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "edited on site\n")
+	var out bytes.Buffer
+	job := jobFor(t, root, linkTestBundle(t, fixture(t, "acme-1.4")), nil, nil)
+	if err := job.Preview().Upgrade(context.Background(), &out, report.New(io.Discard)); err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if output := collapse(out.String()); !strings.Contains(output, "Keep etc/acme/a.txt, edited on this machine") {
+		t.Errorf("got %q, want the edited file kept", output)
+	}
+}
