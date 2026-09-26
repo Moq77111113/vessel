@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"fmt"
 	"io"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,9 +19,10 @@ func packFiles(files []descriptor.File) ([]byte, error) {
 	var out strings.Builder
 	archive := tar.NewWriter(&out)
 	for _, file := range byPath {
+		// Mode 0 says the descriptor declared none; a bundle built before modes says 0644 for every file.
 		header := &tar.Header{
 			Name:     file.Path,
-			Mode:     0o644,
+			Mode:     int64(file.Mode),
 			Size:     int64(len(file.Data)),
 			Typeflag: tar.TypeReg,
 		}
@@ -58,7 +60,7 @@ func unpackFiles(body []byte) ([]descriptor.File, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", header.Name, err)
 		}
-		files = append(files, descriptor.File{Path: header.Name, Data: data})
+		files = append(files, descriptor.File{Path: header.Name, Data: data, Mode: fs.FileMode(header.Mode).Perm()})
 	}
 }
 

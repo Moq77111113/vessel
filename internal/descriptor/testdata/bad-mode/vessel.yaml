@@ -1,0 +1,5 @@
+name: acme
+files:
+  - source: token
+    target: /etc/acme/token
+    mode: 0999

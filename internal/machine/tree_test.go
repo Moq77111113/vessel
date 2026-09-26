@@ -248,3 +248,66 @@ func TestTreeRefusesToRemoveUnderADirectoryOthersCanWrite(t *testing.T) {
 		t.Fatalf("got %v, want ErrUnsafeParent", err)
 	}
 }
+
+func TestTreeWritesTheDeclaredMode(t *testing.T) {
+	root := t.TempDir()
+	file := unit()
+	file.Mode = 0o600
+	if _, err := NewTree(root).Write(file); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got := mode(t, filepath.Join(root, file.Path)); got != 0o600 {
+		t.Errorf("got %o, want 600", got)
+	}
+}
+
+func TestTreeKeepsTheModeOfTheFileItReplaces(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, unit().Path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("set by the admin"), 0o640); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := NewTree(root).Write(unit()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got := mode(t, path); got != 0o640 {
+		t.Errorf("got %o, want 640", got)
+	}
+}
+
+func TestTreeWritesANewFileWithNoModeReadableByAll(t *testing.T) {
+	root := t.TempDir()
+	if _, err := NewTree(root).Write(unit()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got := mode(t, filepath.Join(root, unit().Path)); got != 0o644 {
+		t.Errorf("got %o, want 644", got)
+	}
+}
+
+func TestTreeAppliesADeclaredModeToAnUnchangedFile(t *testing.T) {
+	root := t.TempDir()
+	if _, err := NewTree(root).Write(unit()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	file := unit()
+	file.Mode = 0o600
+	if _, err := NewTree(root).Write(file); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got := mode(t, filepath.Join(root, file.Path)); got != 0o600 {
+		t.Errorf("got %o, want 600", got)
+	}
+}
+
+func mode(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	return info.Mode().Perm()
+}

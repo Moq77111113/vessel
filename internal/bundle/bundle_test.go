@@ -237,3 +237,17 @@ func TestWriteOverAnOldBundleDropsItsBlobs(t *testing.T) {
 		t.Errorf("the old root blob is still there, err=%v", err)
 	}
 }
+
+func TestABundleKeepsAFileMode(t *testing.T) {
+	archive, err := packFiles([]descriptor.File{{Path: "etc/acme/token", Data: []byte("x"), Mode: 0o600}})
+	if err != nil {
+		t.Fatalf("packFiles: %v", err)
+	}
+	files, err := unpackFiles(archive)
+	if err != nil {
+		t.Fatalf("unpackFiles: %v", err)
+	}
+	if files[0].Mode != 0o600 {
+		t.Errorf("got %o, want 600", files[0].Mode)
+	}
+}

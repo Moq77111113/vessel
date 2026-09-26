@@ -43,7 +43,8 @@ func Substitute(files []File, values map[string]string, secrets []string) ([]Fil
 		if missing != "" {
 			return nil, fmt.Errorf("%s in %s: %w", missing, file.Path, ErrUnknownVariable)
 		}
-		out[i] = File{Path: file.Path, Data: data}
+		file.Data = data
+		out[i] = file
 	}
 	return out, nil
 }

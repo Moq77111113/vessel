@@ -1,0 +1,6 @@
+name: acme
+version: 1.4.0
+files:
+  - source: token
+    target: /etc/acme/token
+    mode: 0600

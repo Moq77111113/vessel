@@ -199,3 +199,19 @@ func TestReadRefusesAUnitDirectoryThatLeavesTheDeliveryDirectory(t *testing.T) {
 		t.Errorf("got %v, want ErrSourceEscapes", err)
 	}
 }
+
+func TestReadTakesAFileMode(t *testing.T) {
+	delivery, err := Read(os.DirFS("testdata/file-mode"))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got := delivery.Files[0].Mode; got != 0o600 {
+		t.Errorf("got %o, want 600", got)
+	}
+}
+
+func TestReadRefusesAFileModeThatIsNotOctal(t *testing.T) {
+	if _, err := Read(os.DirFS("testdata/bad-mode")); !errors.Is(err, ErrFileMode) {
+		t.Fatalf("got %v, want ErrFileMode", err)
+	}
+}
