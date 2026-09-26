@@ -28,16 +28,20 @@ func newPacked(self string) *cobra.Command {
 }
 
 func packedInspect(self string) *cobra.Command {
-	return &cobra.Command{
+	var into string
+
+	command := &cobra.Command{
 		Use:   "inspect",
 		Short: "Show what is inside, without installing it",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return withPayload(self, func(dir string) error {
-				return inspectBundle(command.OutOrStdout(), dir)
+				return inspectBundle(command.OutOrStdout(), dir, into)
 			})
 		},
 	}
+	bindEvidenceFlag(command, &into)
+	return command
 }
 
 func packedInstall(self string) *cobra.Command {

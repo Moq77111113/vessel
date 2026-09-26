@@ -24,9 +24,10 @@ func newBuild() *cobra.Command {
 	flags := command.Flags()
 	flags.StringVarP(&job.Out, "out", "o", "", "the executable to write")
 	flags.StringVar(&job.Layout, "layout", "", "also write the OCI layout here, for a registry")
-	flags.StringVar(&job.Platform, "platform", "linux/amd64", "platform every reference resolves for")
+	flags.StringVar(&job.Platform, "platform", "", "platform every reference resolves for (default linux/amd64)")
 	flags.StringVar(&job.Name, "name", "", "delivery name")
 	flags.StringVar(&job.Version, "version", "", "delivery version")
+	flags.StringArrayVar(&job.Evidence, "evidence", nil, "attach an SBOM or a report made from the bundle source")
 	flags.BoolVar(&job.InsecureUnsigned, "insecure-unsigned", false,
 		"build without a Sigstore signature; development use only")
 	command.MarkFlagRequired("out")

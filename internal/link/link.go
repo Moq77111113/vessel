@@ -26,6 +26,9 @@ type puller interface {
 	Image(ctx context.Context, ref descriptor.Ref) (v1.Image, error)
 }
 
+// defaultPlatform is what every reference resolves for when the job names no platform.
+const defaultPlatform = "linux/amd64"
+
 // Link resolves the delivery the job names to digests and writes its bundle in out.
 func Link(ctx context.Context, work, summary report.Report, kinds []machine.Machine, job Job, out string) error {
 	source := filepath.Clean(job.Source)
@@ -43,6 +46,10 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 	version := job.Version
 	if version == "" {
 		version = definition.Version
+	}
+	platform := job.Platform
+	if platform == "" {
+		platform = defaultPlatform
 	}
 	units := source
 	if definition.Units != "" {
@@ -81,7 +88,7 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 	}
 	defer os.RemoveAll(layout)
 
-	digests, err := resolveAll(ctx, work, registry.New(), manifest.Relocs, job.Platform, layout)
+	digests, err := resolveAll(ctx, work, registry.New(), manifest.Relocs, platform, layout)
 	if err != nil {
 		return err
 	}
@@ -96,7 +103,7 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 			Name:      name,
 			Version:   version,
 			Machine:   kind.Name(),
-			Platform:  job.Platform,
+			Platform:  platform,
 			Images:    imagesOf(digests),
 			Variables: definition.Variables,
 			Actions:   definition.Actions,

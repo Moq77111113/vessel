@@ -375,3 +375,182 @@ func (s *secondCallFails) Sign(_ context.Context, data []byte) ([]byte, error) {
 	}
 	return append([]byte("signature over "), data...), nil
 }
+
+func TestBuildFromABundlePacksThatExactBundle(t *testing.T) {
+	layout := buildUnsignedLayout(t)
+	before, err := bundle.Open(layout)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	out := filepath.Join(t.TempDir(), "myapp")
+	job := Job{Source: layout, Out: out, InsecureUnsigned: true}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+		t.Fatalf("build from the bundle: %v", err)
+	}
+	payload := t.TempDir()
+	if err := installer.Unpack(out, payload); err != nil {
+		t.Fatalf("unpack: %v", err)
+	}
+	after, err := bundle.Open(payload)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if after.Root != before.Root {
+		t.Errorf("got root %s, want the bundle's own %s", after.Root, before.Root)
+	}
+}
+
+func TestBuildFromAnUnsignedBundleRefusesToSignIt(t *testing.T) {
+	job := Job{Source: buildUnsignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp")}
+	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+	if !errors.Is(err, ErrSigningMismatch) {
+		t.Fatalf("got %v, want ErrSigningMismatch", err)
+	}
+}
+
+func TestBuildFromASignedBundleRefusesToLeaveItUnsigned(t *testing.T) {
+	job := Job{Source: buildSignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp"), InsecureUnsigned: true}
+	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+	if !errors.Is(err, ErrSigningMismatch) {
+		t.Fatalf("got %v, want ErrSigningMismatch", err)
+	}
+}
+
+func TestBuildFromABundleRefusesAFlagTheBundleAlreadyAnswers(t *testing.T) {
+	layout := buildUnsignedLayout(t)
+	for _, job := range []Job{
+		{Name: "other"}, {Version: "9.9.9"}, {Layout: filepath.Join(t.TempDir(), "copy")}, {Platform: "linux/arm64"},
+	} {
+		job.Source, job.Out, job.InsecureUnsigned = layout, filepath.Join(t.TempDir(), "myapp"), true
+		err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+		if !errors.Is(err, ErrBundleSourceFlags) {
+			t.Errorf("%+v: got %v, want ErrBundleSourceFlags", job, err)
+		}
+	}
+}
+
+// buildUnsignedLayout builds with --layout --insecure-unsigned and returns the layout.
+func buildUnsignedLayout(t *testing.T) string {
+	t.Helper()
+	source := t.TempDir()
+	writeUnits(t, source)
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "bundle")
+	job := Job{Source: source, Out: filepath.Join(dir, "scratch"), Layout: layout,
+		Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	return layout
+}
+
+func TestBuildWithEvidenceCarriesItInTheExecutable(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "myapp")
+	job := Job{Source: buildUnsignedLayout(t), Out: out, InsecureUnsigned: true,
+		Evidence: []string{"testdata/sbom.spdx.json"}}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	payload := t.TempDir()
+	if err := installer.Unpack(out, payload); err != nil {
+		t.Fatalf("unpack: %v", err)
+	}
+	artifact, err := bundle.Open(payload)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if len(artifact.Evidence) != 1 || artifact.Evidence[0].Name != "sbom.spdx.json" {
+		t.Errorf("got %+v, want the SBOM carried", artifact.Evidence)
+	}
+}
+
+func TestBuildRefusesEvidenceForADescriptorItHasNotLinkedYet(t *testing.T) {
+	source := t.TempDir()
+	writeUnits(t, source)
+	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Platform: "linux/amd64",
+		Name: "acme", Version: "1.4.0", InsecureUnsigned: true, Evidence: []string{"testdata/sbom.spdx.json"}}
+	var work bytes.Buffer
+	err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job, fakeSigning)
+	if !errors.Is(err, ErrEvidenceNeedsBundle) {
+		t.Fatalf("got %v, want ErrEvidenceNeedsBundle", err)
+	}
+	if strings.Contains(work.String(), "Resolving") {
+		t.Error("the refusal came after resolving images")
+	}
+}
+
+func TestBuildWithEvidenceSignsTheNewIndex(t *testing.T) {
+	layout := buildSignedLayout(t)
+	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"),
+		Evidence: []string{"testdata/sbom.spdx.json"}}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	index, err := os.ReadFile(filepath.Join(layout, "index.json"))
+	if err != nil {
+		t.Fatalf("read index.json: %v", err)
+	}
+	sidecar, err := os.ReadFile(filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
+	if err != nil {
+		t.Fatalf("read the signature: %v", err)
+	}
+	if string(sidecar) != "signature over "+string(index) {
+		t.Error("the layout signature covers the index before the evidence")
+	}
+}
+
+func TestALinkWithNoPlatformResolvesForLinuxAmd64(t *testing.T) {
+	source := t.TempDir()
+	writeUnits(t, source)
+	out := filepath.Join(t.TempDir(), "bundle")
+	job := Job{Source: source, Name: "acme", Version: "1.4.0"}
+	if err := Link(context.Background(), report.New(io.Discard), report.New(io.Discard), buildKinds(), job, out); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	artifact, err := bundle.Open(out)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if artifact.Config.Platform != "linux/amd64" {
+		t.Errorf("got %q, want linux/amd64", artifact.Config.Platform)
+	}
+}
+
+func TestBuildFromADamagedBundleSaysItIsDamaged(t *testing.T) {
+	layout := buildUnsignedLayout(t)
+	blobs, err := os.ReadDir(filepath.Join(layout, "blobs/sha256"))
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, blob := range blobs {
+		if err := os.WriteFile(filepath.Join(layout, "blobs/sha256", blob.Name()), []byte("damaged"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"), InsecureUnsigned: true, Evidence: []string{"testdata/sbom.spdx.json"}}
+	err = Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+	if !errors.Is(err, bundle.ErrDigestMismatch) {
+		t.Fatalf("got %v, want bundle.ErrDigestMismatch", err)
+	}
+}
+
+func TestBuildFromABundleChecksItsSigningModeBeforeAskingForAnIdentity(t *testing.T) {
+	job := Job{Source: buildUnsignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp")}
+	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, noIdentity)
+	if !errors.Is(err, ErrSigningMismatch) {
+		t.Fatalf("got %v, want ErrSigningMismatch", err)
+	}
+}
+
+func TestAnInterruptedEvidenceBuildCanRunAgain(t *testing.T) {
+	layout := buildSignedLayout(t)
+	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"), Evidence: []string{"testdata/sbom.spdx.json"}}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, failingSigning); err == nil {
+		t.Fatal("the build succeeded with a signer that is down")
+	}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+		t.Fatalf("the second run: %v", err)
+	}
+}
+
+func noIdentity(context.Context) (attest.ArtifactSigner, error) { return nil, attest.ErrNoOIDCToken }
