@@ -13,6 +13,7 @@ import (
 func newResumeCommand() *cobra.Command {
 	var set []string
 	var skip bool
+	var dry bool
 
 	command := &cobra.Command{
 		Use:   "resume <bundle>",
@@ -25,11 +26,12 @@ func newResumeCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), job, skip)
+			return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), preview(job, dry), skip)
 		},
 	}
 	bindSetFlag(command, &set)
 	bindSkipFlag(command, &skip)
+	bindDryRunFlag(command, &dry)
 	return command
 }
 

@@ -3,6 +3,7 @@ package machine
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -60,5 +61,18 @@ func TestShSaysWhyARealCommandFailed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no such thing") {
 		t.Errorf("got %q, want it to carry what the command printed", err.Error())
+	}
+}
+
+func TestDryNamesTheCommandWithoutRunningIt(t *testing.T) {
+	value, err := NewShell(Dry).Value(context.Background(), "touch /tmp/vessel-dry")
+	if err != nil {
+		t.Fatalf("value: %v", err)
+	}
+	if value != "<not run: touch /tmp/vessel-dry>" {
+		t.Errorf("got %q, want the command named", value)
+	}
+	if _, err := os.Stat("/tmp/vessel-dry"); !os.IsNotExist(err) {
+		t.Error("Dry ran the command")
 	}
 }

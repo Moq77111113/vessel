@@ -24,6 +24,21 @@ type Install struct {
 	Set      map[string]string
 	Machines []machine.Machine
 	Shell    *machine.Shell
+	preview  bool
+}
+
+// shell is the shell a from: runs in: one that runs nothing on a dry run.
+func (i Install) shell() *machine.Shell {
+	if i.preview {
+		return machine.NewShell(machine.Dry)
+	}
+	return i.Shell
+}
+
+// Preview returns this install as a dry run: it checks and plans, runs no from:, and changes nothing.
+func (i Install) Preview() Install {
+	i.preview = true
+	return i
 }
 
 // prelude carries what both Run and Upgrade need before either touches the machine.
@@ -34,6 +49,8 @@ type prelude struct {
 	current  record.Record
 	found    bool
 	progress record.Record
+	bypass   string
+	skip     string
 }
 
 // prepare checks the machine is ready, then reads the record this delivery may already hold.
@@ -67,7 +84,7 @@ func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report)
 	if err := i.refuseOpenRecord(before); err != nil {
 		return err
 	}
-	warnOpenAction(out, before.current)
+	before.bypass = bypass(before.current)
 	return i.run(ctx, out, work, before)
 }
 
@@ -81,7 +98,7 @@ func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) err
 	if err := i.refuseOpenRecord(before); err != nil {
 		return err
 	}
-	warnOpenAction(out, before.current)
+	before.bypass = bypass(before.current)
 	return i.run(ctx, out, work, before)
 }
 
@@ -127,6 +144,7 @@ func (i Install) SkipAction(ctx context.Context, out io.Writer, work report.Repo
 	before.progress = before.current
 	before.progress.Actions = slices.Clone(before.current.Actions)
 	before.progress.Actions[len(before.progress.Actions)-1].End = time.Now().UTC()
+	before.skip = before.progress.Actions[len(before.progress.Actions)-1].Command
 	return i.run(ctx, out, work, before)
 }
 
@@ -156,11 +174,12 @@ func (i Install) refuseOpenRecord(before prelude) error {
 		position(before.current), recovery(before.current.Prior), ErrRecordOpen)
 }
 
-// warnOpenAction names an action a rollback passes over without knowing how far it ran.
-func warnOpenAction(out io.Writer, current record.Record) {
+// bypass names the action a rollback passes over without knowing how far it ran, or nothing.
+func bypass(current record.Record) string {
 	if action, open := current.OpenAction(); open {
-		fmt.Fprintf(out, "rolling back over an action that may have stopped halfway, check it by hand: %s\n", action.Command)
+		return action.Command
 	}
+	return ""
 }
 
 // prior names the last finished release an install opening now would fall back to.
@@ -202,6 +221,17 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 		descriptor.SecretNames(config.Variables))
 	if err != nil {
 		return err
+	}
+	if i.preview {
+		p, err := i.plan(ctx, before, resolution, files)
+		if err != nil {
+			return err
+		}
+		p.print(out, config.Name, config.Version)
+		return nil
+	}
+	if before.bypass != "" {
+		fmt.Fprintf(out, "rolling back over an action that may have stopped halfway, check it by hand: %s\n", before.bypass)
 	}
 
 	next := record.Record{
@@ -343,7 +373,7 @@ func (i Install) checkMachine(ctx context.Context, name string) (machine.Machine
 func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Config,
 	secrets []string) (*site.Store, site.Resolution, error) {
 	store := site.NewStore(dir)
-	resolution, err := site.NewValues(store, i.Shell, i.Set, secrets).Resolve(ctx, config.Variables)
+	resolution, err := site.NewValues(store, i.shell(), i.Set, secrets).Resolve(ctx, config.Variables)
 	if err != nil {
 		return nil, site.Resolution{}, err
 	}

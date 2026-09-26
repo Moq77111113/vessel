@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/machine"
 )
@@ -111,5 +113,15 @@ func TestAPackedInstallerOffersResume(t *testing.T) {
 func TestResumeOffersSkipAction(t *testing.T) {
 	if newResumeCommand().Flags().Lookup("skip-action") == nil {
 		t.Error("resume offers no --skip-action")
+	}
+}
+
+func TestEveryVerbThatChangesTheMachineOffersDryRun(t *testing.T) {
+	commands := []*cobra.Command{newInstallCommand(), newUpgradeCommand(), newResumeCommand(),
+		packedInstall("myapp"), packedUpgrade("myapp"), packedResume("myapp")}
+	for _, command := range commands {
+		if command.Flags().Lookup("dry-run") == nil {
+			t.Errorf("%s offers no --dry-run", command.Name())
+		}
 	}
 }

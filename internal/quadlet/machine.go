@@ -58,7 +58,7 @@ func (m *Machine) do(ctx context.Context, lines []string) error {
 
 // Services asks systemd what it does with the services these units generate.
 func (m *Machine) Services(ctx context.Context, files []descriptor.File) ([]machine.Service, error) {
-	names := serviceNames(files)
+	names := append(serviceNames(files), siblings(files)...)
 	services := make([]machine.Service, 0, len(names))
 	for _, name := range names {
 		// systemctl is-active exits non-zero on a down service: the text is the answer, an empty one means it never ran.

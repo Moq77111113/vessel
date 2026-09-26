@@ -57,3 +57,11 @@ func (s *Shell) run(ctx context.Context, command string) ([]byte, error) {
 	}
 	return output, nil
 }
+
+// DryMark opens the value Dry gives in place of a command's output.
+const DryMark = "<not run: "
+
+// Dry answers a command with a mark naming it, and never runs it.
+func Dry(_ context.Context, command string) ([]byte, error) {
+	return []byte(DryMark + command + ">"), nil
+}
