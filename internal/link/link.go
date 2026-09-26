@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"aead.dev/minisign"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
@@ -28,7 +27,7 @@ type puller interface {
 }
 
 func Link(ctx context.Context, work, summary report.Report, kinds []machine.Machine,
-	source, out, platform, name, version string, key *minisign.PrivateKey) error {
+	source, out, platform, name, version string) error {
 	source = filepath.Clean(source)
 	definition, err := descriptor.Read(os.DirFS(source))
 	if err != nil && !errors.Is(err, descriptor.ErrNoDelivery) {
@@ -102,9 +101,6 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 		},
 	}
 	if err := bundle.Write(out, contents); err != nil {
-		return err
-	}
-	if err := signBundle(out, key); err != nil {
 		return err
 	}
 	summary.Line("Finished", fmt.Sprintf("%d images, %d files, bundle in %s", len(digests), len(files), out))

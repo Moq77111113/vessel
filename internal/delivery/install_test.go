@@ -464,7 +464,7 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 		}
 	}
 	out := filepath.Join(t.TempDir(), "bundle")
-	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), source, out, "linux/amd64", "", "", nil); err != nil {
+	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), source, out, "linux/amd64", "", ""); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out

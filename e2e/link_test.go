@@ -33,7 +33,7 @@ func TestLinkPinsEveryUnitToADigest(t *testing.T) {
 // the final lock uses.
 func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
 	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
-	output, err := runVesselCapture("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", serveStack(t))
+	output, err := runVesselCapture("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", "--insecure-unsigned", serveStack(t))
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -54,12 +54,12 @@ func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
 func TestLinkTwiceFromTheSameSourceProducesTheSameBundle(t *testing.T) {
 	source := serveStack(t)
 	first, firstExe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
-	if err := runVessel("build", "-o", firstExe, "--layout", first, "--name", "acme", "--version", "1.0", source); err != nil {
+	if err := runVessel("build", "-o", firstExe, "--layout", first, "--name", "acme", "--version", "1.0", "--insecure-unsigned", source); err != nil {
 		t.Fatalf("first build: %v", err)
 	}
 	time.Sleep(1100 * time.Millisecond)
 	second, secondExe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
-	if err := runVessel("build", "-o", secondExe, "--layout", second, "--name", "acme", "--version", "1.0", source); err != nil {
+	if err := runVessel("build", "-o", secondExe, "--layout", second, "--name", "acme", "--version", "1.0", "--insecure-unsigned", source); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
 	firstBundle, err := bundle.Open(first)
@@ -199,7 +199,7 @@ files:
 
 func TestLinkRefusesADeliveryWithNoName(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "vessel-stack")
-	err := runVessel("build", "-o", out, serveStack(t))
+	err := runVessel("build", "-o", out, "--insecure-unsigned", serveStack(t))
 	if !errors.Is(err, descriptor.ErrNoName) {
 		t.Errorf("got %v, want ErrNoName", err)
 	}
@@ -207,7 +207,7 @@ func TestLinkRefusesADeliveryWithNoName(t *testing.T) {
 
 func TestLinkRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "vessel-stack")
-	err := runVessel("build", "-o", out, "--name", "../../etc", serveStack(t))
+	err := runVessel("build", "-o", out, "--name", "../../etc", "--insecure-unsigned", serveStack(t))
 	if !errors.Is(err, descriptor.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}

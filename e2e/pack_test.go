@@ -23,7 +23,7 @@ func buildVessel(t *testing.T) string {
 func packStack(t *testing.T) string {
 	t.Helper()
 	vessel, out := buildVessel(t), filepath.Join(t.TempDir(), "myapp")
-	build := exec.Command(vessel, "build", serveStack(t), "-o", out, "--name", "acme", "--version", "1.0")
+	build := exec.Command(vessel, "build", serveStack(t), "-o", out, "--name", "acme", "--version", "1.0", "--insecure-unsigned")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("vessel build: %v: %s", err, output)
 	}

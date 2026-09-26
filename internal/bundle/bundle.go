@@ -34,8 +34,6 @@ const (
 	indexName  = "index.json"
 	layoutName = "oci-layout"
 	blobsDir   = "blobs/sha256"
-	// SignatureName is the detached signature over the bundle manifest.
-	SignatureName = "vessel.sig"
 )
 
 // Errors Open returns when a bundle no longer matches what it says it is.

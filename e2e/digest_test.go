@@ -66,7 +66,7 @@ func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
-	if err := runVessel("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", source); err != nil {
+	if err := runVessel("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", "--insecure-unsigned", source); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	artifact, err := bundle.Open(out)

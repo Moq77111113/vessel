@@ -11,14 +11,14 @@ import (
 
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"aead.dev/minisign"
-
+	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/installer"
 	"github.com/Moq77111113/vessel/internal/machine"
@@ -27,14 +27,14 @@ import (
 )
 
 func TestBuildWritesAFileThatCarriesTheBundle(t *testing.T) {
-	out := buildTestApp(t, "")
+	out := buildTestApp(t)
 	if !installer.CarriesABundle(out) {
 		t.Errorf("%s carries no bundle", out)
 	}
 }
 
 func TestBuildWritesAFileTheMachineCanRun(t *testing.T) {
-	out := buildTestApp(t, "")
+	out := buildTestApp(t)
 	info, err := os.Stat(out)
 	if err != nil {
 		t.Fatalf("stat %s: %v", out, err)
@@ -44,13 +44,12 @@ func TestBuildWritesAFileTheMachineCanRun(t *testing.T) {
 	}
 }
 
-// buildTestApp builds one executable from a one-unit source and returns its path.
-func buildTestApp(t *testing.T, key string) string {
+func buildTestApp(t *testing.T) string {
 	t.Helper()
 	source := t.TempDir()
 	writeUnits(t, source)
 	out := filepath.Join(t.TempDir(), "myapp")
-	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", Key: key}
+	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
 	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -65,7 +64,7 @@ func TestBuildWritesTheLayoutWhenAskedForIt(t *testing.T) {
 	layout := filepath.Join(dir, "bundle")
 
 	var stdout bytes.Buffer
-	job := Job{Source: source, Out: out, Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
+	job := Job{Source: source, Out: out, Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
 	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -74,73 +73,48 @@ func TestBuildWritesTheLayoutWhenAskedForIt(t *testing.T) {
 	}
 }
 
-func TestBuildWithAMissingKeyFailsBeforeResolvingAnyImage(t *testing.T) {
+func TestBuildWithoutCIIdentityFailsBeforeResolvingImages(t *testing.T) {
+	clearCIIdentity(t)
 	source := t.TempDir()
 	writeUnits(t, source)
 	out := filepath.Join(t.TempDir(), "myapp")
 
 	var work bytes.Buffer
-	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0",
-		Key: filepath.Join(t.TempDir(), "missing.key")}
+	job := Job{Source: source, Out: out, Platform: "linux/amd64"}
 	err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job)
-	if err == nil {
-		t.Fatal("build succeeded with a key file that does not exist")
+	if !errors.Is(err, attest.ErrNoOIDCToken) {
+		t.Fatalf("Build: %v", err)
 	}
 	if strings.Contains(work.String(), "Resolving") {
-		t.Errorf("got %q, want no image resolved before the key is known good", work.String())
+		t.Fatal("resolved images before signing preflight")
 	}
 }
 
-func TestBuildWithoutAKeyWarnsTheExecutableIsUnsigned(t *testing.T) {
+func TestInsecureUnsignedBuildLeavesNoSidecar(t *testing.T) {
 	source := t.TempDir()
 	writeUnits(t, source)
 	out := filepath.Join(t.TempDir(), "myapp")
 
 	var stdout bytes.Buffer
-	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
+	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
 	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "sha256sum myapp") {
-		t.Errorf("stdout does not warn the file is unsigned: %s", stdout.String())
+	if _, err := os.Stat(out + attest.SigstoreSuffix); !os.IsNotExist(err) {
+		t.Errorf("got a sidecar at %s, want none", out+attest.SigstoreSuffix)
+	}
+	if !strings.Contains(stdout.String(), "INSECURE") {
+		t.Errorf("stdout does not warn the build is insecure: %s", stdout.String())
 	}
 }
 
-func TestBuildWithAKeyNamesTheSignatureFile(t *testing.T) {
-	source := t.TempDir()
-	writeUnits(t, source)
-	out := filepath.Join(t.TempDir(), "myapp")
-	key := writeKeyFile(t)
-
-	var stdout bytes.Buffer
-	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", Key: key}
-	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job); err != nil {
-		t.Fatalf("build: %v", err)
-	}
-	if !strings.Contains(stdout.String(), out+".minisig, ship it alongside") {
-		t.Errorf("stdout does not name the signature file: %s", stdout.String())
-	}
-}
-
-// writeKeyFile writes an unencrypted minisign private key, for a test that signs.
-func writeKeyFile(t *testing.T) string {
+func clearCIIdentity(t *testing.T) {
 	t.Helper()
-	_, private, err := minisign.GenerateKey(nil)
-	if err != nil {
-		t.Fatalf("GenerateKey: %v", err)
-	}
-	text, err := private.MarshalText()
-	if err != nil {
-		t.Fatalf("MarshalText: %v", err)
-	}
-	path := filepath.Join(t.TempDir(), "vessel.key")
-	if err := os.WriteFile(path, text, 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	return path
+	t.Setenv("VESSEL_SIGSTORE_ID_TOKEN", "")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
+	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 }
 
-// writeUnits writes a quadlet unit under source, referencing an image seeded in a local registry.
 func writeUnits(t *testing.T, source string) {
 	t.Helper()
 	host := registryHost(t)
@@ -150,12 +124,10 @@ func writeUnits(t *testing.T, source string) {
 	}
 }
 
-// buildKinds is the machine list a build links through: quadlet reads the units, nothing runs.
 func buildKinds() []machine.Machine {
 	return []machine.Machine{quadlet.New(machine.Exec)}
 }
 
-// registryHost starts a local registry seeded with one image and returns its host:port.
 func registryHost(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(ggcrregistry.New())

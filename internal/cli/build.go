@@ -27,7 +27,8 @@ func newBuild() *cobra.Command {
 	flags.StringVar(&job.Platform, "platform", "linux/amd64", "platform every reference resolves for")
 	flags.StringVar(&job.Name, "name", "", "delivery name")
 	flags.StringVar(&job.Version, "version", "", "delivery version")
-	flags.StringVar(&job.Key, "key", "", "minisign private key file")
+	flags.BoolVar(&job.InsecureUnsigned, "insecure-unsigned", false,
+		"build without a Sigstore signature; development use only")
 	command.MarkFlagRequired("out")
 	return command
 }

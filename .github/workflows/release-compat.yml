@@ -1,0 +1,43 @@
+name: Release compatibility
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build vessel
+        run: go build -o vessel ./cmd/vessel
+
+      - name: Write a minimal descriptor
+        run: |
+          mkdir -p /tmp/compat
+          cat > /tmp/compat/app.container <<'EOF'
+          [Container]
+          Image=docker.io/library/busybox:latest
+          EOF
+
+      - name: Build a signed release
+        run: ./vessel build -o /tmp/myapp --name compat --version 0.0.1 /tmp/compat
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Verify with cosign
+        run: |
+          cosign verify-blob /tmp/myapp \
+            --bundle /tmp/myapp.sigstore \
+            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release-compat.yml@${{ github.ref }}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"

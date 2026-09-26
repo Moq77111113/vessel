@@ -115,7 +115,7 @@ func unpackFixture(t *testing.T, host string) string {
 func buildStack(t *testing.T) string {
 	t.Helper()
 	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
-	args := []string{"build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", serveStack(t)}
+	args := []string{"build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", "--insecure-unsigned", serveStack(t)}
 	if err := runVessel(args...); err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -149,7 +149,7 @@ func buildFixture(t *testing.T, files map[string]string) (string, error) {
 		}
 	}
 	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
-	return out, runVessel("build", "-o", exe, "--layout", out, source)
+	return out, runVessel("build", "-o", exe, "--layout", out, "--insecure-unsigned", source)
 }
 
 // paths names the files a bundle carries, for a failure message.
