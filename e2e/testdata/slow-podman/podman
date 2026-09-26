@@ -1,0 +1,3 @@
+#!/bin/sh
+touch "$VESSEL_TEST_MARKER"
+exec sleep 60
