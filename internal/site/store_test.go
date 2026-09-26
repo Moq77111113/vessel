@@ -68,18 +68,18 @@ func TestSiteKeepsAValueHoldingAnEqualsSign(t *testing.T) {
 	}
 }
 
-func TestSiteRefusesAValueHoldingANewline(t *testing.T) {
+func TestSiteRefusesAValueHoldingAControlCharacter(t *testing.T) {
 	values := siteFor(t, t.TempDir())
 	err := values.Write(map[string]string{"A": "one\ntwo"})
-	if !errors.Is(err, ErrValueHasANewline) {
-		t.Fatalf("got %v, want ErrValueHasANewline", err)
+	if !errors.Is(err, ErrValueHasAControl) {
+		t.Fatalf("got %v, want ErrValueHasAControl", err)
 	}
 }
 
 func TestSiteRefusalLeavesNoFileBehind(t *testing.T) {
 	dir := t.TempDir()
-	if err := siteFor(t, dir).Write(map[string]string{"A": "one\ntwo"}); !errors.Is(err, ErrValueHasANewline) {
-		t.Fatalf("got %v, want ErrValueHasANewline", err)
+	if err := siteFor(t, dir).Write(map[string]string{"A": "one\ntwo"}); !errors.Is(err, ErrValueHasAControl) {
+		t.Fatalf("got %v, want ErrValueHasAControl", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "values")); !os.IsNotExist(err) {
 		t.Fatalf("got %v, want the store file to not exist", err)
@@ -91,8 +91,8 @@ func TestSiteRefusalDoesNotLoseAnEarlierSuccessfulWrite(t *testing.T) {
 	if err := values.Write(map[string]string{"PUBLIC_HOST": "dmas.acme.local"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := values.Write(map[string]string{"A": "one\ntwo"}); !errors.Is(err, ErrValueHasANewline) {
-		t.Fatalf("got %v, want ErrValueHasANewline", err)
+	if err := values.Write(map[string]string{"A": "one\ntwo"}); !errors.Is(err, ErrValueHasAControl) {
+		t.Fatalf("got %v, want ErrValueHasAControl", err)
 	}
 	got, err := values.Read()
 	if err != nil {

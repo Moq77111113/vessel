@@ -18,6 +18,9 @@ const (
 	previousName = "record.previous.json"
 )
 
+// Format numbers the shape of the record this vessel writes; a record without it predates the steps.
+const Format = 1
+
 // Step is one part of an install, named in the order an install runs them.
 type Step string
 
@@ -50,6 +53,7 @@ type Entry struct {
 
 // Record is what one delivery put on this machine.
 type Record struct {
+	Format   int       `json:"format"`
 	Name     string    `json:"name"`
 	Version  string    `json:"version"`
 	Machine  string    `json:"machine"`
@@ -126,29 +130,39 @@ func (r *Records) Previous() (Record, bool, error) {
 
 // Remove takes the record off this machine, keeping it as the previous one.
 func (r *Records) Remove() error {
-	return rename(filepath.Join(r.dir, recordName), filepath.Join(r.dir, previousName))
+	return atomicfile.Rename(filepath.Join(r.dir, recordName), filepath.Join(r.dir, previousName))
 }
 
-// Write replaces the record through a temporary file, so a power cut leaves it readable.
+// Write replaces the record through a temporary file, keeping a finished one of another version as the previous.
 func (r *Records) Write(record Record) error {
-	if err := os.MkdirAll(r.dir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", r.dir, err)
+	if err := atomicfile.MkdirAll(r.dir, 0o700); err != nil {
+		return err
 	}
 	path := filepath.Join(r.dir, recordName)
 	current, found, err := read(path)
 	if err != nil {
 		return err
 	}
-	if found && current.Version != record.Version {
-		if err := rename(path, filepath.Join(r.dir, previousName)); err != nil {
-			return err
-		}
-	}
+	record.Format = Format
 	body, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode the record: %w", err)
 	}
+	if found && current.Done() && current.Version != record.Version {
+		if err := keep(path, filepath.Join(r.dir, previousName)); err != nil {
+			return err
+		}
+	}
 	return atomicfile.Write(path, body, 0o600)
+}
+
+// keep copies the record at from to to, leaving from in place until a write replaces it.
+func keep(from, to string) error {
+	body, err := os.ReadFile(from)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", from, err)
+	}
+	return atomicfile.Write(to, body, 0o600)
 }
 
 func read(path string) (Record, bool, error) {
@@ -164,11 +178,4 @@ func read(path string) (Record, bool, error) {
 		return Record{}, false, fmt.Errorf("decode %s: %w", path, err)
 	}
 	return record, true, nil
-}
-
-func rename(from, to string) error {
-	if err := os.Rename(from, to); err != nil {
-		return fmt.Errorf("move into %s: %w", to, err)
-	}
-	return nil
 }

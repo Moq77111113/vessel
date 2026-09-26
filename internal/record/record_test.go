@@ -52,7 +52,7 @@ func TestReadReportsNoRecordOnAMachineThatHoldsNone(t *testing.T) {
 
 func TestAWriteKeepsThePreviousRecord(t *testing.T) {
 	records := recordsFor(t, t.TempDir())
-	if err := records.Write(record.Record{Name: "acme", Version: "1.3.0"}); err != nil {
+	if err := records.Write(record.Record{Name: "acme", Version: "1.3.0", End: time.Unix(1757000000, 0).UTC()}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if err := records.Write(record.Record{Name: "acme", Version: "1.4.0"}); err != nil {
@@ -83,7 +83,7 @@ func TestAnOpenRecordSaysTheInstallNeverFinished(t *testing.T) {
 
 func TestClosingARecordAtTheSameVersionKeepsThePreviousRecord(t *testing.T) {
 	records := recordsFor(t, t.TempDir())
-	if err := records.Write(record.Record{Name: "acme", Version: "1.3.0"}); err != nil {
+	if err := records.Write(record.Record{Name: "acme", Version: "1.3.0", End: time.Unix(1757000000, 0).UTC()}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if err := records.Write(record.Record{Name: "acme", Version: "1.4.0"}); err != nil {
@@ -238,5 +238,26 @@ func TestARecordWithNoStepsStillReadsAsDone(t *testing.T) {
 	}
 	if _, open := entry.OpenAction(); open {
 		t.Error("a record with no actions key has an open action")
+	}
+}
+
+func TestAnOpenRecordNeverBecomesThePreviousOne(t *testing.T) {
+	records := recordsFor(t, filepath.Join(t.TempDir(), "acme"))
+	finished := time.Unix(1757000000, 0).UTC()
+	for _, entry := range []record.Record{
+		{Name: "acme", Version: "1.3.0", End: finished},
+		{Name: "acme", Version: "1.4.0"},
+		{Name: "acme", Version: "1.3.0"},
+	} {
+		if err := records.Write(entry); err != nil {
+			t.Fatalf("write %s: %v", entry.Version, err)
+		}
+	}
+	previous, _, err := records.Previous()
+	if err != nil {
+		t.Fatalf("read the previous record: %v", err)
+	}
+	if previous.Version != "1.3.0" || !previous.Done() {
+		t.Errorf("got %s done=%v, want 1.3.0 done", previous.Version, previous.Done())
 	}
 }

@@ -8,11 +8,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/Moq77111113/vessel/internal/atomicfile"
 )
 
-var ErrValueHasANewline = errors.New("a value cannot hold a newline")
+var ErrValueHasAControl = errors.New("a value cannot hold a control character")
 
 // Store is the site values one delivery already holds on this machine.
 type Store struct {
@@ -56,8 +57,8 @@ func (v *Store) Write(values map[string]string) error {
 	sort.Strings(names)
 
 	for _, name := range names {
-		if strings.Contains(values[name], "\n") {
-			return fmt.Errorf("%s: %w", name, ErrValueHasANewline)
+		if err := checkLine(name, values[name]); err != nil {
+			return err
 		}
 	}
 
@@ -66,8 +67,16 @@ func (v *Store) Write(values map[string]string) error {
 		fmt.Fprintf(&body, "%s=%s\n", name, values[name])
 	}
 	dir := filepath.Dir(v.path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if err := atomicfile.MkdirAll(dir, 0o700); err != nil {
+		return err
 	}
 	return atomicfile.Write(v.path, []byte(body.String()), 0o600)
+}
+
+// checkLine refuses a value that would not stay on its one line of a text file.
+func checkLine(name, value string) error {
+	if strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) && r != '\t' }) {
+		return fmt.Errorf("%s: %w", name, ErrValueHasAControl)
+	}
+	return nil
 }

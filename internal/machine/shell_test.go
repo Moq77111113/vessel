@@ -64,6 +64,27 @@ func TestShSaysWhyARealCommandFailed(t *testing.T) {
 	}
 }
 
+func TestShSaysACommandWasKilled(t *testing.T) {
+	err := NewShell(Sh).Do(context.Background(), "kill -9 $$")
+	if !errors.Is(err, ErrKilled) {
+		t.Fatalf("got %v, want ErrKilled", err)
+	}
+}
+
+func TestShSaysACommandWhoseChildWasKilled(t *testing.T) {
+	err := NewShell(Sh).Do(context.Background(), "true && sh -c 'kill -9 $$'")
+	if !errors.Is(err, ErrKilled) {
+		t.Fatalf("got %v, want ErrKilled", err)
+	}
+}
+
+func TestShDoesNotCallAFailedCommandKilled(t *testing.T) {
+	err := NewShell(Sh).Do(context.Background(), "exit 3")
+	if errors.Is(err, ErrKilled) {
+		t.Fatalf("got %v, want a plain failure", err)
+	}
+}
+
 func TestDryNamesTheCommandWithoutRunningIt(t *testing.T) {
 	value, err := NewShell(Dry).Value(context.Background(), "touch /tmp/vessel-dry")
 	if err != nil {

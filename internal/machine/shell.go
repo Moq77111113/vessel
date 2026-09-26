@@ -12,6 +12,9 @@ import (
 // ErrAction says a command the delivery declared did not succeed.
 var ErrAction = errors.New("command failed")
 
+// ErrKilled says a signal stopped a command, so what it did is unknown.
+var ErrKilled = errors.New("command killed by a signal")
+
 // Capture runs one shell command and returns what it printed on stdout alone.
 type Capture func(ctx context.Context, command string) ([]byte, error)
 
@@ -52,10 +55,22 @@ func (s *Shell) Do(ctx context.Context, command string) error {
 
 func (s *Shell) run(ctx context.Context, command string) ([]byte, error) {
 	output, err := s.capture(ctx, command)
+	if killed(err) {
+		return nil, fmt.Errorf("%s: %w: %w", command, ErrKilled, err)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w: %s", command, ErrAction, strings.TrimSpace(string(output)))
+		return nil, fmt.Errorf("%s: %w: %w: %s", command, ErrAction, err, strings.TrimSpace(string(output)))
 	}
 	return output, nil
+}
+
+// killed reports a signal stopping the shell itself, or a child it reports as 128 plus the signal, as POSIX shells do.
+func killed(err error) bool {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return false
+	}
+	return exit.ExitCode() == -1 || exit.ExitCode() > 128
 }
 
 // DryMark opens the value Dry gives in place of a command's output.

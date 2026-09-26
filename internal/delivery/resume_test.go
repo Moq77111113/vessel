@@ -3,6 +3,7 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -111,6 +112,48 @@ func TestResumeRefusesAnActionThatMayHaveStoppedHalfway(t *testing.T) {
 	}
 	if len(shell.commands) != 0 {
 		t.Errorf("the refusal ran %v", shell.commands)
+	}
+}
+
+func TestResumeRefusesAnInstallAnOlderVesselLeftHalfway(t *testing.T) {
+	root := t.TempDir()
+	dir := linkTestBundle(t, fixture(t, "one-action"))
+	body, err := os.ReadFile("testdata/unfinished-main/acme/record.json")
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	var entry record.Record
+	if err := json.Unmarshal(body, &entry); err != nil {
+		t.Fatalf("decode the fixture: %v", err)
+	}
+	entry.Root = jobFor(t, root, dir, nil, nil).Artifact.Root
+	body, err = json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("encode the record: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
+	shell := &countingShell{}
+	job := jobFor(t, root, dir, nil, nil)
+	job.Shell = machine.NewShell(shell.run)
+	if err := job.Resume(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, ErrRecordTooOld) {
+		t.Fatalf("got %v, want ErrRecordTooOld", err)
+	}
+	if len(shell.commands) != 0 {
+		t.Errorf("the refusal ran %v", shell.commands)
+	}
+}
+
+func TestResumeRefusesASetOnceTheValuesAreStored(t *testing.T) {
+	root := t.TempDir()
+	dir := linkTestBundle(t, fixture(t, "one-value"))
+	broken := []machine.Machine{brokenImages{quadlet.New((&podmanStub{}).run)}}
+	first := jobFor(t, root, dir, broken, map[string]string{"PUBLIC_HOST": "a.acme.local"})
+	if err := first.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	second := jobFor(t, root, dir, nil, map[string]string{"PUBLIC_HOST": "b.acme.local"})
+	if err := second.Resume(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, ErrSetAfterValues) {
+		t.Fatalf("got %v, want ErrSetAfterValues", err)
 	}
 }
 
@@ -236,6 +279,21 @@ func TestResumeCountsTheImagesTheDeliveryCarries(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "1 images") {
 		t.Errorf("got %q, want the one image the delivery carries", out.String())
+	}
+}
+
+func TestResumeSaysTheFilesWereAlreadyWritten(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	var out bytes.Buffer
+	if err := jobFor(t, root, dir, nil, nil).Resume(context.Background(), &out, report.New(io.Discard)); err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if !strings.Contains(out.String(), "files already written") {
+		t.Errorf("got %q, want the files said already written", out.String())
 	}
 }
 

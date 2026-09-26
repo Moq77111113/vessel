@@ -33,8 +33,8 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 		return false, nil
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return false, fmt.Errorf("create %s: %w", dir, err)
+	if err := atomicfile.MkdirAll(dir, 0o755); err != nil {
+		return false, err
 	}
 	if err := atomicfile.Write(path, file.Data, 0o644); err != nil {
 		return false, err

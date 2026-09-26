@@ -107,6 +107,8 @@ var (
 	ErrNothingToResume = errors.New("this machine holds no unfinished install of that delivery")
 	ErrOtherBundle     = errors.New("this bundle is not the one the machine stopped installing")
 	ErrActionUnknown   = errors.New("an action may have stopped halfway, check it by hand")
+	ErrSetAfterValues  = errors.New("the unfinished install already stored its values, resume without --set")
+	ErrRecordTooOld    = errors.New("an older vessel left this install unfinished, it cannot say how far it ran")
 )
 
 // Resume finishes the install this bundle started, skipping every step and action the record says finished.
@@ -148,7 +150,7 @@ func (i Install) SkipAction(ctx context.Context, out io.Writer, work report.Repo
 	return i.run(ctx, out, work, before)
 }
 
-// checkResume refuses a machine with nothing unfinished, or one another bundle left unfinished.
+// checkResume refuses a resume the record cannot carry through: nothing open, another bundle, an older format, a late --set.
 func (i Install) checkResume(before prelude) error {
 	if !before.found || before.current.Done() {
 		return fmt.Errorf("%s: %w", i.Artifact.Config.Name, ErrNothingToResume)
@@ -156,6 +158,17 @@ func (i Install) checkResume(before prelude) error {
 	if before.current.Root != i.Artifact.Root {
 		return fmt.Errorf("the machine stopped installing %s %s: %w",
 			before.current.Name, before.current.Version, ErrOtherBundle)
+	}
+	if before.current.Format < record.Format {
+		return fmt.Errorf("%s %s, run uninstall: %w", before.current.Name, before.current.Version, ErrRecordTooOld)
+	}
+	if !before.current.Has(record.StepValues) {
+		return nil
+	}
+	for _, variable := range i.Artifact.Config.Variables {
+		if _, ok := i.Set[variable.Name]; ok && !variable.Secret {
+			return fmt.Errorf("--set %s: %w", variable.Name, ErrSetAfterValues)
+		}
 	}
 	return nil
 }
@@ -267,8 +280,12 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 		return partway(err)
 	}
 
-	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %d of %d files changed",
-		config.Name, config.Version, len(config.Images), changes, len(files)))
+	summary := fmt.Sprintf("%d of %d files changed", changes, len(files))
+	if before.progress.Has(record.StepFiles) {
+		summary = fmt.Sprintf("%d files already written", len(files))
+	}
+	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %s",
+		config.Name, config.Version, len(config.Images), summary))
 	if config.Insecure {
 		fmt.Fprintln(out, InsecureWarning)
 	}
@@ -400,7 +417,11 @@ func (i Install) runActions(ctx context.Context, change *machineChange) error {
 			return err
 		}
 		last := len(change.opening.Actions) - 1
-		if err := i.Shell.Do(ctx, command); err != nil {
+		err := i.Shell.Do(ctx, command)
+		if errors.Is(err, machine.ErrKilled) {
+			return err
+		}
+		if err != nil {
 			change.opening.Actions = change.opening.Actions[:last]
 			return errors.Join(err, change.records.Write(change.opening))
 		}
