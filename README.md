@@ -100,28 +100,20 @@ An action cut while it ran blocks `resume`: check it by hand, then `resume --ski
 
 ## Signing
 
-`vessel build` signs with [Sigstore](https://www.sigstore.dev/) using the CI's identity. No key to
-manage. On GitLab, declare the token; on GitHub, give the job `permissions: id-token: write`.
+`vessel build` signs with [Sigstore](https://www.sigstore.dev/), using the CI's OIDC identity: no
+key to manage. Put a token with audience `sigstore` in `VESSEL_SIGSTORE_ID_TOKEN`. On GitHub
+Actions, `permissions: id-token: write` is enough. With no token, the build stops before it pulls
+anything.
 
-```yaml
-build:
-  id_tokens:
-    VESSEL_SIGSTORE_ID_TOKEN:
-      aud: sigstore
-  script:
-    - vessel build ./acme -o myapp
-```
-
-On site, check it with [cosign](https://github.com/sigstore/cosign) before running it:
+Check a release with [cosign](https://github.com/sigstore/cosign) before running it:
 
 ```sh
 cosign verify-blob myapp --bundle myapp.sigstore \
-  --certificate-identity-regexp '^https://gitlab.com/<group>/<project>/-/jobs/[0-9]+$' \
-  --certificate-oidc-issuer https://gitlab.com
+  --certificate-identity <your CI job identity> --certificate-oidc-issuer <your CI issuer>
 ```
 
 Each signature lands in Sigstore's public log, [Rekor](https://docs.sigstore.dev/logging/overview/):
-the project URL and the file's hash, never the file. For local builds, `--insecure-unsigned` skips
+the CI identity and the file's hash, never the file. For local builds, `--insecure-unsigned` skips
 signing, and every command then shows the delivery as insecure.
 
 ## SBOM and scan reports
