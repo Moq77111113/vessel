@@ -149,3 +149,45 @@ func registryHost(t *testing.T) string {
 	}
 	return address.Host
 }
+
+func TestAnInsecureBuildSaysSoInTheBundle(t *testing.T) {
+	source := t.TempDir()
+	writeUnits(t, source)
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "bundle")
+	job := Job{Source: source, Out: filepath.Join(dir, "myapp"), Layout: layout,
+		Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	artifact, err := bundle.Open(layout)
+	if err != nil {
+		t.Fatalf("open the bundle: %v", err)
+	}
+	if !artifact.Config.Insecure {
+		t.Error("the bundle of an unsigned build does not say it is insecure")
+	}
+}
+
+func TestASignedLinkWritesNoInsecureKey(t *testing.T) {
+	source := t.TempDir()
+	writeUnits(t, source)
+	out := filepath.Join(t.TempDir(), "bundle")
+	job := Job{Source: source, Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
+	if err := Link(context.Background(), report.New(io.Discard), report.New(io.Discard), buildKinds(), job, out); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	blobs, err := os.ReadDir(filepath.Join(out, "blobs/sha256"))
+	if err != nil {
+		t.Fatalf("read the blobs: %v", err)
+	}
+	for _, entry := range blobs {
+		body, err := os.ReadFile(filepath.Join(out, "blobs/sha256", entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		if bytes.Contains(body, []byte(`"insecure"`)) {
+			t.Errorf("blob %s carries an insecure key for a signed link", entry.Name())
+		}
+	}
+}

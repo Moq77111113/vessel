@@ -60,6 +60,7 @@ type Config struct {
 	Images    []Image               `json:"images"`
 	Variables []descriptor.Variable `json:"variables,omitempty"`
 	Actions   []string              `json:"actions,omitempty"`
+	Insecure  bool                  `json:"insecure,omitempty"`
 }
 
 // Contents is everything a link run hands to Write.

@@ -26,19 +26,21 @@ type puller interface {
 	Image(ctx context.Context, ref descriptor.Ref) (v1.Image, error)
 }
 
-func Link(ctx context.Context, work, summary report.Report, kinds []machine.Machine,
-	source, out, platform, name, version string) error {
-	source = filepath.Clean(source)
+// Link resolves the delivery the job names to digests and writes its bundle in out.
+func Link(ctx context.Context, work, summary report.Report, kinds []machine.Machine, job Job, out string) error {
+	source := filepath.Clean(job.Source)
 	definition, err := descriptor.Read(os.DirFS(source))
 	if err != nil && !errors.Is(err, descriptor.ErrNoDelivery) {
 		return err
 	}
+	name := job.Name
 	if name == "" {
 		name = definition.Name
 	}
 	if err := descriptor.CheckName(name); err != nil {
 		return err
 	}
+	version := job.Version
 	if version == "" {
 		version = definition.Version
 	}
@@ -79,7 +81,7 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 	}
 	defer os.RemoveAll(layout)
 
-	digests, err := resolveAll(ctx, work, registry.New(), manifest.Relocs, platform, layout)
+	digests, err := resolveAll(ctx, work, registry.New(), manifest.Relocs, job.Platform, layout)
 	if err != nil {
 		return err
 	}
@@ -94,10 +96,11 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 			Name:      name,
 			Version:   version,
 			Machine:   kind.Name(),
-			Platform:  platform,
+			Platform:  job.Platform,
 			Images:    imagesOf(digests),
 			Variables: definition.Variables,
 			Actions:   definition.Actions,
+			Insecure:  job.InsecureUnsigned,
 		},
 	}
 	if err := bundle.Write(out, contents); err != nil {

@@ -101,6 +101,7 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 		Files:    entriesOf(files),
 		Images:   digestsOf(config.Images),
 		Secrets:  unionNames(before.current.Secrets, namesOf(resolution.Secrets)),
+		Insecure: config.Insecure,
 		Start:    time.Now().UTC(),
 	}
 	if err := openRecord(before.records, before.current, next); err != nil {
@@ -123,6 +124,9 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 
 	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %d of %d files changed",
 		config.Name, config.Version, len(images), changes, len(files)))
+	if config.Insecure {
+		fmt.Fprintln(out, InsecureWarning)
+	}
 	return nil
 }
 

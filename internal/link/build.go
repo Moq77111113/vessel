@@ -38,7 +38,7 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 	}
 	defer cleanup()
 
-	if err := Link(ctx, work, report.New(io.Discard), kinds, job.Source, dir, job.Platform, job.Name, job.Version); err != nil {
+	if err := Link(ctx, work, report.New(io.Discard), kinds, job, dir); err != nil {
 		return err
 	}
 

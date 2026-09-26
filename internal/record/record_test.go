@@ -189,3 +189,13 @@ func recordsFor(t *testing.T, dir string) *record.Records {
 	t.Helper()
 	return record.NewRecords(dir)
 }
+
+func TestARecordWithNoInsecureKeyReadsAsSigned(t *testing.T) {
+	entry, found, err := record.NewRecords("testdata/older").Read()
+	if err != nil || !found {
+		t.Fatalf("read: found=%v err=%v", found, err)
+	}
+	if entry.Insecure {
+		t.Error("a record an older vessel wrote reads as insecure")
+	}
+}

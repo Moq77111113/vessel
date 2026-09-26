@@ -303,3 +303,34 @@ func TestStatusNamesTheVersionAnInstallPutOnTheMachine(t *testing.T) {
 		t.Errorf("got %q, want the installed version named", out.String())
 	}
 }
+
+func TestStatusSaysTheDeliveryIsInsecure(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet", Insecure: true,
+		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
+	})
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "insecure") {
+		t.Errorf("got %q, want the delivery named insecure", out.String())
+	}
+}
+
+func TestStatusNamesAnInsecureDeliveryThatNeverFinished(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet", Insecure: true, Start: time.Unix(1, 0).UTC(),
+	})
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	for _, want := range []string{"insecure", "never finished"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("got %q, want %q in it", out.String(), want)
+		}
+	}
+}

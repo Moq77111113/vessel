@@ -15,6 +15,9 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
+// InsecureWarning is the line every command prints about a bundle built with --insecure-unsigned.
+const InsecureWarning = "insecure: built with --insecure-unsigned, for development use only"
+
 var ErrNoRecord = errors.New("this machine holds no record of that delivery")
 
 var ErrRecordDoesNotMatch = errors.New("this machine no longer matches the record")
@@ -34,6 +37,9 @@ func Status(ctx context.Context, out io.Writer, kinds []machine.Machine, root, n
 		return fmt.Errorf("%s: %w", name, ErrNoRecord)
 	}
 	fmt.Fprintf(out, "%s %s, installed %s\n", record.Name, record.Version, record.Start.Format(time.RFC3339))
+	if record.Insecure {
+		fmt.Fprintln(out, InsecureWarning)
+	}
 	if !record.Done() {
 		fmt.Fprintln(out, "this install never finished, run install again")
 	}
