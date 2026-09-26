@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -464,7 +465,8 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 		}
 	}
 	out := filepath.Join(t.TempDir(), "bundle")
-	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), source, out, "linux/amd64", "", ""); err != nil {
+	job := link.Job{Source: source, Platform: "linux/amd64"}
+	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), job, out); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
@@ -737,3 +739,46 @@ type heldSecrets struct {
 }
 
 func (h heldSecrets) Secrets(context.Context) ([]string, error) { return h.names, nil }
+
+func TestTheRecordSaysTheBundleIsInsecure(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, linkInsecureBundle(t), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	record, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !record.Insecure {
+		t.Error("the record of an unsigned bundle does not say it is insecure")
+	}
+}
+
+// linkInsecureBundle links testdata/insecure and one unit as --insecure-unsigned would.
+func linkInsecureBundle(t *testing.T) string {
+	t.Helper()
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "web.container"), "[Container]\nImage="+registryHost(t)+"/acme/web:1.0\n")
+	body, err := os.ReadFile("testdata/insecure/vessel.yaml")
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	writeFile(t, filepath.Join(source, "vessel.yaml"), string(body))
+	out := filepath.Join(t.TempDir(), "bundle")
+	job := link.Job{Source: source, Platform: "linux/amd64", InsecureUnsigned: true}
+	if err := link.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), job, out); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	return out
+}
+
+func TestInstallSaysTheBundleIsInsecure(t *testing.T) {
+	var out bytes.Buffer
+	job := jobFor(t, t.TempDir(), linkInsecureBundle(t), nil, nil)
+	if err := job.Run(context.Background(), &out, report.New(io.Discard)); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if !strings.Contains(out.String(), "insecure") {
+		t.Errorf("got %q, want the install to say the bundle is insecure", out.String())
+	}
+}

@@ -33,6 +33,7 @@ type Record struct {
 	Files    []Entry   `json:"files"`
 	Images   []string  `json:"images"`
 	Secrets  []string  `json:"secrets"`
+	Insecure bool      `json:"insecure,omitempty"`
 	Start    time.Time `json:"start"`
 	End      time.Time `json:"end,omitzero"`
 }
