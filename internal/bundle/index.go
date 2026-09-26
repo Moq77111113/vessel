@@ -9,9 +9,10 @@ import (
 )
 
 type blob struct {
-	MediaType string `json:"mediaType"`
-	Digest    string `json:"digest"`
-	Size      int64  `json:"size"`
+	MediaType   string            `json:"mediaType"`
+	Digest      string            `json:"digest"`
+	Size        int64             `json:"size"`
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 type manifest struct {
@@ -20,6 +21,7 @@ type manifest struct {
 	ArtifactType  string `json:"artifactType,omitempty"`
 	Config        blob   `json:"config"`
 	Layers        []blob `json:"layers"`
+	Subject       blob   `json:"subject,omitzero"`
 }
 
 type entry struct {

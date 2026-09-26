@@ -38,10 +38,13 @@ const (
 
 // Errors Open returns when a bundle no longer matches what it says it is.
 var (
-	ErrDigestMismatch = errors.New("does not match the digest that pins it")
-	ErrPathEscapes    = errors.New("leaves the target root")
-	ErrNotABundle     = errors.New("is not a vessel bundle")
-	ErrBundleShape    = errors.New("is not shaped like a vessel bundle")
+	ErrDigestMismatch   = errors.New("does not match the digest that pins it")
+	ErrPathEscapes      = errors.New("leaves the target root")
+	ErrNotABundle       = errors.New("is not a vessel bundle")
+	ErrBundleShape      = errors.New("is not shaped like a vessel bundle")
+	ErrEvidenceName     = errors.New("an evidence name is not a plain file name")
+	ErrEvidenceTwice    = errors.New("the bundle already carries other evidence of that name")
+	ErrEvidenceSameName = errors.New("two evidence files share one name")
 )
 
 // Image is one image reference and the digest it resolved to.
@@ -74,6 +77,7 @@ type Contents struct {
 type Bundle struct {
 	Config    Config
 	Files     []descriptor.File
+	Evidence  []Evidence
 	LayoutDir string
 	// Root is the bundle manifest digest, the value a signature covers.
 	Root string
@@ -159,7 +163,11 @@ func Open(dir string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Bundle{Config: decoded, Files: files, LayoutDir: dir, Root: root.Digest}, nil
+	evidence, err := readEvidence(dir, root)
+	if err != nil {
+		return nil, err
+	}
+	return &Bundle{Config: decoded, Files: files, Evidence: evidence, LayoutDir: dir, Root: root.Digest}, nil
 }
 
 // IsBundle reports whether dir is an OCI layout holding a vessel bundle manifest.
