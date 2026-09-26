@@ -982,3 +982,17 @@ func TestInstallRefusesAFileAnotherDeliveryOwns(t *testing.T) {
 		t.Fatalf("got %v, want ErrFileTaken", err)
 	}
 }
+
+func TestInstallWritesTheModeTheDescriptorDeclares(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "file-mode")), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	info, err := os.Stat(filepath.Join(root, "etc/acme/token"))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("got %o, want 600", info.Mode().Perm())
+	}
+}

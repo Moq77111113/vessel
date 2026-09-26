@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,7 @@ var (
 	ErrTargetIsRoot      = errors.New("a file target names no file")
 	ErrFileSource        = errors.New("a file carries no source")
 	ErrSourceEscapes     = errors.New("a source leaves the delivery directory")
+	ErrFileMode          = errors.New("a file mode is not octal permission bits, write it as 0600")
 )
 
 // variableName is the shape a name takes, so a marker cannot be mistaken for prose.
@@ -39,6 +41,20 @@ var deliveryName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 type Mapping struct {
 	Source string `yaml:"source" json:"source"`
 	Target string `yaml:"target" json:"target"`
+	Mode   Mode   `yaml:"mode,omitempty" json:"mode,omitempty"`
+}
+
+// Mode is a file's permission bits, written in octal: 0600.
+type Mode fs.FileMode
+
+// UnmarshalYAML reads the octal digits as they are written, refusing anything but permission bits.
+func (m *Mode) UnmarshalYAML(node *yaml.Node) error {
+	bits, err := strconv.ParseUint(node.Value, 8, 32)
+	if err != nil || bits == 0 || bits > 0o777 {
+		return fmt.Errorf("mode %q: %w", node.Value, ErrFileMode)
+	}
+	*m = Mode(bits)
+	return nil
 }
 
 // Variable is a site value the machine supplies at install time.

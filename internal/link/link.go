@@ -158,7 +158,7 @@ func carryFiles(source fs.FS, mappings []descriptor.Mapping) ([]descriptor.File,
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", mapping.Source, err)
 		}
-		files = append(files, descriptor.File{Path: strings.TrimPrefix(mapping.Target, "/"), Data: data})
+		files = append(files, descriptor.File{Path: strings.TrimPrefix(mapping.Target, "/"), Data: data, Mode: fs.FileMode(mapping.Mode)})
 	}
 	return files, nil
 }

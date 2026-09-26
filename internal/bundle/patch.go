@@ -15,7 +15,8 @@ var ErrNoDigest = errors.New("no digest")
 func Patch(manifest descriptor.Manifest, digests map[string]string) ([]descriptor.File, error) {
 	files := make([]descriptor.File, len(manifest.Files))
 	for i, file := range manifest.Files {
-		files[i] = descriptor.File{Path: file.Path, Data: append([]byte(nil), file.Data...)}
+		file.Data = append([]byte(nil), file.Data...)
+		files[i] = file
 	}
 
 	relocs := append([]descriptor.Relocation(nil), manifest.Relocs...)

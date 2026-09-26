@@ -33,6 +33,7 @@ version: 1.4.0
 files:
   - source: realm.json
     target: /etc/acme/realm.json      # ###PUBLIC_HOST### inside is replaced at install
+    mode: 0640                        # optional: without it, a file in place keeps its mode, a new one gets 0644
 variables:
   - name: PUBLIC_HOST
     description: the public address of this machine

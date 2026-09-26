@@ -38,14 +38,15 @@ func (t *Tree) Write(file descriptor.File) (bool, error) {
 	if err := t.checkParents(path); err != nil {
 		return false, err
 	}
-	if Same(path, DigestOf(file.Data)) {
+	mode := modeFor(path, file.Mode)
+	if Same(path, DigestOf(file.Data)) && permOf(path) == mode {
 		return false, nil
 	}
 	dir := filepath.Dir(path)
 	if err := atomicfile.MkdirAll(dir, 0o755); err != nil {
 		return false, err
 	}
-	if err := atomicfile.Write(path, file.Data, 0o644); err != nil {
+	if err := atomicfile.Write(path, file.Data, mode); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -67,6 +68,26 @@ func (t *Tree) Remove(name string) (bool, error) {
 		return false, fmt.Errorf("remove %s: %w", path, err)
 	}
 	return true, nil
+}
+
+// modeFor is the declared mode, else the mode of the file in place, else readable by all.
+func modeFor(path string, declared fs.FileMode) fs.FileMode {
+	if declared != 0 {
+		return declared
+	}
+	if perm := permOf(path); perm != 0 {
+		return perm
+	}
+	return 0o644
+}
+
+// permOf is the permission bits of the file at path, or 0 when nothing is there.
+func permOf(path string) fs.FileMode {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Mode().Perm()
 }
 
 // Holds reports whether anything sits at name under the root.
