@@ -1,6 +1,7 @@
 package quadlet
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -133,5 +134,14 @@ func TestReaderCarriesATimerUnderTheSystemdPath(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Errorf("these files were not carried: %v", want)
+	}
+}
+
+func TestReadRefusesAUnitNameSystemdWouldNotTake(t *testing.T) {
+	for _, name := range []string{"web app.container", "-web.container"} {
+		dir := fstest.MapFS{name: {Data: []byte("[Container]\nImage=registry.test/acme/web:1.0\n")}}
+		if _, err := NewReader().Read(dir); !errors.Is(err, ErrUnitName) {
+			t.Errorf("%q: got %v, want ErrUnitName", name, err)
+		}
 	}
 }

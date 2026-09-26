@@ -2,8 +2,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/installer"
@@ -16,14 +14,17 @@ var machines = []machine.Machine{
 	quadlet.New(machine.Exec),
 }
 
+// binary reads the running binary, even after the path it was started from names another file.
+const binary = "/proc/self/exe"
+
 // machineRoot is where a verb reads and writes: this machine, never a directory beside it.
 const machineRoot = "/"
 
 // New returns the command tree this binary offers. A binary packed with a bundle
 // installs that bundle and cannot build another one.
 func New() *cobra.Command {
-	if self, err := os.Executable(); err == nil && installer.CarriesABundle(self) {
-		return newPacked(self)
+	if installer.CarriesABundle(binary) {
+		return newPacked(binary)
 	}
 	return newVessel()
 }

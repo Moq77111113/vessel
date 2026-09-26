@@ -59,17 +59,36 @@ func TestArchiveIndexNamesOnlyTheImageItCarries(t *testing.T) {
 	}
 }
 
+func TestOpenLayoutReadsTheIndexTheRootPins(t *testing.T) {
+	dir, root := layouttest.TwoImages(t)
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{"schemaVersion":2,"manifests":[]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	layout, err := machine.OpenLayout(dir, root)
+	if err != nil {
+		t.Fatalf("OpenLayout: %v", err)
+	}
+	names, err := layout.Names()
+	if err != nil || len(names) != 2 {
+		t.Errorf("got %v, %v, want the two images the root pins", names, err)
+	}
+}
+
 func TestOpenLayoutRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
-	dir := layouttest.TwoImages(t)
+	dir, root := layouttest.TwoImages(t)
 	entries, err := os.ReadDir(filepath.Join(dir, "blobs", "sha256"))
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
-	path := filepath.Join(dir, "blobs", "sha256", entries[0].Name())
-	if err := os.WriteFile(path, []byte("tampered"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+	for _, entry := range entries {
+		if "sha256:"+entry.Name() == root {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(dir, "blobs", "sha256", entry.Name()), []byte("tampered"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
 	}
-	layout, err := machine.OpenLayout(dir)
+	layout, err := machine.OpenLayout(dir, root)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}

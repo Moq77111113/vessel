@@ -12,8 +12,8 @@ import (
 	"github.com/Moq77111113/vessel/internal/machine"
 )
 
-// TwoImages writes an OCI layout holding two images that share one layer, and returns its directory.
-func TwoImages(t *testing.T) string {
+// TwoImages writes an OCI layout holding two images that share one layer, and returns its directory and the digest of its index.
+func TwoImages(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	blobs := filepath.Join(dir, "blobs", "sha256")
@@ -50,19 +50,21 @@ func TwoImages(t *testing.T) string {
 			"annotations": map[string]string{machine.RefNameAnnotation: name},
 		})
 	}
-	index, err := json.Marshal(map[string]any{"schemaVersion": 2, "manifests": manifests})
+	index, err := json.Marshal(map[string]any{"schemaVersion": 2, "mediaType": "application/vnd.oci.image.index.v1+json", "manifests": manifests})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
+	root := put(index)
 	write(t, filepath.Join(dir, "index.json"), index)
 	write(t, filepath.Join(dir, "oci-layout"), []byte(`{"imageLayoutVersion":"1.0.0"}`))
-	return dir
+	return dir, root
 }
 
 // Open returns the layout TwoImages writes, already open.
 func Open(t *testing.T) *machine.Layout {
 	t.Helper()
-	layout, err := machine.OpenLayout(TwoImages(t))
+	dir, root := TwoImages(t)
+	layout, err := machine.OpenLayout(dir, root)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}

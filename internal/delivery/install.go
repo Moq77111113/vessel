@@ -365,7 +365,7 @@ func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.
 		return 0, err
 	}
 	if err := change.step(record.StepImages, func() error {
-		_, err := addImages(ctx, work, change.host, i.Artifact.LayoutDir)
+		_, err := addImages(ctx, work, change.host, i.Artifact)
 		return err
 	}); err != nil {
 		return 0, err
@@ -464,8 +464,8 @@ func addSecrets(ctx context.Context, host machine.Host, secrets map[string]strin
 }
 
 // addImages puts the images the bundle carries into local storage, and names them.
-func addImages(ctx context.Context, work report.Report, host machine.Host, dir string) ([]string, error) {
-	layout, err := machine.OpenLayout(dir)
+func addImages(ctx context.Context, work report.Report, host machine.Host, artifact *bundle.Bundle) ([]string, error) {
+	layout, err := machine.OpenLayout(artifact.LayoutDir, artifact.Root)
 	if err != nil {
 		return nil, err
 	}

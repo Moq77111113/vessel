@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -23,6 +24,12 @@ const siblingPath = "etc/systemd/system"
 const imageKey = "Image"
 
 var ErrNoUnit = errors.New("no quadlet unit in the source directory")
+
+// ErrUnitName says a unit file name is not one systemd takes as a unit name.
+var ErrUnitName = errors.New("is not a systemd unit name")
+
+// unitName is what systemd takes as a unit name, never opening on a dash systemctl reads as an option.
+var unitName = regexp.MustCompile(`^[A-Za-z0-9:_.@\\][A-Za-z0-9:_.@\\-]*$`)
 
 var unitSuffixes = []string{".container", ".network", ".volume", ".pod", ".build", ".image", ".kube"}
 
@@ -112,9 +119,13 @@ func unitNames(dir fs.FS) ([]string, error) {
 		if entry.IsDir() {
 			continue
 		}
-		if carries(entry.Name()) {
-			names = append(names, entry.Name())
+		if !carries(entry.Name()) {
+			continue
 		}
+		if !unitName.MatchString(entry.Name()) {
+			return nil, fmt.Errorf("%q %w", entry.Name(), ErrUnitName)
+		}
+		names = append(names, entry.Name())
 	}
 	sort.Strings(names)
 	return names, nil

@@ -1,0 +1,4 @@
+name: acme
+files:
+  - source: ../secret
+    target: /etc/acme/secret

@@ -30,9 +30,6 @@ type blobRef struct {
 	Size      int64  `json:"size"`
 }
 
-// indexMediaType is what an OCI index declares itself as.
-const indexMediaType = "application/vnd.oci.image.index.v1+json"
-
 type indexFile struct {
 	SchemaVersion int        `json:"schemaVersion"`
 	MediaType     string     `json:"mediaType,omitempty"`
@@ -59,35 +56,15 @@ type Layout struct {
 	index indexFile
 }
 
-// OpenLayout reads the index of the OCI layout at dir, descending into a bundle index
-// when the top one points at it.
-func OpenLayout(dir string) (*Layout, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "index.json"))
+// OpenLayout reads the index root pins in the OCI layout at dir, refusing one that does not hash to root.
+func OpenLayout(dir, root string) (*Layout, error) {
+	layout := &Layout{dir: dir}
+	body, err := layout.blob(root)
 	if err != nil {
-		return nil, fmt.Errorf("read the image index: %w", err)
+		return nil, err
 	}
-	var top indexFile
-	if err := json.Unmarshal(data, &top); err != nil {
-		return nil, fmt.Errorf("decode the image index: %w", err)
-	}
-	layout := &Layout{dir: dir, index: top}
-	for _, entry := range top.Manifests {
-		if entry.MediaType != indexMediaType {
-			continue
-		}
-		body, err := layout.blob(entry.Digest)
-		if err != nil {
-			continue
-		}
-		var inner indexFile
-		if err := json.Unmarshal(body, &inner); err != nil {
-			continue
-		}
-		if inner.ArtifactType != bundle.ArtifactType {
-			continue
-		}
-		layout.index = inner
-		break
+	if err := json.Unmarshal(body, &layout.index); err != nil {
+		return nil, fmt.Errorf("decode the index %s: %w", root, err)
 	}
 	return layout, nil
 }

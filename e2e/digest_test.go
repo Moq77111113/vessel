@@ -89,7 +89,7 @@ func TestEveryImageCutsIntoItsOwnArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	layout, err := machine.OpenLayout(artifact.LayoutDir)
+	layout, err := machine.OpenLayout(artifact.LayoutDir, artifact.Root)
 	if err != nil {
 		t.Fatalf("OpenLayout: %v", err)
 	}
