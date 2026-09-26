@@ -1,0 +1,5 @@
+name: billing
+version: 1.0.0
+files:
+  - source: a.txt
+    target: /etc/acme/a.txt

@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/machine"
 	"github.com/Moq77111113/vessel/internal/quadlet"
+	"github.com/Moq77111113/vessel/internal/record"
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
@@ -199,6 +201,10 @@ func TestADryRunNamesTheChecksItConfirmed(t *testing.T) {
 func TestADryRunNamesTheValueAFileOnDiskDependsOn(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/acme/realm.json"), "{}")
+	previous := record.Record{Name: "acme", Version: "1.3.0", Files: []record.Entry{{Path: "etc/acme/realm.json"}}, End: time.Now()}
+	if err := recordsFor(t, root, "acme").Write(previous); err != nil {
+		t.Fatalf("write the record of 1.3.0: %v", err)
+	}
 	if output := dryRun(t, root, dryRunBundle(t)); !strings.Contains(output, "Depends etc/acme/realm.json on PUBLIC_HOST") {
 		t.Errorf("got %q, want the file named with the value it depends on", output)
 	}

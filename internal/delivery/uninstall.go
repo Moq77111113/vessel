@@ -43,7 +43,16 @@ func Uninstall(ctx context.Context, out io.Writer, kinds []machine.Machine, root
 
 	tree := machine.NewTree(root)
 	count := 0
+	var stays []string
 	for _, entry := range record.Files {
+		change, err := differs(tree, record, entry)
+		if err != nil {
+			return err
+		}
+		if change {
+			stays = append(stays, entry.Path)
+			continue
+		}
 		ok, err := tree.Remove(entry.Path)
 		if err != nil {
 			return err
@@ -59,8 +68,23 @@ func Uninstall(ctx context.Context, out io.Writer, kinds []machine.Machine, root
 
 	lines := report.New(out)
 	lines.Line("Finished", fmt.Sprintf("%s %s removed: %d files", record.Name, record.Version, count))
+	if len(stays) > 0 {
+		fmt.Fprintln(out, "\nThese files stay, edited on this machine since the install:")
+		for _, path := range stays {
+			fmt.Fprintf(out, "  /%s\n", path)
+		}
+	}
 	reportWhatStays(out, site.Path(), record)
 	return nil
+}
+
+// differs reports whether a finished install's file changed on this machine since.
+// An open record holds the next version's digest for files it may not have written yet, so it proves no edit.
+func differs(tree *machine.Tree, entry record.Record, file record.Entry) (bool, error) {
+	if !entry.Done() {
+		return false, nil
+	}
+	return tree.Differs(file.Path, file.Digest)
 }
 
 // reportWhatStays names the secrets, the images, and the site values an uninstall leaves behind.

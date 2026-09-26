@@ -191,3 +191,60 @@ func TestSameRefusesAFileThatIsGone(t *testing.T) {
 		t.Error("a missing file matches a digest")
 	}
 }
+
+func TestTreeRefusesToWriteUnderADirectoryOthersCanWrite(t *testing.T) {
+	root := t.TempDir()
+	open := filepath.Join(root, "etc", "containers")
+	if err := os.MkdirAll(open, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(open, 0o777); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if _, err := NewTree(root).Write(unit()); !errors.Is(err, ErrUnsafeParent) {
+		t.Fatalf("got %v, want ErrUnsafeParent", err)
+	}
+}
+
+func TestTreeRefusesToWriteThroughALinkIntoADirectoryOthersCanWrite(t *testing.T) {
+	root := t.TempDir()
+	open := filepath.Join(root, "srv", "open")
+	if err := os.MkdirAll(open, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chmod(open, 0o777); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if err := os.Symlink(open, filepath.Join(root, "etc")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	if _, err := NewTree(root).Write(unit()); !errors.Is(err, ErrUnsafeParent) {
+		t.Fatalf("got %v, want ErrUnsafeParent", err)
+	}
+}
+
+func TestTreeWritesThroughALinkOnlyItsOwnerCouldPlace(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "usr", "etc"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Symlink("usr/etc", filepath.Join(root, "etc")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+	if _, err := NewTree(root).Write(unit()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+}
+
+func TestTreeRefusesToRemoveUnderADirectoryOthersCanWrite(t *testing.T) {
+	root := t.TempDir()
+	if _, err := NewTree(root).Write(unit()); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(root, "etc", "containers"), 0o777); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	if _, err := NewTree(root).Remove(unit().Path); !errors.Is(err, ErrUnsafeParent) {
+		t.Fatalf("got %v, want ErrUnsafeParent", err)
+	}
+}
