@@ -9,7 +9,7 @@ vessel reads the [quadlet](https://docs.podman.io/en/latest/markdown/podman-syst
 
 ```sh
 # CI
-vessel build ./acme -o myapp          # writes myapp and its signature, myapp.sigstore
+vessel build ./acme --key vessel.key -o myapp   # writes myapp and its signature, myapp.sig
 
 # air-gapped machine
 ./myapp install                       # returns once every service is up
@@ -94,26 +94,33 @@ An action cut or killed while it ran blocks `resume`: check it by hand, then `re
 
 ## Signing
 
-`vessel build` signs with [Sigstore](https://www.sigstore.dev/), using the CI's OIDC identity: no key to manage. Put a token with audience `sigstore` in `VESSEL_SIGSTORE_ID_TOKEN`. On GitHub Actions, `permissions: id-token: write` is enough. With no token, the build stops before it pulls anything.
-
-Check a release with [cosign](https://github.com/sigstore/cosign) before running it:
+`vessel build --key vessel.key` signs the executable, and the kept layout's `index.json`, with an ECDSA P-256 key you provide: a CI file variable, Vault or a KMS export, vessel does not care. Without a key the build stops before it pulls anything. `--insecure-unsigned` builds for development, and every command then shows the delivery as insecure.
 
 ```sh
-cosign verify-blob myapp --bundle myapp.sigstore \
-  --certificate-identity <your CI job identity> --certificate-oidc-issuer <your CI issuer>
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out vessel.key
+openssl pkey -in vessel.key -pubout -out vessel.pub   # put this one on every site, once
 ```
 
-Each signature lands in Sigstore's public log, [Rekor](https://docs.sigstore.dev/logging/overview/): the CI identity and the file's hash, never the file. For local builds, `--insecure-unsigned` skips signing, and every command then shows the delivery as insecure.
+Check a release on site before running it, with no network:
+
+```sh
+base64 -d myapp.sig > myapp.der
+openssl dgst -sha256 -verify vessel.pub -signature myapp.der myapp
+```
+
+`cosign verify-blob myapp --key vessel.pub --signature myapp.sig --insecure-ignore-tlog` checks the same signature.
 
 ## SBOM and scan reports
 
 Scan the exact layout you ship, then pack the reports inside the release:
 
 ```sh
-vessel build ./acme --layout ./bundle -o scratch
+vessel build ./acme --key vessel.key --layout ./bundle -o scratch
 syft ./bundle -o spdx-json > sbom.spdx.json
-vessel build ./bundle --evidence sbom.spdx.json -o myapp
+vessel build ./bundle --key vessel.key --evidence sbom.spdx.json -o myapp
 ```
+
+The second build signs the layout as it finds it: check `bundle/index.json.sig` against `vessel.pub` between the two.
 
 vessel carries the reports and never reads them. On site, `./myapp inspect --evidence ./audit` writes them out.
 

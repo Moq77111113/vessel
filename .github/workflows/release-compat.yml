@@ -6,45 +6,45 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
 
       - name: Build vessel
         run: go build -o vessel ./cmd/vessel
 
-      - name: Write a minimal descriptor
+      - name: Write a minimal descriptor and a throwaway key
         run: |
           mkdir -p /tmp/compat
           cat > /tmp/compat/app.container <<'EOF'
           [Container]
           Image=docker.io/library/busybox:latest
           EOF
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out /tmp/vessel.key
+          openssl pkey -in /tmp/vessel.key -pubout -out /tmp/vessel.pub
 
       - name: Build a signed release
-        run: ./vessel build -o /tmp/myapp --layout /tmp/bundle --name compat --version 0.0.1 /tmp/compat
+        run: ./vessel build --key /tmp/vessel.key -o /tmp/myapp --layout /tmp/bundle --name compat --version 0.0.1 /tmp/compat
 
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-
-      - name: Verify the executable with cosign
+      - name: Verify the executable and the layout with openssl
         run: |
-          cosign verify-blob /tmp/myapp \
-            --bundle /tmp/myapp.sigstore \
-            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release-compat.yml@${{ github.ref }}" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          for file in /tmp/myapp /tmp/bundle/index.json; do
+            base64 -d "$file.sig" > "$file.der"
+            openssl dgst -sha256 -verify /tmp/vessel.pub -signature "$file.der" "$file"
+          done
 
-      - name: Verify the layout with cosign
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Verify the executable and the layout with cosign
         run: |
-          cosign verify-blob /tmp/bundle/index.json \
-            --bundle /tmp/bundle/index.json.sigstore \
-            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/release-compat.yml@${{ github.ref }}" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+          for file in /tmp/myapp /tmp/bundle/index.json; do
+            cosign verify-blob "$file" --key /tmp/vessel.pub --signature "$file.sig" --insecure-ignore-tlog
+          done

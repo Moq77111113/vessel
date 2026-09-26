@@ -47,7 +47,12 @@ func bundleDir(t *testing.T) string {
 func packed(t *testing.T) string {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "acme-1.4.0")
-	if err := Pack(bytes.NewReader(stub()), bundleDir(t), out, report.New(io.Discard)); err != nil {
+	file, err := os.Create(out)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer file.Close()
+	if err := Pack(bytes.NewReader(stub()), bundleDir(t), file, report.New(io.Discard)); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 	return out
@@ -58,8 +63,7 @@ func packed(t *testing.T) string {
 // as it is archived is enough to show it is moving.
 func TestPackPrintsEachFileAsItIsWritten(t *testing.T) {
 	var progress bytes.Buffer
-	out := filepath.Join(t.TempDir(), "acme-1.4.0")
-	if err := Pack(bytes.NewReader(stub()), bundleDir(t), out, report.New(&progress)); err != nil {
+	if err := Pack(bytes.NewReader(stub()), bundleDir(t), io.Discard, report.New(&progress)); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 	for _, name := range []string{"vessel.json", "images/index.json"} {
@@ -107,8 +111,7 @@ func TestPackRefusesALink(t *testing.T) {
 	if err := os.Symlink("/etc/hostname", filepath.Join(dir, "linked")); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-	out := filepath.Join(t.TempDir(), "acme-1.4.0")
-	err := Pack(bytes.NewReader(stub()), dir, out, report.New(io.Discard))
+	err := Pack(bytes.NewReader(stub()), dir, io.Discard, report.New(io.Discard))
 	if !errors.Is(err, ErrNotAFile) {
 		t.Fatalf("got %v, want ErrNotAFile", err)
 	}
@@ -121,16 +124,6 @@ func TestPackKeepsTheStubRunnable(t *testing.T) {
 	}
 	if !bytes.HasPrefix(data, stub()) {
 		t.Error("the stub is no longer at the front of the file")
-	}
-}
-
-func TestPackMakesTheResultExecutable(t *testing.T) {
-	info, err := os.Stat(packed(t))
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	if info.Mode()&0o111 == 0 {
-		t.Errorf("mode %v, want it executable", info.Mode())
 	}
 }
 

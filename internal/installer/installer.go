@@ -31,29 +31,19 @@ var (
 	ErrNotAFile    = errors.New("is not a regular file")
 )
 
-// Pack writes stub followed by the bundle and a trailer, as one executable file. It announces
+// Pack writes stub followed by the bundle and a trailer into out, as one executable. It announces
 // every file to work before archiving it, so a large bundle shows it is moving.
-func Pack(stub io.Reader, bundle, out string, work report.Report) error {
-	file, err := os.OpenFile(out, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", out, err)
+func Pack(stub io.Reader, bundle string, out io.Writer, work report.Report) error {
+	if _, err := io.Copy(out, stub); err != nil {
+		return fmt.Errorf("copy the stub: %w", err)
 	}
-	defer file.Close()
-
-	if _, err := io.Copy(file, stub); err != nil {
-		return fmt.Errorf("copy the stub into %s: %w", out, err)
-	}
-	counter := &counting{writer: file}
+	counter := &counting{writer: out}
 	if err := writeTar(counter, bundle, work); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(file, magic); err != nil {
-		return fmt.Errorf("write the trailer of %s: %w", out, err)
-	}
-	length := make([]byte, lengthSize)
-	binary.BigEndian.PutUint64(length, uint64(counter.bytes))
-	if _, err := file.Write(length); err != nil {
-		return fmt.Errorf("write the trailer of %s: %w", out, err)
+	trailer := binary.BigEndian.AppendUint64([]byte(magic), uint64(counter.bytes))
+	if _, err := out.Write(trailer); err != nil {
+		return fmt.Errorf("write the trailer: %w", err)
 	}
 	return nil
 }
