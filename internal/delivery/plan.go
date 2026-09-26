@@ -50,7 +50,11 @@ func (i Install) plan(ctx context.Context, before prelude, resolution site.Resol
 	}
 	unknown := dryValues(config.Variables, resolution)
 	if !progress.Has(record.StepFiles) {
-		p.files = fileChanges(i.Root, files, before.current.Files, entriesOf(files), before.found, unknown)
+		changes, err := fileChanges(i.Root, files, before.current.Files, unknown)
+		if err != nil {
+			return plan{}, err
+		}
+		p.files = changes
 		stops, err := i.stops(ctx, before, files)
 		if err != nil {
 			return plan{}, err
@@ -93,12 +97,11 @@ func (i Install) stops(ctx context.Context, before prelude, files []descriptor.F
 	if !before.found {
 		return nil, nil
 	}
-	paths := gone(before.current.Files, entriesOf(files))
-	units := make([]descriptor.File, 0, len(paths))
-	for _, path := range paths {
-		units = append(units, descriptor.File{Path: path})
+	remove, _, err := drops(machine.NewTree(i.Root), before.current.Files, entriesOf(files))
+	if err != nil {
+		return nil, err
 	}
-	services, err := before.host.Services(ctx, units)
+	services, err := before.host.Services(ctx, units(remove))
 	if err != nil {
 		return nil, err
 	}
@@ -124,20 +127,23 @@ func dryValues(variables []descriptor.Variable, resolution site.Resolution) map[
 	return marks
 }
 
-// fileChanges compares every file the install carries with the disk, then names the files it would remove.
-func fileChanges(root string, files []descriptor.File, current, next []record.Entry, found bool,
-	unknown map[string]string) []change {
+// fileChanges compares every file the install carries with the disk, then names the files it would remove or keep.
+func fileChanges(root string, files []descriptor.File, current []record.Entry, unknown map[string]string) ([]change, error) {
 	changes := make([]change, 0, len(files))
 	for _, file := range files {
 		changes = append(changes, fileChange(filepath.Join(root, file.Path), file, unknown))
 	}
-	if !found {
-		return changes
+	remove, keep, err := drops(machine.NewTree(root), current, entriesOf(files))
+	if err != nil {
+		return nil, err
 	}
-	for _, path := range gone(current, next) {
+	for _, path := range remove {
 		changes = append(changes, change{verb: "Remove", line: path})
 	}
-	return changes
+	for _, path := range keep {
+		changes = append(changes, change{verb: "Keep", line: path + ", edited on this machine"})
+	}
+	return changes, nil
 }
 
 // fileChange says what writing file at path would do, naming the from: values its content waits on.

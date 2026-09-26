@@ -17,7 +17,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-func TestGoneNamesAFileThePreviousVersionCarriedThatTheNewOneDoesNot(t *testing.T) {
+func TestDropsRemovesAFileThePreviousVersionCarriedThatTheNewOneDoesNot(t *testing.T) {
 	previous := []record.Entry{
 		{Path: "etc/containers/systemd/web.container", Digest: "sha256:aaaa"},
 		{Path: "etc/containers/systemd/cache.container", Digest: "sha256:bbbb"},
@@ -25,16 +25,19 @@ func TestGoneNamesAFileThePreviousVersionCarriedThatTheNewOneDoesNot(t *testing.
 	next := []record.Entry{
 		{Path: "etc/containers/systemd/web.container", Digest: "sha256:cccc"},
 	}
-	got := gone(previous, next)
+	got, _, err := drops(machine.NewTree(t.TempDir()), previous, next)
+	if err != nil {
+		t.Fatalf("drops: %v", err)
+	}
 	want := []string{"etc/containers/systemd/cache.container"}
 	if len(got) != 1 || got[0] != want[0] {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
-func TestGoneSkipsAFileBothVersionsCarry(t *testing.T) {
+func TestDropsSkipsAFileBothVersionsCarry(t *testing.T) {
 	entries := []record.Entry{{Path: "etc/acme/realm.json", Digest: "sha256:aaaa"}}
-	if got := gone(entries, entries); len(got) != 0 {
+	if got, _, _ := drops(machine.NewTree(t.TempDir()), entries, entries); len(got) != 0 {
 		t.Errorf("got %v, want nothing", got)
 	}
 }
