@@ -183,3 +183,24 @@ func TestResolveNamesAFailedFromCommandAsNoValueNotAnAction(t *testing.T) {
 		t.Errorf("got machine.ErrAction, want only ErrNoValue: a from: failure is not a partway action")
 	}
 }
+
+func TestResolveRefusesAPlainValueHoldingAControlCharacter(t *testing.T) {
+	cases := map[string]struct {
+		set    map[string]string
+		output string
+	}{
+		"set carriage return": {set: map[string]string{"PUBLIC_HOST": "a\rb"}},
+		"set nul":             {set: map[string]string{"PUBLIC_HOST": "a\x00b"}},
+		"from newline":        {output: "a\nb"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			shell := machine.NewShell(func(context.Context, string) ([]byte, error) { return []byte(c.output), nil })
+			values := NewValues(siteFor(t, t.TempDir()), shell, c.set, nil)
+			variables := []descriptor.Variable{{Name: "PUBLIC_HOST", From: "hostname -f"}}
+			if _, err := values.Resolve(context.Background(), variables); !errors.Is(err, ErrValueHasAControl) {
+				t.Fatalf("got %v, want ErrValueHasAControl", err)
+			}
+		})
+	}
+}

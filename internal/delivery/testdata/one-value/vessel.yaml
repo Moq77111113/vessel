@@ -1,0 +1,7 @@
+name: acme
+version: 1.4.0
+files:
+  - source: realm.json
+    target: /etc/acme/realm.json
+variables:
+  - name: PUBLIC_HOST

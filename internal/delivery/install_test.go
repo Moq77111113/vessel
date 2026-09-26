@@ -840,6 +840,24 @@ func TestAnActionThatFailsLeavesNoOpenActionInTheRecord(t *testing.T) {
 	}
 }
 
+func TestAnActionKilledBySignalStaysOpenInTheRecord(t *testing.T) {
+	root := t.TempDir()
+	job := jobFor(t, root, linkTestBundle(t, fixture(t, "one-action")), nil, nil)
+	job.Shell = machine.NewShell(func(ctx context.Context, _ string) ([]byte, error) {
+		return machine.Sh(ctx, "kill -9 $$")
+	})
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
+		t.Fatal("the install succeeded with an action killed by a signal")
+	}
+	entry, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if _, open := entry.OpenAction(); !open {
+		t.Errorf("got %+v, want the killed action open", entry.Actions)
+	}
+}
+
 // fixture reads every file of testdata/name, keyed by file name, for linkTestBundle.
 func fixture(t *testing.T, name string) map[string]string {
 	t.Helper()

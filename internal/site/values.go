@@ -66,6 +66,9 @@ func (v *Values) Resolve(ctx context.Context, variables []descriptor.Variable) (
 			resolution.Secrets[variable.Name] = value
 			continue
 		}
+		if err := checkLine(variable.Name, value); err != nil {
+			return Resolution{}, err
+		}
 		resolution.Values[variable.Name] = value
 	}
 	return resolution, nil

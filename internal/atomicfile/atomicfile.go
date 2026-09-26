@@ -38,6 +38,33 @@ func Write(path string, body []byte, mode fs.FileMode) error {
 	return syncDir(dir)
 }
 
+// MkdirAll creates dir and every missing parent, flushing each new entry so a power cut keeps it.
+func MkdirAll(dir string, mode fs.FileMode) error {
+	_, err := os.Stat(dir)
+	if err == nil {
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("stat %s: %w", dir, err)
+	}
+	parent := filepath.Dir(dir)
+	if err := MkdirAll(parent, mode); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, mode); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	return syncDir(parent)
+}
+
+// Rename moves from to to and flushes the directory, so a power cut keeps the move.
+func Rename(from, to string) error {
+	if err := os.Rename(from, to); err != nil {
+		return fmt.Errorf("move into %s: %w", to, err)
+	}
+	return syncDir(filepath.Dir(to))
+}
+
 // syncDir forces the rename itself to disk: without it a power cut can lose the directory entry.
 func syncDir(dir string) error {
 	handle, err := os.Open(dir)

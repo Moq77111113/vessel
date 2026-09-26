@@ -43,7 +43,7 @@ actions:
   - mkdir -p /etc/acme/certs          # runs on every install: keep it repeatable
 ```
 
-A value comes from `--set NAME=value`, from the previous install, or from `from:`. vessel never prompts: a missing value stops the install before anything is written.
+A value comes from `--set NAME=value`, from the previous install, or from `from:`. vessel never prompts: a missing value, or a plain value holding a control character, stops the install before anything is written.
 
 Image tags are rewritten to digests in place. Comments and ordering survive:
 
@@ -90,7 +90,7 @@ this install never finished, it stopped after files: run resume, or install with
 - `./myapp-1.4.0 install` rolls back to the previous version.
 - `./myapp uninstall` takes it all off.
 
-An action cut while it ran blocks `resume`: check it by hand, then `resume --skip-action`.
+An action cut or killed while it ran blocks `resume`: check it by hand, then `resume --skip-action`. Once the values are stored, `resume` refuses `--set`: it finishes with the values the install started with. A record left by an older vessel cannot be resumed: `uninstall`, then install again.
 
 ## Signing
 
