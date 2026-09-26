@@ -26,7 +26,7 @@ func TestUninstallRemovesExactlyTheFilesTheRecordNames(t *testing.T) {
 	writeFile(t, theirs, "somebody else put this")
 	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []record.Entry{{Path: "etc/containers/systemd/web.container"}},
+		Files: []record.Entry{{Path: "etc/containers/systemd/web.container", Digest: machine.DigestOf([]byte("vessel put this"))}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
@@ -65,7 +65,7 @@ func TestUninstallCountsOnlyTheFilesItActuallyRemoved(t *testing.T) {
 	writeRecord(t, root, record.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Files: []record.Entry{
-			{Path: "etc/containers/systemd/web.container"},
+			{Path: "etc/containers/systemd/web.container", Digest: machine.DigestOf([]byte("vessel put this"))},
 			{Path: "etc/containers/systemd/already-gone.container"},
 		},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
@@ -225,4 +225,33 @@ func TestUninstallRemovesAUnitAnInstallPut(t *testing.T) {
 	if _, err := os.Stat(unit); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("uninstall left the unit in place: %v", err)
 	}
+}
+
+func TestUninstallKeepsAFileEditedOnThisMachine(t *testing.T) {
+	root, _ := uninstallAfterAnEdit(t)
+	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); err != nil {
+		t.Errorf("uninstall removed a file edited on this machine: %v", err)
+	}
+}
+
+func TestUninstallNamesTheEditedFileItKept(t *testing.T) {
+	_, out := uninstallAfterAnEdit(t)
+	if !strings.Contains(out, "etc/acme/a.txt") {
+		t.Errorf("got %q, want the kept file named", out)
+	}
+}
+
+// uninstallAfterAnEdit installs acme 1.3, edits one of its files, uninstalls, and returns the root and what uninstall printed.
+func uninstallAfterAnEdit(t *testing.T) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "edited on site\n")
+	var out bytes.Buffer
+	if err := Uninstall(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	return root, out.String()
 }

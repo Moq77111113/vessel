@@ -964,3 +964,21 @@ func TestReadSetFileRefusesAFileOtherUsersCanRead(t *testing.T) {
 		t.Fatalf("got %v, want ErrSecretFileOpen", err)
 	}
 }
+
+func TestInstallRefusesAFileNoDeliveryPutThere(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "written by the admin\n")
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); !errors.Is(err, ErrFileExists) {
+		t.Fatalf("got %v, want ErrFileExists", err)
+	}
+}
+
+func TestInstallRefusesAFileAnotherDeliveryOwns(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+		t.Fatalf("install acme: %v", err)
+	}
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "billing")), nil); !errors.Is(err, ErrFileTaken) {
+		t.Fatalf("got %v, want ErrFileTaken", err)
+	}
+}

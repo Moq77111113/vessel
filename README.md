@@ -76,6 +76,12 @@ On the target, through the executable:
 
 Exit codes: `0` done, `3` machine not ready, `4` refused and nothing touched, `5` failed partway.
 
+## Files on the machine
+
+- `install` refuses a file already on the machine that no delivery put there, or that another delivery owns. Nothing is touched.
+- `upgrade` and `uninstall` keep a file edited on the machine since the install, and name it.
+- vessel writes only under directories root alone owns and writes, links included: a file under a directory another user can change is refused.
+
 ## When an install is cut
 
 vessel records every step as it goes. After a power cut or a failed service, `status` says where it stopped, and `install` refuses to run over it:

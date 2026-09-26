@@ -26,27 +26,37 @@ func gone(previous, next []record.Entry) []string {
 	return missing
 }
 
-// removeGone stops the services of a file the new version no longer carries, then removes it.
+// removeGone stops the services of a file the new version no longer carries, then removes it, keeping one edited on this machine.
 func removeGone(ctx context.Context, work report.Report, host machine.Host, tree *machine.Tree,
 	previous, next []record.Entry) error {
-	paths := gone(previous, next)
-	if len(paths) == 0 {
-		return nil
+	var units []descriptor.File
+	for _, entry := range previous {
+		if names(next, entry.Path) {
+			continue
+		}
+		change, err := tree.Differs(entry.Path, entry.Digest)
+		if err != nil {
+			return err
+		}
+		if change {
+			work.Line("Keeping", entry.Path+", edited on this machine")
+			continue
+		}
+		units = append(units, descriptor.File{Path: entry.Path})
 	}
-	units := make([]descriptor.File, 0, len(paths))
-	for _, path := range paths {
-		units = append(units, descriptor.File{Path: path})
+	if len(units) == 0 {
+		return nil
 	}
 	if err := host.Stop(ctx, units); err != nil {
 		return err
 	}
-	for _, path := range paths {
-		ok, err := tree.Remove(path)
+	for _, unit := range units {
+		ok, err := tree.Remove(unit.Path)
 		if err != nil {
 			return err
 		}
 		if ok {
-			work.Line("Removing", path)
+			work.Line("Removing", unit.Path)
 		}
 	}
 	return nil

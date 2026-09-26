@@ -243,6 +243,9 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 	if err != nil {
 		return err
 	}
+	if err := i.claim(before.current, files); err != nil {
+		return err
+	}
 	if i.preview {
 		p, err := i.plan(ctx, before, resolution, files)
 		if err != nil {

@@ -305,3 +305,17 @@ func TestUpgradeRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
 		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
 }
+
+func TestAnUpgradeKeepsAFileItDropsWhenEditedOnSite(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+		t.Fatalf("install 1.3.0: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "edited on site\n")
+	if err := runUpgrade(t, root, linkTestBundle(t, fixture(t, "acme-1.4")), nil); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); err != nil {
+		t.Errorf("the upgrade removed a file edited on this machine: %v", err)
+	}
+}
