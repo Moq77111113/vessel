@@ -28,8 +28,8 @@ actions:
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
-	if got.Name != "dmas" || got.Version != "1.4.0" || got.Units != "./units" {
-		t.Errorf("got %+v, want dmas 1.4.0 ./units", got)
+	if got.Name != "dmas" || got.Version != "1.4.0" || got.Units != "units" {
+		t.Errorf("got %+v, want dmas 1.4.0 units", got)
 	}
 	if len(got.Files) != 1 || got.Files[0].Target != "/etc/dmas/realm.json" {
 		t.Errorf("got files %+v", got.Files)
@@ -184,5 +184,19 @@ func TestSecretNamesLeavesThePlainVariablesOut(t *testing.T) {
 	got := SecretNames([]Variable{{Name: "PUBLIC_HOST"}, {Name: "DB_PASSWORD", Secret: true}})
 	if len(got) != 1 || got[0] != "DB_PASSWORD" {
 		t.Errorf("got %v, want [DB_PASSWORD]", got)
+	}
+}
+
+func TestReadRefusesASourceThatLeavesTheDeliveryDirectory(t *testing.T) {
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: acme\nfiles:\n  - source: ../secret\n    target: /etc/acme/secret\n")}}
+	if _, err := Read(dir); !errors.Is(err, ErrSourceEscapes) {
+		t.Errorf("got %v, want ErrSourceEscapes", err)
+	}
+}
+
+func TestReadRefusesAUnitDirectoryThatLeavesTheDeliveryDirectory(t *testing.T) {
+	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: acme\nunits: ..\n")}}
+	if _, err := Read(dir); !errors.Is(err, ErrSourceEscapes) {
+		t.Errorf("got %v, want ErrSourceEscapes", err)
 	}
 }

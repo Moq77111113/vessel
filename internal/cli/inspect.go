@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
-	"github.com/Moq77111113/vessel/internal/delivery"
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
@@ -41,7 +40,7 @@ func inspectBundle(out io.Writer, dir, into string) error {
 	fmt.Fprintf(out, "%s %s, read by %s, resolved for %s\n",
 		artifact.Config.Name, artifact.Config.Version, artifact.Config.Machine, artifact.Config.Platform)
 	if artifact.Config.Insecure {
-		fmt.Fprintln(out, delivery.InsecureWarning)
+		fmt.Fprintln(out, bundle.InsecureWarning)
 	}
 	lines := report.New(out)
 	for _, image := range artifact.Config.Images {

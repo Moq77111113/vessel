@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -242,5 +243,20 @@ files:
 	})
 	if !errors.Is(err, descriptor.ErrUnknownVariable) {
 		t.Errorf("got %v, want ErrUnknownVariable", err)
+	}
+}
+
+func TestLinkRefusesALinkThatLeadsOutsideTheDelivery(t *testing.T) {
+	source := serveStack(t)
+	if err := os.Symlink("/etc/hostname", filepath.Join(source, "hostname")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	body := "name: acme\nversion: 1.0.0\nfiles:\n  - source: hostname\n    target: /etc/acme/hostname\n"
+	if err := os.WriteFile(filepath.Join(source, "vessel.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	err := runVessel("build", "-o", filepath.Join(t.TempDir(), "myapp"), "--insecure-unsigned", source)
+	if err == nil {
+		t.Error("the build carried a file from outside the delivery")
 	}
 }

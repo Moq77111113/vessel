@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func putBlob(dir string, body []byte) (blob, error) {
@@ -24,7 +26,11 @@ func putBlob(dir string, body []byte) (blob, error) {
 
 // readBlob reads a blob and refuses content that does not hash to the name it sits under.
 func readBlob(dir, digest string) ([]byte, error) {
-	name := strings.TrimPrefix(digest, "sha256:")
+	pin, err := v1.NewHash(digest)
+	if err != nil {
+		return nil, err
+	}
+	name := pin.Hex
 	body, err := os.ReadFile(filepath.Join(dir, blobsDir, name))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", digest, err)

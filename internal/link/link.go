@@ -5,8 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -31,8 +31,12 @@ const defaultPlatform = "linux/amd64"
 
 // Link resolves the delivery the job names to digests and writes its bundle in out.
 func Link(ctx context.Context, work, summary report.Report, kinds []machine.Machine, job Job, out string) error {
-	source := filepath.Clean(job.Source)
-	definition, err := descriptor.Read(os.DirFS(source))
+	source, err := os.OpenRoot(job.Source)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", job.Source, err)
+	}
+	defer source.Close()
+	definition, err := descriptor.Read(source.FS())
 	if err != nil && !errors.Is(err, descriptor.ErrNoDelivery) {
 		return err
 	}
@@ -51,11 +55,12 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 	if platform == "" {
 		platform = defaultPlatform
 	}
-	units := source
+	dir := source.FS()
 	if definition.Units != "" {
-		units = filepath.Join(source, definition.Units)
+		if dir, err = fs.Sub(dir, definition.Units); err != nil {
+			return err
+		}
 	}
-	dir := os.DirFS(units)
 	kind, err := machine.Pick(kinds, dir)
 	if err != nil {
 		return err
@@ -64,7 +69,7 @@ func Link(ctx context.Context, work, summary report.Report, kinds []machine.Mach
 	if err != nil {
 		return err
 	}
-	plain, err := carryFiles(source, definition.Files)
+	plain, err := carryFiles(source.FS(), definition.Files)
 	if err != nil {
 		return err
 	}
@@ -146,10 +151,10 @@ func resolveAll(ctx context.Context, work report.Report, client puller, relocs [
 }
 
 // carryFiles reads the plain files a delivery declares, keyed by the path they take under the root.
-func carryFiles(source string, mappings []descriptor.Mapping) ([]descriptor.File, error) {
+func carryFiles(source fs.FS, mappings []descriptor.Mapping) ([]descriptor.File, error) {
 	files := make([]descriptor.File, 0, len(mappings))
 	for _, mapping := range mappings {
-		data, err := os.ReadFile(filepath.Join(source, mapping.Source))
+		data, err := fs.ReadFile(source, mapping.Source)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", mapping.Source, err)
 		}

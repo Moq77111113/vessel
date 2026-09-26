@@ -91,21 +91,30 @@ func TestBuildWithoutCIIdentityFailsBeforeResolvingImages(t *testing.T) {
 	}
 }
 
-func TestInsecureUnsignedBuildLeavesNoSidecar(t *testing.T) {
+func TestAnInsecureBuildWritesNoSidecar(t *testing.T) {
 	source := t.TempDir()
 	writeUnits(t, source)
 	out := filepath.Join(t.TempDir(), "myapp")
 
-	var stdout bytes.Buffer
 	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if _, err := os.Stat(out + attest.SigstoreSuffix); !os.IsNotExist(err) {
 		t.Errorf("got a sidecar at %s, want none", out+attest.SigstoreSuffix)
 	}
-	if !strings.Contains(stdout.String(), "INSECURE") {
-		t.Errorf("stdout does not warn the build is insecure: %s", stdout.String())
+}
+
+func TestAnInsecureBuildPrintsTheInsecureWarning(t *testing.T) {
+	source := t.TempDir()
+	writeUnits(t, source)
+	var stdout bytes.Buffer
+	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
+	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job, fakeSigning); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if !strings.Contains(stdout.String(), bundle.InsecureWarning) {
+		t.Errorf("got %q, want the insecure warning", stdout.String())
 	}
 }
 

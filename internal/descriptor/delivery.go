@@ -25,6 +25,7 @@ var (
 	ErrTargetNotClean    = errors.New("a file target is not a clean path")
 	ErrTargetIsRoot      = errors.New("a file target names no file")
 	ErrFileSource        = errors.New("a file carries no source")
+	ErrSourceEscapes     = errors.New("a source leaves the delivery directory")
 )
 
 // variableName is the shape a name takes, so a marker cannot be mistaken for prose.
@@ -106,18 +107,25 @@ func Read(dir fs.FS) (Delivery, error) {
 	if err := CheckName(declaration.Name); err != nil {
 		return Delivery{}, err
 	}
-	if declaration.Units == "" {
-		declaration.Units = "."
+	units, err := local(declaration.Units)
+	if err != nil {
+		return Delivery{}, err
 	}
+	declaration.Units = units
 	for _, variable := range declaration.Variables {
 		if !variableName.MatchString(variable.Name) {
 			return Delivery{}, fmt.Errorf("%q: %w", variable.Name, ErrVariableName)
 		}
 	}
-	for _, file := range declaration.Files {
+	for i, file := range declaration.Files {
 		if file.Source == "" {
 			return Delivery{}, fmt.Errorf("target %q: %w", file.Target, ErrFileSource)
 		}
+		source, err := local(file.Source)
+		if err != nil {
+			return Delivery{}, err
+		}
+		declaration.Files[i].Source = source
 		if len(file.Target) == 0 || file.Target[0] != '/' {
 			return Delivery{}, fmt.Errorf("%q: %w", file.Target, ErrTargetNotAbsolute)
 		}
@@ -132,4 +140,13 @@ func Read(dir fs.FS) (Delivery, error) {
 		}
 	}
 	return declaration, nil
+}
+
+// local cleans a path the descriptor names under its own directory, refusing one that leaves it.
+func local(name string) (string, error) {
+	clean := path.Clean(name)
+	if !fs.ValidPath(clean) {
+		return "", fmt.Errorf("%q: %w", name, ErrSourceEscapes)
+	}
+	return clean, nil
 }
