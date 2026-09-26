@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	if err := cli.New().Execute(); err != nil {
+	if err := cli.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "vessel:", err)
 		os.Exit(cli.Code(err))
 	}
