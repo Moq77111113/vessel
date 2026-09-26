@@ -1,9 +1,10 @@
 package quadlet
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/Moq77111113/vessel/internal/machine"
@@ -30,12 +31,8 @@ func (p *podman) Load(ctx context.Context, work report.Report, layout *machine.L
 	}
 	images := make([]string, 0, len(names))
 	for i, name := range names {
-		var archive bytes.Buffer
-		if err := layout.Archive(i, &archive); err != nil {
-			return nil, fmt.Errorf("cut %s out of the layout: %w", name, err)
-		}
 		work.Line("Loading", name)
-		output, err := p.run(ctx, &archive, "podman", "load")
+		output, err := p.load(ctx, layout, i)
 		if err != nil {
 			return nil, fmt.Errorf("podman load %s: %w: %s", name, err, strings.TrimSpace(string(output)))
 		}
@@ -46,6 +43,23 @@ func (p *podman) Load(ctx context.Context, work report.Report, layout *machine.L
 		}
 	}
 	return images, nil
+}
+
+// load cuts image i into an archive on disk and hands that file to podman load.
+func (p *podman) load(ctx context.Context, layout *machine.Layout, i int) ([]byte, error) {
+	archive, err := os.CreateTemp("", "vessel-image-*.tar")
+	if err != nil {
+		return nil, fmt.Errorf("create the image archive: %w", err)
+	}
+	defer os.Remove(archive.Name())
+	defer archive.Close()
+	if err := layout.Archive(i, archive); err != nil {
+		return nil, fmt.Errorf("cut image %d out of the layout: %w", i, err)
+	}
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("rewind the image archive: %w", err)
+	}
+	return p.run(ctx, archive, "podman", "load")
 }
 
 // Ready reports whether podman can actually run here, not just answer its version.

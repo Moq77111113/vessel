@@ -118,12 +118,7 @@ func (l *Layout) Archive(i int, out io.Writer) error {
 		}
 	}
 	for _, digest := range digests {
-		data, err := l.blob(digest)
-		if err != nil {
-			return err
-		}
-		name := "blobs/sha256/" + strings.TrimPrefix(digest, "sha256:")
-		if err := writeEntry(archive, name, data); err != nil {
+		if err := l.copyBlob(archive, digest); err != nil {
 			return err
 		}
 	}
@@ -143,6 +138,32 @@ func (l *Layout) Archive(i int, out io.Writer) error {
 		return err
 	}
 	return archive.Close()
+}
+
+// copyBlob streams one blob into the archive, then refuses it if it did not hash to its name.
+func (l *Layout) copyBlob(archive *tar.Writer, digest string) error {
+	name := strings.TrimPrefix(digest, "sha256:")
+	file, err := os.Open(filepath.Join(l.dir, "blobs", "sha256", name))
+	if err != nil {
+		return fmt.Errorf("%s: %w", digest, ErrBlobMissing)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", digest, err)
+	}
+	header := &tar.Header{Name: "blobs/sha256/" + name, Mode: 0o644, Size: info.Size(), Typeflag: tar.TypeReg}
+	if err := archive.WriteHeader(header); err != nil {
+		return fmt.Errorf("write the header of %s: %w", digest, err)
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(archive, io.TeeReader(file, hash)); err != nil {
+		return fmt.Errorf("write %s: %w", digest, err)
+	}
+	if got := hex.EncodeToString(hash.Sum(nil)); got != name {
+		return fmt.Errorf("%s: %w, hashes to sha256:%s", digest, ErrBlobDigest, got)
+	}
+	return nil
 }
 
 // blob reads one blob and refuses content that does not hash to the name it sits under.

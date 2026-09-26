@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -142,5 +143,19 @@ func TestCreateSecretHandsTheValueOnStandardInput(t *testing.T) {
 	}
 	if string(body) != "a3f9" {
 		t.Errorf("got %q on stdin, want %q", body, "a3f9")
+	}
+}
+
+func TestLoadHandsPodmanTheArchiveAsAFileOnDisk(t *testing.T) {
+	var stdin io.Reader
+	run := func(_ context.Context, in io.Reader, _ string, _ ...string) ([]byte, error) {
+		stdin = in
+		return []byte("Loaded image: registry.example.com/acme/web:1.0\n"), nil
+	}
+	if _, err := (&podman{run: run}).Load(context.Background(), report.New(io.Discard), layouttest.Open(t)); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if _, ok := stdin.(*os.File); !ok {
+		t.Errorf("got %T, want the archive handed as a file", stdin)
 	}
 }
