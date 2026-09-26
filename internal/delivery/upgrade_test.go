@@ -246,7 +246,7 @@ func TestUpgradeDisablesATimerItDrops(t *testing.T) {
 	}
 }
 
-func TestAnUpgradeRetriedAfterAFailureStillRemovesTheStaleFile(t *testing.T) {
+func TestAFailedUpgradeKeepsTheStaleFileInTheRecord(t *testing.T) {
 	root := t.TempDir()
 	first := linkTestBundle(t, map[string]string{
 		"vessel.yaml": `
@@ -269,11 +269,39 @@ files:
 		t.Fatal("upgrade succeeded despite a shell that refuses every action")
 	}
 
-	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
-	if err := runUpgrade(t, root, second, nil); err != nil {
-		t.Fatalf("upgrade 1.4.0 again: %v", err)
+	entry, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if !slices.ContainsFunc(entry.Files, func(file record.Entry) bool { return file.Path == "etc/acme/a.txt" }) {
+		t.Errorf("got %v, want a.txt still named, so the recovery can remove it", entry.Files)
+	}
+}
+
+func TestUninstallAfterAFailedUpgradeRemovesTheStaleFile(t *testing.T) {
+	root := t.TempDir()
+	first := linkTestBundle(t, fixture(t, "stale-1.3"))
+	if err := runInstall(t, root, first, nil); err != nil {
+		t.Fatalf("install 1.3.0: %v", err)
+	}
+	if err := runUpgrade(t, root, linkTestBundle(t, fixture(t, "stale-1.4")), nil); err == nil {
+		t.Fatal("upgrade succeeded despite a shell that refuses every action")
+	}
+	if err := Uninstall(context.Background(), io.Discard, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); !os.IsNotExist(err) {
-		t.Errorf("a.txt is still on disk after the retry, err=%v", err)
+		t.Errorf("a.txt is still on disk after the uninstall, err=%v", err)
+	}
+}
+
+func TestUpgradeRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	if err := runUpgrade(t, root, writeBundle(t, "acme", "1.5.0"), nil); !errors.Is(err, ErrRecordOpen) {
+		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
 }

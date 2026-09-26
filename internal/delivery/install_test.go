@@ -782,3 +782,127 @@ func TestInstallSaysTheBundleIsInsecure(t *testing.T) {
 		t.Errorf("got %q, want the install to say the bundle is insecure", out.String())
 	}
 }
+
+func TestTheRecordNamesEveryStepAFinishedInstallRan(t *testing.T) {
+	entry := recordAfterAnInstall(t, t.TempDir())
+	want := []record.Step{record.StepValues, record.StepActions, record.StepFiles,
+		record.StepSecrets, record.StepImages, record.StepServices}
+	if !slices.Equal(entry.Steps, want) {
+		t.Errorf("got %v, want %v", entry.Steps, want)
+	}
+}
+
+func TestAnInstallCutAtTheImagesNamesTheStepsBefore(t *testing.T) {
+	root := t.TempDir()
+	if err := installWithABrokenImageLoad(t, root, writeBundle(t, "acme", "1.4.0")); err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	entry, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	want := []record.Step{record.StepValues, record.StepActions, record.StepFiles, record.StepSecrets}
+	if !slices.Equal(entry.Steps, want) {
+		t.Errorf("got %v, want %v", entry.Steps, want)
+	}
+}
+
+func TestAFinishedActionCarriesItsEndInTheRecord(t *testing.T) {
+	root := t.TempDir()
+	job := jobFor(t, root, linkTestBundle(t, fixture(t, "one-action")), nil, nil)
+	job.Shell = machine.NewShell(quietShell)
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	entry, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if len(entry.Actions) != 1 || entry.Actions[0].Command != "mkdir -p /srv/acme" || entry.Actions[0].End.IsZero() {
+		t.Errorf("got %+v, want the one action with its end", entry.Actions)
+	}
+}
+
+func TestAnActionThatFailsLeavesNoOpenActionInTheRecord(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "one-action")), nil); err == nil {
+		t.Fatal("the install succeeded with an action that failed")
+	}
+	entry, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if action, open := entry.OpenAction(); open {
+		t.Errorf("got %+v open, want a failed action taken off the record", action)
+	}
+	if entry.Has(record.StepActions) {
+		t.Error("the record says the actions finished though one failed")
+	}
+}
+
+// fixture reads every file of testdata/name, keyed by file name, for linkTestBundle.
+func fixture(t *testing.T, name string) map[string]string {
+	t.Helper()
+	dir := filepath.Join("testdata", name)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the fixture %s: %v", name, err)
+	}
+	files := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		body, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+		files[entry.Name()] = string(body)
+	}
+	return files
+}
+
+// quietShell succeeds on every command and prints nothing.
+func quietShell(context.Context, string) ([]byte, error) { return nil, nil }
+
+func TestInstallRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	stub := &podmanStub{}
+	err := runInstall(t, root, dir, []machine.Machine{quadlet.New(stub.run)})
+	if !errors.Is(err, ErrRecordOpen) {
+		t.Fatalf("got %v, want ErrRecordOpen", err)
+	}
+	if errors.Is(err, ErrPartlyInstalled) {
+		t.Error("a refusal before any change says the machine changed")
+	}
+	for _, call := range stub.calls {
+		if call != "podman --version" && call != "podman image ls" {
+			t.Errorf("the refusal ran %q", call)
+		}
+	}
+}
+
+func TestInstallRefusesAnInstallAnOlderVesselLeftHalfway(t *testing.T) {
+	root := t.TempDir()
+	body, err := os.ReadFile("testdata/unfinished-main/acme/record.json")
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
+	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); !errors.Is(err, ErrRecordOpen) {
+		t.Fatalf("got %v, want ErrRecordOpen", err)
+	}
+}
+
+func TestTheRefusalNamesAVerbThisBuildOffers(t *testing.T) {
+	root := t.TempDir()
+	dir := writeBundle(t, "acme", "1.4.0")
+	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
+		t.Fatal("install succeeded with a broken image load")
+	}
+	err := runInstall(t, root, dir, nil)
+	if err == nil || !strings.Contains(err.Error(), "uninstall") || strings.Contains(err.Error(), "resume") {
+		t.Errorf("got %v, want uninstall named and no verb this build lacks", err)
+	}
+}
