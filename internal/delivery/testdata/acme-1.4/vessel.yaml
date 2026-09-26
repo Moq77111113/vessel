@@ -1,0 +1,7 @@
+name: acme
+version: 1.4.0
+files:
+  - source: b.txt
+    target: /etc/acme/b.txt
+  - source: c.txt
+    target: /etc/acme/c.txt

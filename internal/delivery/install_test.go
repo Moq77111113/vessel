@@ -895,14 +895,14 @@ func TestInstallRefusesAnInstallAnOlderVesselLeftHalfway(t *testing.T) {
 	}
 }
 
-func TestTheRefusalNamesAVerbThisBuildOffers(t *testing.T) {
+func TestTheRefusalOffersResume(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
 	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
 	err := runInstall(t, root, dir, nil)
-	if err == nil || !strings.Contains(err.Error(), "uninstall") || strings.Contains(err.Error(), "resume") {
-		t.Errorf("got %v, want uninstall named and no verb this build lacks", err)
+	if err == nil || !strings.Contains(err.Error(), "run resume") {
+		t.Errorf("got %v, want resume offered", err)
 	}
 }

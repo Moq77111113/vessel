@@ -22,7 +22,7 @@ func newPacked(self string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	command.AddCommand(packedInspect(self), packedInstall(self), packedUpgrade(self),
+	command.AddCommand(packedInspect(self), packedInstall(self), packedResume(self), packedUpgrade(self),
 		packedStatus(self), packedUninstall(self))
 	return command
 }
@@ -54,6 +54,25 @@ func packedInstall(self string) *cobra.Command {
 		},
 	}
 	bindSetFlag(command, &set)
+	return command
+}
+
+func packedResume(self string) *cobra.Command {
+	var set []string
+	var skip bool
+
+	command := &cobra.Command{
+		Use:   "resume",
+		Short: "Finish an install this executable started and never finished",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return withJob(self, set, func(job delivery.Install) error {
+				return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), job, skip)
+			})
+		},
+	}
+	bindSetFlag(command, &set)
+	bindSkipFlag(command, &skip)
 	return command
 }
 

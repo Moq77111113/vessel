@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,11 +28,12 @@ type Install struct {
 
 // prelude carries what both Run and Upgrade need before either touches the machine.
 type prelude struct {
-	dir     string
-	host    machine.Machine
-	records *record.Records
-	current record.Record
-	found   bool
+	dir      string
+	host     machine.Machine
+	records  *record.Records
+	current  record.Record
+	found    bool
+	progress record.Record
 }
 
 // prepare checks the machine is ready, then reads the record this delivery may already hold.
@@ -62,9 +64,10 @@ func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report)
 	if !before.found {
 		return fmt.Errorf("%s: %w, run install instead", config.Name, ErrNoRecord)
 	}
-	if err := refuseOpenRecord(before); err != nil {
+	if err := i.refuseOpenRecord(before); err != nil {
 		return err
 	}
+	warnOpenAction(out, before.current)
 	return i.run(ctx, out, work, before)
 }
 
@@ -75,21 +78,105 @@ func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) err
 	if err != nil {
 		return err
 	}
-	if err := refuseOpenRecord(before); err != nil {
+	if err := i.refuseOpenRecord(before); err != nil {
 		return err
 	}
+	warnOpenAction(out, before.current)
 	return i.run(ctx, out, work, before)
+}
+
+// Errors Resume returns before it changes anything.
+var (
+	ErrNothingToResume = errors.New("this machine holds no unfinished install of that delivery")
+	ErrOtherBundle     = errors.New("this bundle is not the one the machine stopped installing")
+	ErrActionUnknown   = errors.New("an action may have stopped halfway, check it by hand")
+)
+
+// Resume finishes the install this bundle started, skipping every step and action the record says finished.
+func (i Install) Resume(ctx context.Context, out io.Writer, work report.Report) error {
+	config := i.Artifact.Config
+	before, err := i.prepare(ctx, config.Name, config.Machine)
+	if err != nil {
+		return err
+	}
+	if err := i.checkResume(before); err != nil {
+		return err
+	}
+	if action, open := before.current.OpenAction(); open {
+		return fmt.Errorf("%q: %w, then resume --skip-action", action.Command, ErrActionUnknown)
+	}
+	before.progress = before.current
+	return i.run(ctx, out, work, before)
+}
+
+var ErrNoOpenAction = errors.New("the unfinished install left no action halfway, run resume")
+
+// SkipAction marks the action an install left halfway as finished, without running it, then resumes.
+func (i Install) SkipAction(ctx context.Context, out io.Writer, work report.Report) error {
+	config := i.Artifact.Config
+	before, err := i.prepare(ctx, config.Name, config.Machine)
+	if err != nil {
+		return err
+	}
+	if err := i.checkResume(before); err != nil {
+		return err
+	}
+	if _, open := before.current.OpenAction(); !open {
+		return fmt.Errorf("%s: %w", config.Name, ErrNoOpenAction)
+	}
+	before.progress = before.current
+	before.progress.Actions = slices.Clone(before.current.Actions)
+	before.progress.Actions[len(before.progress.Actions)-1].End = time.Now().UTC()
+	return i.run(ctx, out, work, before)
+}
+
+// checkResume refuses a machine with nothing unfinished, or one another bundle left unfinished.
+func (i Install) checkResume(before prelude) error {
+	if !before.found || before.current.Done() {
+		return fmt.Errorf("%s: %w", i.Artifact.Config.Name, ErrNothingToResume)
+	}
+	if before.current.Root != i.Artifact.Root {
+		return fmt.Errorf("the machine stopped installing %s %s: %w",
+			before.current.Name, before.current.Version, ErrOtherBundle)
+	}
+	return nil
 }
 
 var ErrRecordOpen = errors.New("the last install on this machine never finished")
 
-// refuseOpenRecord refuses a machine whose record an install opened and never closed.
-func refuseOpenRecord(before prelude) error {
+// refuseOpenRecord lets an install over an open record through only when it puts the last finished release back.
+func (i Install) refuseOpenRecord(before prelude) error {
 	if !before.found || before.current.Done() {
 		return nil
 	}
-	return fmt.Errorf("%s %s %s, run uninstall: %w",
-		before.current.Name, before.current.Version, position(before.current), ErrRecordOpen)
+	if before.current.Prior.Root == i.Artifact.Root {
+		return nil
+	}
+	return fmt.Errorf("%s %s %s, %s: %w", before.current.Name, before.current.Version,
+		position(before.current), recovery(before.current.Prior), ErrRecordOpen)
+}
+
+// warnOpenAction names an action a rollback passes over without knowing how far it ran.
+func warnOpenAction(out io.Writer, current record.Record) {
+	if action, open := current.OpenAction(); open {
+		fmt.Fprintf(out, "rolling back over an action that may have stopped halfway, check it by hand: %s\n", action.Command)
+	}
+}
+
+// prior names the last finished release an install opening now would fall back to.
+func prior(before prelude) record.Release {
+	if before.found && before.current.Done() {
+		return record.Release{Version: before.current.Version, Root: before.current.Root}
+	}
+	return before.current.Prior
+}
+
+// recovery names what an operator runs on a machine an install left unfinished.
+func recovery(prior record.Release) string {
+	if prior.Root == "" {
+		return "run resume, or uninstall"
+	}
+	return fmt.Sprintf("run resume, or install with the %s installer", prior.Version)
 }
 
 // position says where an open record stopped, in words an operator reads.
@@ -127,13 +214,14 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 		Images:   digestsOf(config.Images),
 		Secrets:  unionNames(before.current.Secrets, namesOf(resolution.Secrets)),
 		Insecure: config.Insecure,
+		Prior:    prior(before),
 		Start:    time.Now().UTC(),
 	}
-	opening, err := openRecord(before.records, before.current, next)
+	opening, err := openRecord(before.records, before.current, next, before.progress)
 	if err != nil {
 		return err
 	}
-	images, changes, err := i.applyToMachine(ctx, out, work, &machineChange{
+	changes, err := i.applyToMachine(ctx, out, work, &machineChange{
 		host:       before.host,
 		records:    before.records,
 		current:    before.current,
@@ -150,7 +238,7 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 	}
 
 	report.New(out).Line("Finished", fmt.Sprintf("%s %s installed and running: %d images, %d of %d files changed",
-		config.Name, config.Version, len(images), changes, len(files)))
+		config.Name, config.Version, len(config.Images), changes, len(files)))
 	if config.Insecure {
 		fmt.Fprintln(out, InsecureWarning)
 	}
@@ -193,20 +281,19 @@ func (c *machineChange) close() error {
 
 // applyToMachine runs every install step in order, writing each into the record, then closes it.
 func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.Report,
-	change *machineChange) ([]string, int, error) {
+	change *machineChange) (int, error) {
 	tree := machine.NewTree(i.Root)
 	var changes int
-	var images []string
 
 	if err := change.step(record.StepValues, func() error {
 		return change.store.Write(change.resolution.Values)
 	}); err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if err := change.step(record.StepActions, func() error {
 		return i.runActions(ctx, change)
 	}); err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if err := change.step(record.StepFiles, func() error {
 		var err error
@@ -218,27 +305,26 @@ func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.
 		}
 		return removeGone(ctx, work, change.host, tree, change.current.Files, change.next.Files)
 	}); err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if err := change.step(record.StepSecrets, func() error {
 		return addSecrets(ctx, change.host, change.resolution.Secrets)
 	}); err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if err := change.step(record.StepImages, func() error {
-		var err error
-		images, err = addImages(ctx, work, change.host, i.Artifact.LayoutDir)
+		_, err := addImages(ctx, work, change.host, i.Artifact.LayoutDir)
 		return err
 	}); err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if err := change.step(record.StepServices, func() error {
 		reportMissingSecrets(out, change.secrets, change.host.Requires(change.files))
 		return startServices(ctx, change.host, change.files)
 	}); err != nil {
-		return nil, 0, err
+		return 0, err
 	}
-	return images, changes, change.close()
+	return changes, change.close()
 }
 
 // checkMachine finds the machine that built this bundle and refuses one that is not ready.
@@ -264,16 +350,21 @@ func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Co
 	return store, resolution, nil
 }
 
-// openRecord writes the record this install opens, naming the files both versions carry.
-func openRecord(records *record.Records, current, next record.Record) (record.Record, error) {
+// openRecord writes the record this install opens: the files both versions carry, and any progress it continues.
+func openRecord(records *record.Records, current, next, progress record.Record) (record.Record, error) {
 	opening := next
 	opening.Files = union(current.Files, next.Files)
+	opening.Steps = progress.Steps
+	opening.Actions = progress.Actions
 	return opening, records.Write(opening)
 }
 
 // runActions runs the declared commands in order, writing each into the record before and after.
 func (i Install) runActions(ctx context.Context, change *machineChange) error {
-	for _, command := range i.Artifact.Config.Actions {
+	for index, command := range i.Artifact.Config.Actions {
+		if index < len(change.opening.Actions) {
+			continue
+		}
 		change.opening.Actions = append(change.opening.Actions, record.Action{Command: command})
 		if err := change.records.Write(change.opening); err != nil {
 			return err
