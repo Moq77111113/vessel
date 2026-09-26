@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/Moq77111113/vessel/internal/attest"
+	"github.com/Moq77111113/vessel/internal/attest/attesttest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/installer"
 	"github.com/Moq77111113/vessel/internal/machine"
@@ -51,7 +52,7 @@ func buildTestApp(t *testing.T) string {
 	writeUnits(t, source)
 	out := filepath.Join(t.TempDir(), "myapp")
 	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	return out
@@ -66,7 +67,7 @@ func TestBuildWritesTheLayoutWhenAskedForIt(t *testing.T) {
 
 	var stdout bytes.Buffer
 	job := Job{Source: source, Out: out, Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if !bundle.IsBundle(layout) {
@@ -74,20 +75,16 @@ func TestBuildWritesTheLayoutWhenAskedForIt(t *testing.T) {
 	}
 }
 
-func TestBuildWithoutCIIdentityFailsBeforeResolvingImages(t *testing.T) {
-	clearCIIdentity(t)
+func TestASignedBuildWithoutAKeyFailsBeforeResolvingImages(t *testing.T) {
 	source := t.TempDir()
 	writeUnits(t, source)
-	out := filepath.Join(t.TempDir(), "myapp")
-
 	var work bytes.Buffer
-	job := Job{Source: source, Out: out, Platform: "linux/amd64"}
-	err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job, Sigstore)
-	if !errors.Is(err, attest.ErrNoOIDCToken) {
-		t.Fatalf("Build: %v", err)
+	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Platform: "linux/amd64"}
+	if err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job); !errors.Is(err, attest.ErrNoKey) {
+		t.Fatalf("got %v, want ErrNoKey", err)
 	}
 	if strings.Contains(work.String(), "Resolving") {
-		t.Fatal("resolved images before signing preflight")
+		t.Fatal("resolved images before reading the key")
 	}
 }
 
@@ -97,11 +94,11 @@ func TestAnInsecureBuildWritesNoSidecar(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "myapp")
 
 	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if _, err := os.Stat(out + attest.SigstoreSuffix); !os.IsNotExist(err) {
-		t.Errorf("got a sidecar at %s, want none", out+attest.SigstoreSuffix)
+	if _, err := os.Stat(out + attest.SignatureSuffix); !os.IsNotExist(err) {
+		t.Errorf("got a sidecar at %s, want none", out+attest.SignatureSuffix)
 	}
 }
 
@@ -110,19 +107,12 @@ func TestAnInsecureBuildPrintsTheInsecureWarning(t *testing.T) {
 	writeUnits(t, source)
 	var stdout bytes.Buffer
 	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), &stdout, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	if !strings.Contains(stdout.String(), bundle.InsecureWarning) {
 		t.Errorf("got %q, want the insecure warning", stdout.String())
 	}
-}
-
-func clearCIIdentity(t *testing.T) {
-	t.Helper()
-	t.Setenv("VESSEL_SIGSTORE_ID_TOKEN", "")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_URL", "")
-	t.Setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "")
 }
 
 func writeUnits(t *testing.T, source string) {
@@ -167,7 +157,7 @@ func TestAnInsecureBuildSaysSoInTheBundle(t *testing.T) {
 	layout := filepath.Join(dir, "bundle")
 	job := Job{Source: source, Out: filepath.Join(dir, "myapp"), Layout: layout,
 		Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	artifact, err := bundle.Open(layout)
@@ -203,42 +193,32 @@ func TestASignedLinkWritesNoInsecureKey(t *testing.T) {
 }
 
 func TestASignedBuildSignsTheLayoutItKeeps(t *testing.T) {
-	layout := buildSignedLayout(t)
-	index, err := os.ReadFile(filepath.Join(layout, "index.json"))
-	if err != nil {
-		t.Fatalf("read index.json: %v", err)
-	}
-	sidecar, err := os.ReadFile(filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
-	if err != nil {
-		t.Fatalf("the layout carries no signature: %v", err)
-	}
-	if string(sidecar) != "signature over "+string(index) {
+	layout, key := buildSignedLayout(t)
+	if !attesttest.Verifies(t, key, filepath.Join(layout, "index.json")) {
 		t.Error("the layout signature does not cover its index.json")
 	}
 }
 
-// buildSignedLayout builds with --layout and the fake signer, and returns the layout.
-func buildSignedLayout(t *testing.T) string {
+func TestASignedBuildSignsTheExecutable(t *testing.T) {
+	layout, key := buildSignedLayout(t)
+	if !attesttest.Verifies(t, key, filepath.Join(filepath.Dir(layout), "myapp")) {
+		t.Error("the signature does not cover the executable")
+	}
+}
+
+// buildSignedLayout builds with --layout and a fresh key, and returns the layout and the key.
+func buildSignedLayout(t *testing.T) (string, string) {
 	t.Helper()
 	source := t.TempDir()
 	writeUnits(t, source)
 	dir := t.TempDir()
-	layout := filepath.Join(dir, "bundle")
-	job := Job{Source: source, Out: filepath.Join(dir, "myapp"), Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	layout, key := filepath.Join(dir, "bundle"), attesttest.Key(t)
+	job := Job{Source: source, Out: filepath.Join(dir, "myapp"), Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", Key: key}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	return layout
+	return layout, key
 }
-
-// fakeSigner signs by prefixing the bytes, so a test can tell what a signature covers.
-type fakeSigner struct{}
-
-func (fakeSigner) Sign(_ context.Context, data []byte) ([]byte, error) {
-	return append([]byte("signature over "), data...), nil
-}
-
-func fakeSigning(context.Context) (attest.ArtifactSigner, error) { return fakeSigner{}, nil }
 
 func TestAnUnsignedBuildLeavesTheLayoutUnsigned(t *testing.T) {
 	source := t.TempDir()
@@ -247,44 +227,43 @@ func TestAnUnsignedBuildLeavesTheLayoutUnsigned(t *testing.T) {
 	layout := filepath.Join(dir, "bundle")
 	job := Job{Source: source, Out: filepath.Join(dir, "myapp"), Layout: layout,
 		Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(layout, "index.json"+attest.SigstoreSuffix)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(layout, "index.json"+attest.SignatureSuffix)); !os.IsNotExist(err) {
 		t.Errorf("an unsigned build signed its layout, err=%v", err)
 	}
 }
 
-func TestAFailedLayoutSignatureLeavesNoExecutable(t *testing.T) {
+func TestAnExecutableIsNeverPublishedWithoutItsSignature(t *testing.T) {
 	source := t.TempDir()
 	writeUnits(t, source)
-	dir := t.TempDir()
-	out := filepath.Join(dir, "myapp")
-	job := Job{Source: source, Out: out, Layout: filepath.Join(dir, "bundle"), Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
-	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, failingSigning)
-	if !errors.Is(err, errSignerDown) {
-		t.Fatalf("got %v, want errSignerDown", err)
+	out := filepath.Join(t.TempDir(), "myapp")
+	blockSignature(t, out)
+	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", Key: attesttest.Key(t)}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err == nil {
+		t.Fatal("the build succeeded with no place to write its signature")
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
-		t.Errorf("the build published %s with an unsigned layout, err=%v", out, err)
+		t.Errorf("the build published %s without its signature, err=%v", out, err)
 	}
 }
 
-var errSignerDown = errors.New("signer down")
-
-type failingSigner struct{}
-
-func (failingSigner) Sign(context.Context, []byte) ([]byte, error) { return nil, errSignerDown }
-
-func failingSigning(context.Context) (attest.ArtifactSigner, error) { return failingSigner{}, nil }
+// blockSignature puts a directory where the signature of out goes, so writing it fails.
+func blockSignature(t *testing.T, out string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(out+attest.SignatureSuffix, "taken"), 0o755); err != nil {
+		t.Fatalf("block the signature path: %v", err)
+	}
+}
 
 func TestASignedBuildWithoutLayoutSignsOnlyTheExecutable(t *testing.T) {
 	source := t.TempDir()
 	writeUnits(t, source)
 	dir := t.TempDir()
 	out := filepath.Join(dir, "myapp")
-	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	job := Job{Source: source, Out: out, Platform: "linux/amd64", Name: "acme", Version: "1.4.0", Key: attesttest.Key(t)}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	entries, err := os.ReadDir(dir)
@@ -295,94 +274,47 @@ func TestASignedBuildWithoutLayoutSignsOnlyTheExecutable(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	if want := []string{"myapp", "myapp" + attest.SigstoreSuffix}; !slices.Equal(names, want) {
+	if want := []string{"myapp", "myapp" + attest.SignatureSuffix}; !slices.Equal(names, want) {
 		t.Errorf("got %v, want %v", names, want)
 	}
 }
 
 func TestTheExecutableCarriesNoLayoutSignature(t *testing.T) {
-	layout := buildSignedLayout(t)
+	layout, _ := buildSignedLayout(t)
 	payload := t.TempDir()
 	if err := installer.Unpack(filepath.Join(filepath.Dir(layout), "myapp"), payload); err != nil {
 		t.Fatalf("unpack: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(payload, "index.json"+attest.SigstoreSuffix)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(payload, "index.json"+attest.SignatureSuffix)); !os.IsNotExist(err) {
 		t.Errorf("the executable carries the layout signature, err=%v", err)
 	}
 }
 
 func TestASecondBuildIntoTheSameLayoutSignsItAgain(t *testing.T) {
-	layout := buildSignedLayout(t)
+	layout, key := buildSignedLayout(t)
 	source := t.TempDir()
 	writeUnits(t, source)
-	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.5.0"}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.5.0", Key: key}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
-	index, err := os.ReadFile(filepath.Join(layout, "index.json"))
-	if err != nil {
-		t.Fatalf("read index.json: %v", err)
-	}
-	sidecar, err := os.ReadFile(filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
-	if err != nil {
-		t.Fatalf("read the signature: %v", err)
-	}
-	if string(sidecar) != "signature over "+string(index) {
+	if !attesttest.Verifies(t, key, filepath.Join(layout, "index.json")) {
 		t.Error("the layout keeps a signature of the first build")
-	}
-	payload := t.TempDir()
-	if err := installer.Unpack(job.Out, payload); err != nil {
-		t.Fatalf("unpack: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(payload, "index.json"+attest.SigstoreSuffix)); !os.IsNotExist(err) {
-		t.Errorf("the second executable carries the first layout signature, err=%v", err)
 	}
 }
 
 func TestAnUnsignedBuildDropsAnOldLayoutSignature(t *testing.T) {
-	layout := buildSignedLayout(t)
+	layout, _ := buildSignedLayout(t)
 	source := t.TempDir()
 	writeUnits(t, source)
 	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Layout: layout,
 		Platform: "linux/amd64", Name: "acme", Version: "1.5.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("second build: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(layout, "index.json"+attest.SigstoreSuffix)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(layout, "index.json"+attest.SignatureSuffix)); !os.IsNotExist(err) {
 		t.Errorf("an unsigned build left a signature of another build, err=%v", err)
 	}
-}
-
-func TestAFailedSignatureLeavesNoSignedLayout(t *testing.T) {
-	source := t.TempDir()
-	writeUnits(t, source)
-	dir := t.TempDir()
-	out := filepath.Join(dir, "myapp")
-	layout := filepath.Join(dir, "bundle")
-	job := Job{Source: source, Out: out, Layout: layout, Platform: "linux/amd64", Name: "acme", Version: "1.4.0"}
-	signer := &secondCallFails{}
-	signing := func(context.Context) (attest.ArtifactSigner, error) { return signer, nil }
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, signing); !errors.Is(err, errSignerDown) {
-		t.Fatalf("got %v, want errSignerDown", err)
-	}
-	for _, path := range []string{out, filepath.Join(layout, "index.json"+attest.SigstoreSuffix)} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Errorf("a failed build left %s, err=%v", path, err)
-		}
-	}
-}
-
-// secondCallFails signs once, then fails, as a token expiring between two signatures would.
-type secondCallFails struct {
-	calls int
-}
-
-func (s *secondCallFails) Sign(_ context.Context, data []byte) ([]byte, error) {
-	s.calls++
-	if s.calls > 1 {
-		return nil, errSignerDown
-	}
-	return append([]byte("signature over "), data...), nil
 }
 
 func TestBuildFromABundlePacksThatExactBundle(t *testing.T) {
@@ -393,7 +325,7 @@ func TestBuildFromABundlePacksThatExactBundle(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "myapp")
 	job := Job{Source: layout, Out: out, InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build from the bundle: %v", err)
 	}
 	payload := t.TempDir()
@@ -410,16 +342,17 @@ func TestBuildFromABundlePacksThatExactBundle(t *testing.T) {
 }
 
 func TestBuildFromAnUnsignedBundleRefusesToSignIt(t *testing.T) {
-	job := Job{Source: buildUnsignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp")}
-	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+	job := Job{Source: buildUnsignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp"), Key: attesttest.Key(t)}
+	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job)
 	if !errors.Is(err, ErrSigningMismatch) {
 		t.Fatalf("got %v, want ErrSigningMismatch", err)
 	}
 }
 
 func TestBuildFromASignedBundleRefusesToLeaveItUnsigned(t *testing.T) {
-	job := Job{Source: buildSignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp"), InsecureUnsigned: true}
-	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+	layout, _ := buildSignedLayout(t)
+	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"), InsecureUnsigned: true}
+	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job)
 	if !errors.Is(err, ErrSigningMismatch) {
 		t.Fatalf("got %v, want ErrSigningMismatch", err)
 	}
@@ -431,7 +364,7 @@ func TestBuildFromABundleRefusesAFlagTheBundleAlreadyAnswers(t *testing.T) {
 		{Name: "other"}, {Version: "9.9.9"}, {Layout: filepath.Join(t.TempDir(), "copy")}, {Platform: "linux/arm64"},
 	} {
 		job.Source, job.Out, job.InsecureUnsigned = layout, filepath.Join(t.TempDir(), "myapp"), true
-		err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+		err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job)
 		if !errors.Is(err, ErrBundleSourceFlags) {
 			t.Errorf("%+v: got %v, want ErrBundleSourceFlags", job, err)
 		}
@@ -447,7 +380,7 @@ func buildUnsignedLayout(t *testing.T) string {
 	layout := filepath.Join(dir, "bundle")
 	job := Job{Source: source, Out: filepath.Join(dir, "scratch"), Layout: layout,
 		Platform: "linux/amd64", Name: "acme", Version: "1.4.0", InsecureUnsigned: true}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	return layout
@@ -457,7 +390,7 @@ func TestBuildWithEvidenceCarriesItInTheExecutable(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "myapp")
 	job := Job{Source: buildUnsignedLayout(t), Out: out, InsecureUnsigned: true,
 		Evidence: []string{"testdata/sbom.spdx.json"}}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
 	payload := t.TempDir()
@@ -479,7 +412,7 @@ func TestBuildRefusesEvidenceForADescriptorItHasNotLinkedYet(t *testing.T) {
 	job := Job{Source: source, Out: filepath.Join(t.TempDir(), "myapp"), Platform: "linux/amd64",
 		Name: "acme", Version: "1.4.0", InsecureUnsigned: true, Evidence: []string{"testdata/sbom.spdx.json"}}
 	var work bytes.Buffer
-	err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job, fakeSigning)
+	err := Build(context.Background(), report.New(&work), io.Discard, buildKinds(), job)
 	if !errors.Is(err, ErrEvidenceNeedsBundle) {
 		t.Fatalf("got %v, want ErrEvidenceNeedsBundle", err)
 	}
@@ -489,21 +422,12 @@ func TestBuildRefusesEvidenceForADescriptorItHasNotLinkedYet(t *testing.T) {
 }
 
 func TestBuildWithEvidenceSignsTheNewIndex(t *testing.T) {
-	layout := buildSignedLayout(t)
-	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"),
-		Evidence: []string{"testdata/sbom.spdx.json"}}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	layout, key := buildSignedLayout(t)
+	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"), Evidence: []string{"testdata/sbom.spdx.json"}, Key: key}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	index, err := os.ReadFile(filepath.Join(layout, "index.json"))
-	if err != nil {
-		t.Fatalf("read index.json: %v", err)
-	}
-	sidecar, err := os.ReadFile(filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
-	if err != nil {
-		t.Fatalf("read the signature: %v", err)
-	}
-	if string(sidecar) != "signature over "+string(index) {
+	if !attesttest.Verifies(t, key, filepath.Join(layout, "index.json")) {
 		t.Error("the layout signature covers the index before the evidence")
 	}
 }
@@ -537,29 +461,31 @@ func TestBuildFromADamagedBundleSaysItIsDamaged(t *testing.T) {
 		}
 	}
 	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"), InsecureUnsigned: true, Evidence: []string{"testdata/sbom.spdx.json"}}
-	err = Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning)
+	err = Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job)
 	if !errors.Is(err, bundle.ErrDigestMismatch) {
 		t.Fatalf("got %v, want bundle.ErrDigestMismatch", err)
 	}
 }
 
-func TestBuildFromABundleChecksItsSigningModeBeforeAskingForAnIdentity(t *testing.T) {
+func TestBuildFromABundleChecksItsSigningModeBeforeReadingTheKey(t *testing.T) {
 	job := Job{Source: buildUnsignedLayout(t), Out: filepath.Join(t.TempDir(), "myapp")}
-	err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, noIdentity)
-	if !errors.Is(err, ErrSigningMismatch) {
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); !errors.Is(err, ErrSigningMismatch) {
 		t.Fatalf("got %v, want ErrSigningMismatch", err)
 	}
 }
 
 func TestAnInterruptedEvidenceBuildCanRunAgain(t *testing.T) {
-	layout := buildSignedLayout(t)
-	job := Job{Source: layout, Out: filepath.Join(t.TempDir(), "myapp"), Evidence: []string{"testdata/sbom.spdx.json"}}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, failingSigning); err == nil {
-		t.Fatal("the build succeeded with a signer that is down")
+	layout, key := buildSignedLayout(t)
+	out := filepath.Join(t.TempDir(), "myapp")
+	job := Job{Source: layout, Out: out, Evidence: []string{"testdata/sbom.spdx.json"}, Key: key}
+	blockSignature(t, out)
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err == nil {
+		t.Fatal("the build succeeded with no place to write its signature")
 	}
-	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job, fakeSigning); err != nil {
+	if err := os.RemoveAll(out + attest.SignatureSuffix); err != nil {
+		t.Fatalf("unblock: %v", err)
+	}
+	if err := Build(context.Background(), report.New(io.Discard), io.Discard, buildKinds(), job); err != nil {
 		t.Fatalf("the second run: %v", err)
 	}
 }
-
-func noIdentity(context.Context) (attest.ArtifactSigner, error) { return nil, attest.ErrNoOIDCToken }

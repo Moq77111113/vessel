@@ -2,12 +2,14 @@ package link
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/Moq77111113/vessel/internal/atomicfile"
 	"github.com/Moq77111113/vessel/internal/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/installer"
@@ -24,12 +26,10 @@ type Job struct {
 	Version          string
 	InsecureUnsigned bool
 	Evidence         []string
+	Key              string
 }
 
-// Signing returns the signer a release build uses, and fails before any image is resolved.
-type Signing func(context.Context) (attest.ArtifactSigner, error)
-
-func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []machine.Machine, job Job, signing Signing) error {
+func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []machine.Machine, job Job) error {
 	fromBundle, err := bundleSource(job)
 	if err != nil {
 		return err
@@ -38,9 +38,9 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 		return ErrEvidenceNeedsBundle
 	}
 
-	var signer attest.ArtifactSigner
+	var key *attest.Key
 	if !job.InsecureUnsigned {
-		if signer, err = signing(ctx); err != nil {
+		if key, err = attest.ReadKey(job.Key); err != nil {
 			return err
 		}
 	}
@@ -66,20 +66,36 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []ma
 	}
 	defer stub.Close()
 
-	temp, err := tempNear(job.Out)
+	temp, err := os.CreateTemp(filepath.Dir(job.Out), ".vessel-build-*")
+	if err != nil {
+		return fmt.Errorf("create a temporary file next to %s: %w", job.Out, err)
+	}
+	defer os.Remove(temp.Name())
+	digest, err := pack(stub, dir, temp, work)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(temp)
-	defer os.Remove(temp + attest.SigstoreSuffix)
-
-	if err := installer.Pack(stub, dir, temp, work); err != nil {
-		return err
-	}
 	if job.InsecureUnsigned {
-		return publishInsecure(stdout, temp, job.Out)
+		return publishInsecure(stdout, temp.Name(), job.Out)
 	}
-	return publishSigned(ctx, stdout, temp, job.Out, layout, signer)
+	return publishSigned(stdout, temp.Name(), digest, job.Out, layout, key)
+}
+
+// pack writes the executable into temp, closes it, and returns the sha256 of exactly the bytes written.
+func pack(stub io.Reader, dir string, temp *os.File, work report.Report) ([]byte, error) {
+	hash := sha256.New()
+	if err := installer.Pack(stub, dir, io.MultiWriter(temp, hash), work); err != nil {
+		temp.Close()
+		return nil, err
+	}
+	if err := temp.Chmod(0o755); err != nil {
+		temp.Close()
+		return nil, fmt.Errorf("make %s executable: %w", temp.Name(), err)
+	}
+	if err := temp.Close(); err != nil {
+		return nil, fmt.Errorf("close %s: %w", temp.Name(), err)
+	}
+	return hash.Sum(nil), nil
 }
 
 // Errors Build returns for a bundle given as its source.
@@ -145,31 +161,13 @@ func attachEvidence(dir string, paths []string) error {
 	return bundle.Attach(dir, evidence)
 }
 
-// signLayout signs the index.json of the layout the operator keeps, and leaves the signature beside it.
-func signLayout(ctx context.Context, layout string, signer attest.ArtifactSigner) error {
-	if layout == "" {
-		return nil
-	}
-	_, err := attest.SignFile(ctx, filepath.Join(layout, "index.json"), signer)
-	return err
-}
-
 // dropLayoutSignature removes a signature an earlier build left, since this build changes what it covers.
 func dropLayoutSignature(layout string) error {
-	err := os.Remove(filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
+	err := os.Remove(filepath.Join(layout, "index.json"+attest.SignatureSuffix))
 	if err == nil || os.IsNotExist(err) {
 		return nil
 	}
 	return fmt.Errorf("remove the old layout signature: %w", err)
-}
-
-// Sigstore signs through Fulcio with the CI's OIDC identity, and fails fast without one.
-func Sigstore(ctx context.Context) (attest.ArtifactSigner, error) {
-	tokens := attest.NewOIDCTokenSource(os.Getenv, nil)
-	if _, err := tokens.Token(ctx); err != nil {
-		return nil, fmt.Errorf("sign vessel releases by default: %w", err)
-	}
-	return attest.NewSigstoreSigner(tokens, attest.ProductionSigstoreServiceConfig), nil
 }
 
 func layoutDir(layout string) (string, func(), error) {
@@ -195,18 +193,6 @@ func openSelf() (*os.File, error) {
 	return stub, nil
 }
 
-// tempNear reserves a unique name next to out so the final rename stays on one filesystem.
-func tempNear(out string) (string, error) {
-	file, err := os.CreateTemp(filepath.Dir(out), ".vessel-build-*")
-	if err != nil {
-		return "", fmt.Errorf("create a temporary file next to %s: %w", out, err)
-	}
-	name := file.Name()
-	file.Close()
-	os.Remove(name)
-	return name, nil
-}
-
 // publishInsecure moves the unsigned artifact into place; no sidecar is ever written.
 func publishInsecure(stdout io.Writer, temp, out string) error {
 	if err := os.Rename(temp, out); err != nil {
@@ -219,27 +205,29 @@ func publishInsecure(stdout io.Writer, temp, out string) error {
 	return nil
 }
 
-// publishSigned signs the executable, then the kept layout, and only then moves the executable into place.
-func publishSigned(ctx context.Context, stdout io.Writer, temp, out, layout string, signer attest.ArtifactSigner) error {
-	sidecar, err := attest.SignFile(ctx, temp, signer)
+// publishSigned signs the kept layout, then writes the executable's signature, and only then moves the executable into place.
+func publishSigned(stdout io.Writer, temp string, digest []byte, out, layout string, key *attest.Key) error {
+	signature, err := key.Sign(digest)
 	if err != nil {
 		return err
 	}
-	if err := signLayout(ctx, layout, signer); err != nil {
+	if layout != "" {
+		if err := key.SignFile(filepath.Join(layout, "index.json")); err != nil {
+			return err
+		}
+	}
+	if err := atomicfile.Write(out+attest.SignatureSuffix, signature, 0o644); err != nil {
 		return err
 	}
 	if err := os.Rename(temp, out); err != nil {
 		return fmt.Errorf("publish %s: %w", out, err)
 	}
-	if err := os.Rename(sidecar, out+attest.SigstoreSuffix); err != nil {
-		return fmt.Errorf("publish %s: %w", out+attest.SigstoreSuffix, err)
-	}
 	if err := announceFinished(stdout, out); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "%s, ship it alongside\n", out+attest.SigstoreSuffix)
+	fmt.Fprintf(stdout, "%s, ship it alongside\n", out+attest.SignatureSuffix)
 	if layout != "" {
-		fmt.Fprintf(stdout, "%s, verify the layout against it\n", filepath.Join(layout, "index.json"+attest.SigstoreSuffix))
+		fmt.Fprintf(stdout, "%s, verify the layout against it\n", filepath.Join(layout, "index.json"+attest.SignatureSuffix))
 	}
 	return nil
 }
