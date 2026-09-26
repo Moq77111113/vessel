@@ -334,3 +334,46 @@ func TestStatusNamesAnInsecureDeliveryThatNeverFinished(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusNamesTheStepAnInstallStoppedAfter(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC(),
+		Steps: []record.Step{record.StepValues, record.StepActions, record.StepFiles},
+	})
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "stopped after files") {
+		t.Errorf("got %q, want the step it stopped after", out.String())
+	}
+}
+
+func TestStatusNamesAnActionThatMayHaveStoppedHalfway(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{
+		Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC(),
+		Steps:   []record.Step{record.StepValues},
+		Actions: []record.Action{{Command: "mkdir -p /srv/acme"}},
+	})
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "mkdir -p /srv/acme") {
+		t.Errorf("got %q, want the open action named", out.String())
+	}
+}
+
+func TestStatusOnAnOpenRecordNamesAVerbThisBuildOffers(t *testing.T) {
+	root := t.TempDir()
+	writeRecord(t, root, record.Record{Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC()})
+	var out bytes.Buffer
+	if err := Status(context.Background(), &out, testKinds(), root, "acme"); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out.String(), "run uninstall") || strings.Contains(out.String(), "resume") {
+		t.Errorf("got %q, want uninstall named and no verb this build lacks", out.String())
+	}
+}

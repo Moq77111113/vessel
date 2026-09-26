@@ -62,6 +62,9 @@ func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report)
 	if !before.found {
 		return fmt.Errorf("%s: %w, run install instead", config.Name, ErrNoRecord)
 	}
+	if err := refuseOpenRecord(before); err != nil {
+		return err
+	}
 	return i.run(ctx, out, work, before)
 }
 
@@ -72,7 +75,29 @@ func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) err
 	if err != nil {
 		return err
 	}
+	if err := refuseOpenRecord(before); err != nil {
+		return err
+	}
 	return i.run(ctx, out, work, before)
+}
+
+var ErrRecordOpen = errors.New("the last install on this machine never finished")
+
+// refuseOpenRecord refuses a machine whose record an install opened and never closed.
+func refuseOpenRecord(before prelude) error {
+	if !before.found || before.current.Done() {
+		return nil
+	}
+	return fmt.Errorf("%s %s %s, run uninstall: %w",
+		before.current.Name, before.current.Version, position(before.current), ErrRecordOpen)
+}
+
+// position says where an open record stopped, in words an operator reads.
+func position(r record.Record) string {
+	if len(r.Steps) == 0 {
+		return "stopped before its first step"
+	}
+	return "stopped after " + string(r.Steps[len(r.Steps)-1])
 }
 
 // run installs or upgrades once the machine is known ready and the record is known read.
@@ -104,13 +129,15 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 		Insecure: config.Insecure,
 		Start:    time.Now().UTC(),
 	}
-	if err := openRecord(before.records, before.current, next); err != nil {
+	opening, err := openRecord(before.records, before.current, next)
+	if err != nil {
 		return err
 	}
-	images, changes, err := i.applyToMachine(ctx, out, work, machineChange{
+	images, changes, err := i.applyToMachine(ctx, out, work, &machineChange{
 		host:       before.host,
 		records:    before.records,
 		current:    before.current,
+		opening:    opening,
 		next:       next,
 		found:      before.found,
 		store:      store,
@@ -135,6 +162,7 @@ type machineChange struct {
 	host       machine.Machine
 	records    *record.Records
 	current    record.Record
+	opening    record.Record
 	next       record.Record
 	found      bool
 	store      *site.Store
@@ -143,44 +171,74 @@ type machineChange struct {
 	files      []descriptor.File
 }
 
-// applyToMachine writes the files, the secrets and the images, starts the services and closes the record.
+// step runs do unless the record already has step, then writes step into the record.
+func (c *machineChange) step(step record.Step, do func() error) error {
+	if c.opening.Has(step) {
+		return nil
+	}
+	if err := do(); err != nil {
+		return err
+	}
+	c.opening.Steps = append(c.opening.Steps, step)
+	return c.records.Write(c.opening)
+}
+
+// close writes the finished record: the new version's files, every step, every action, an end.
+func (c *machineChange) close() error {
+	c.next.Steps = c.opening.Steps
+	c.next.Actions = c.opening.Actions
+	c.next.End = time.Now().UTC()
+	return c.records.Write(c.next)
+}
+
+// applyToMachine runs every install step in order, writing each into the record, then closes it.
 func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.Report,
-	change machineChange) ([]string, int, error) {
-	if err := change.store.Write(change.resolution.Values); err != nil {
-		return nil, 0, err
-	}
-	if err := i.runActions(ctx, i.Artifact.Config.Actions); err != nil {
-		return nil, 0, err
-	}
-
+	change *machineChange) ([]string, int, error) {
 	tree := machine.NewTree(i.Root)
-	changes, err := writeFiles(tree, change.files)
-	if err != nil {
+	var changes int
+	var images []string
+
+	if err := change.step(record.StepValues, func() error {
+		return change.store.Write(change.resolution.Values)
+	}); err != nil {
 		return nil, 0, err
 	}
-	if change.found {
-		if err := removeGone(ctx, work, change.host, tree, change.current.Files, change.next.Files); err != nil {
-			return nil, 0, err
+	if err := change.step(record.StepActions, func() error {
+		return i.runActions(ctx, change)
+	}); err != nil {
+		return nil, 0, err
+	}
+	if err := change.step(record.StepFiles, func() error {
+		var err error
+		if changes, err = writeFiles(tree, change.files); err != nil {
+			return err
 		}
-	}
-	if err := addSecrets(ctx, change.host, change.resolution.Secrets); err != nil {
+		if !change.found {
+			return nil
+		}
+		return removeGone(ctx, work, change.host, tree, change.current.Files, change.next.Files)
+	}); err != nil {
 		return nil, 0, err
 	}
-	images, err := addImages(ctx, work, change.host, i.Artifact.LayoutDir)
-	if err != nil {
+	if err := change.step(record.StepSecrets, func() error {
+		return addSecrets(ctx, change.host, change.resolution.Secrets)
+	}); err != nil {
 		return nil, 0, err
 	}
-
-	reportMissingSecrets(out, change.secrets, change.host.Requires(change.files))
-	if err := startServices(ctx, change.host, change.files); err != nil {
+	if err := change.step(record.StepImages, func() error {
+		var err error
+		images, err = addImages(ctx, work, change.host, i.Artifact.LayoutDir)
+		return err
+	}); err != nil {
 		return nil, 0, err
 	}
-
-	change.next.End = time.Now().UTC()
-	if err := change.records.Write(change.next); err != nil {
+	if err := change.step(record.StepServices, func() error {
+		reportMissingSecrets(out, change.secrets, change.host.Requires(change.files))
+		return startServices(ctx, change.host, change.files)
+	}); err != nil {
 		return nil, 0, err
 	}
-	return images, changes, nil
+	return images, changes, change.close()
 }
 
 // checkMachine finds the machine that built this bundle and refuses one that is not ready.
@@ -207,16 +265,26 @@ func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Co
 }
 
 // openRecord writes the record this install opens, naming the files both versions carry.
-func openRecord(records *record.Records, current, next record.Record) error {
+func openRecord(records *record.Records, current, next record.Record) (record.Record, error) {
 	opening := next
 	opening.Files = union(current.Files, next.Files)
-	return records.Write(opening)
+	return opening, records.Write(opening)
 }
 
-// runActions runs the commands the delivery declares, in the order it declares them.
-func (i Install) runActions(ctx context.Context, actions []string) error {
-	for _, action := range actions {
-		if err := i.Shell.Do(ctx, action); err != nil {
+// runActions runs the declared commands in order, writing each into the record before and after.
+func (i Install) runActions(ctx context.Context, change *machineChange) error {
+	for _, command := range i.Artifact.Config.Actions {
+		change.opening.Actions = append(change.opening.Actions, record.Action{Command: command})
+		if err := change.records.Write(change.opening); err != nil {
+			return err
+		}
+		last := len(change.opening.Actions) - 1
+		if err := i.Shell.Do(ctx, command); err != nil {
+			change.opening.Actions = change.opening.Actions[:last]
+			return errors.Join(err, change.records.Write(change.opening))
+		}
+		change.opening.Actions[last].End = time.Now().UTC()
+		if err := change.records.Write(change.opening); err != nil {
 			return err
 		}
 	}

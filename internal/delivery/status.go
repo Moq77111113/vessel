@@ -41,7 +41,10 @@ func Status(ctx context.Context, out io.Writer, kinds []machine.Machine, root, n
 		fmt.Fprintln(out, InsecureWarning)
 	}
 	if !record.Done() {
-		fmt.Fprintln(out, "this install never finished, run install again")
+		fmt.Fprintf(out, "this install never finished, it %s: run uninstall\n", position(record))
+	}
+	if action, open := record.OpenAction(); open {
+		fmt.Fprintf(out, "this action may have stopped halfway, check it by hand: %s\n", action.Command)
 	}
 	previous, found, err := records.Previous()
 	if err != nil {

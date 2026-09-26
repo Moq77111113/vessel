@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/Moq77111113/vessel/internal/atomicfile"
@@ -16,6 +17,24 @@ const (
 	recordName   = "record.json"
 	previousName = "record.previous.json"
 )
+
+// Step is one part of an install, named in the order an install runs them.
+type Step string
+
+const (
+	StepValues   Step = "values"
+	StepActions  Step = "actions"
+	StepFiles    Step = "files"
+	StepSecrets  Step = "secrets"
+	StepImages   Step = "images"
+	StepServices Step = "services"
+)
+
+// Action is one command the delivery declares, and when it finished.
+type Action struct {
+	Command string    `json:"command"`
+	End     time.Time `json:"end,omitzero"`
+}
 
 // Entry is one file a delivery put on this machine.
 type Entry struct {
@@ -34,12 +53,26 @@ type Record struct {
 	Images   []string  `json:"images"`
 	Secrets  []string  `json:"secrets"`
 	Insecure bool      `json:"insecure,omitempty"`
+	Steps    []Step    `json:"steps,omitempty"`
+	Actions  []Action  `json:"actions,omitempty"`
 	Start    time.Time `json:"start"`
 	End      time.Time `json:"end,omitzero"`
 }
 
 // Done reports whether the install that opened this record ran to its end.
 func (r Record) Done() bool { return !r.End.IsZero() }
+
+// Has reports whether the install that opened this record finished step.
+func (r Record) Has(step Step) bool { return slices.Contains(r.Steps, step) }
+
+// OpenAction returns the action an install left without an end, and whether there is one.
+func (r Record) OpenAction() (Action, bool) {
+	if len(r.Actions) == 0 {
+		return Action{}, false
+	}
+	last := r.Actions[len(r.Actions)-1]
+	return last, last.End.IsZero()
+}
 
 // Records is the install history one delivery keeps on this machine.
 type Records struct {

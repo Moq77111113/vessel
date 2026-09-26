@@ -199,3 +199,44 @@ func TestARecordWithNoInsecureKeyReadsAsSigned(t *testing.T) {
 		t.Error("a record an older vessel wrote reads as insecure")
 	}
 }
+
+func TestARecordHasAStepItLists(t *testing.T) {
+	entry := record.Record{Steps: []record.Step{record.StepValues, record.StepActions}}
+	if !entry.Has(record.StepActions) {
+		t.Error("the record does not have a step it lists")
+	}
+	if entry.Has(record.StepFiles) {
+		t.Error("the record has a step it does not list")
+	}
+}
+
+func TestAnActionWithNoEndIsOpen(t *testing.T) {
+	entry := record.Record{Actions: []record.Action{{Command: "a", End: time.Unix(1, 0)}, {Command: "b"}}}
+	action, open := entry.OpenAction()
+	if !open || action.Command != "b" {
+		t.Errorf("got %+v open=%v, want b open", action, open)
+	}
+}
+
+func TestARecordWhoseActionsAllEndedHasNoOpenAction(t *testing.T) {
+	entry := record.Record{Actions: []record.Action{{Command: "a", End: time.Unix(1, 0)}}}
+	if _, open := entry.OpenAction(); open {
+		t.Error("an action that ended reads as open")
+	}
+	if _, open := (record.Record{}).OpenAction(); open {
+		t.Error("a record with no action has an open one")
+	}
+}
+
+func TestARecordWithNoStepsStillReadsAsDone(t *testing.T) {
+	entry, found, err := record.NewRecords("testdata/main").Read()
+	if err != nil || !found {
+		t.Fatalf("read: found=%v err=%v", found, err)
+	}
+	if !entry.Done() {
+		t.Error("a finished record an older vessel wrote reads as unfinished")
+	}
+	if _, open := entry.OpenAction(); open {
+		t.Error("a record with no actions key has an open action")
+	}
+}
