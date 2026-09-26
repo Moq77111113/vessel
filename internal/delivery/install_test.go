@@ -107,8 +107,8 @@ variables:
 		})
 	root := t.TempDir()
 	stub := &podmanStub{}
-	set := map[string]string{"DB_PASSWORD": "hunter2"}
-	job := jobFor(t, root, dir, []machine.Machine{quadlet.New(stub.run)}, set)
+	job := jobFor(t, root, dir, []machine.Machine{quadlet.New(stub.run)}, nil)
+	job.SetFile = dbPassword
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -590,8 +590,9 @@ variables:
 		})
 	root := t.TempDir()
 	kinds := []machine.Machine{heldSecrets{quadlet.New((&podmanStub{}).run), []string{"OLD_PASSWORD"}}}
-	set := map[string]string{"NEW_PASSWORD": "hunter2"}
-	if err := jobFor(t, root, dir, kinds, set).Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
+	job := jobFor(t, root, dir, kinds, nil)
+	job.SetFile = map[string]string{"NEW_PASSWORD": "hunter2"}
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	record, _, err := recordsFor(t, root, "acme").Read()
@@ -615,9 +616,9 @@ variables:
 `,
 		})
 	root := t.TempDir()
-	set := map[string]string{"NEW_PASSWORD": "hunter2"}
-	first := []machine.Machine{quadlet.New((&podmanStub{}).run)}
-	if err := jobFor(t, root, dir, first, set).Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
+	first := jobFor(t, root, dir, []machine.Machine{quadlet.New((&podmanStub{}).run)}, nil)
+	first.SetFile = map[string]string{"NEW_PASSWORD": "hunter2"}
+	if err := first.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	second := []machine.Machine{heldSecrets{quadlet.New((&podmanStub{}).run), []string{"NEW_PASSWORD"}}}
@@ -922,5 +923,44 @@ func TestTheRefusalOffersResume(t *testing.T) {
 	err := runInstall(t, root, dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "run resume") {
 		t.Errorf("got %v, want resume offered", err)
+	}
+}
+
+func TestInstallRefusesASecretPassedWithSet(t *testing.T) {
+	job := jobFor(t, t.TempDir(), dryRunBundle(t), nil, dbPassword)
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, ErrSecretOnCommandLine) {
+		t.Fatalf("got %v, want ErrSecretOnCommandLine", err)
+	}
+}
+
+func TestInstallRefusesAPlainValuePassedWithSetFile(t *testing.T) {
+	job := jobFor(t, t.TempDir(), linkTestBundle(t, fixture(t, "one-value")), nil, nil)
+	job.SetFile = map[string]string{"PUBLIC_HOST": "a.acme.local"}
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, ErrSetFilePlain) {
+		t.Fatalf("got %v, want ErrSetFilePlain", err)
+	}
+}
+
+func TestReadSetFileTakesTheValueWithoutItsNewline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db-password")
+	if err := os.WriteFile(path, []byte("hunter2\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	values, err := ReadSetFile([]string{"DB_PASSWORD=" + path})
+	if err != nil {
+		t.Fatalf("ReadSetFile: %v", err)
+	}
+	if values["DB_PASSWORD"] != "hunter2" {
+		t.Errorf("got %q, want %q", values["DB_PASSWORD"], "hunter2")
+	}
+}
+
+func TestReadSetFileRefusesAFileOtherUsersCanRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "db-password")
+	if err := os.WriteFile(path, []byte("hunter2"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := ReadSetFile([]string{"DB_PASSWORD=" + path}); !errors.Is(err, ErrSecretFileOpen) {
+		t.Fatalf("got %v, want ErrSecretFileOpen", err)
 	}
 }

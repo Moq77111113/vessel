@@ -43,7 +43,7 @@ actions:
   - mkdir -p /etc/acme/certs          # runs on every install: keep it repeatable
 ```
 
-A value comes from `--set NAME=value`, from the previous install, or from `from:`. vessel never prompts: a missing value, or a plain value holding a control character, stops the install before anything is written.
+A value comes from `--set NAME=value`, from the previous install, or from `from:`. A secret never goes on a command line: `--set-file NAME=path` reads it from a file only its owner can read (`chmod 600`). vessel never prompts: a missing value, or a plain value holding a control character, stops the install before anything is written.
 
 Image tags are rewritten to digests in place. Comments and ordering survive:
 

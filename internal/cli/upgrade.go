@@ -7,7 +7,7 @@ import (
 )
 
 func newUpgradeCommand() *cobra.Command {
-	var set []string
+	var values answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -17,14 +17,14 @@ func newUpgradeCommand() *cobra.Command {
 			"delivery: run install there instead.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			job, err := jobOnDisk(args[0], set)
+			job, err := jobOnDisk(args[0], values)
 			if err != nil {
 				return err
 			}
 			return preview(job, dry).Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
 		},
 	}
-	bindSetFlag(command, &set)
+	values.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
