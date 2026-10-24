@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -19,21 +20,44 @@ var ErrCommand = errors.New("command failed")
 
 type Machine struct {
 	*Reader
-	podman *podman
-	root   string
+	podman    *podman
+	credstore credstore
+	root      string
 }
 
 func New(root string, run Run) *Machine {
-	return &Machine{Reader: NewReader(), podman: &podman{run: run}, root: root}
+	return &Machine{Reader: NewReader(), podman: &podman{run: run}, credstore: credstore{root: root, run: run}, root: root}
 }
 
-func (m *Machine) Secrets(ctx context.Context) ([]string, error) { return m.podman.Secrets(ctx) }
+func (m *Machine) Secrets(ctx context.Context) ([]string, error) {
+	secrets, err := m.podman.Secrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	credentials, err := m.credstore.names()
+	if err != nil {
+		return nil, err
+	}
+	return append(secrets, credentials...), nil
+}
 
 func (m *Machine) AddSecret(ctx context.Context, secret delivery.Secret) error {
+	credential, err := m.credstore.reads(secret.Name)
+	if err != nil {
+		return err
+	}
+	if credential {
+		return m.credstore.add(ctx, secret)
+	}
 	return m.podman.CreateSecret(ctx, secret.Name, secret.Value)
 }
 
-func (m *Machine) RemoveHint(secret string) string { return "podman secret rm " + secret }
+func (m *Machine) RemoveHint(secret string) string {
+	if m.credstore.holds(secret) {
+		return "rm " + filepath.Join(m.credstore.dir(), secret)
+	}
+	return "podman secret rm " + secret
+}
 
 func (m *Machine) AddImages(ctx context.Context, work report.Report, images *oci.Images) ([]string, error) {
 	return m.podman.Load(ctx, work, images)
