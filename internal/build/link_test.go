@@ -45,10 +45,10 @@ func oneRelocation(t *testing.T) []delivery.Relocation {
 	return []delivery.Relocation{{Ref: ref}}
 }
 
-func TestResolveAllAnnouncesBeforeItResolvesAndBeforeItPulls(t *testing.T) {
+func TestPullAnnouncesBeforeItResolvesAndBeforeItPulls(t *testing.T) {
 	work := &recorder{}
-	if _, err := resolveAll(context.Background(), work, work, oneRelocation(t), "linux/amd64", t.TempDir()); err != nil {
-		t.Fatalf("resolveAll: %v", err)
+	if _, err := (pull{client: work, work: work, platform: "linux/amd64", layout: t.TempDir()}).resolve(context.Background(), oneRelocation(t)); err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
 	want := []string{"line", "resolve", "line", "image"}
 	if !slices.Equal(work.calls, want) {
@@ -56,18 +56,18 @@ func TestResolveAllAnnouncesBeforeItResolvesAndBeforeItPulls(t *testing.T) {
 	}
 }
 
-func TestResolveAllNamesTheDigestInThePullingAnnouncement(t *testing.T) {
+func TestPullNamesTheDigestInThePullingAnnouncement(t *testing.T) {
 	work := &recorder{}
-	if _, err := resolveAll(context.Background(), work, work, oneRelocation(t), "linux/amd64", t.TempDir()); err != nil {
-		t.Fatalf("resolveAll: %v", err)
+	if _, err := (pull{client: work, work: work, platform: "linux/amd64", layout: t.TempDir()}).resolve(context.Background(), oneRelocation(t)); err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
-	found := false
+	present := false
 	for _, announced := range work.lines {
 		if announced.subject == "registry.test/acme/web@sha256:deadbeef" {
-			found = true
+			present = true
 		}
 	}
-	if !found {
+	if !present {
 		t.Errorf("no announcement names the digest: %v", work.lines)
 	}
 }

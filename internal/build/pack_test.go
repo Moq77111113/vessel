@@ -50,7 +50,7 @@ func packed(t *testing.T) string {
 		t.Fatalf("create: %v", err)
 	}
 	defer file.Close()
-	if err := Pack(bytes.NewReader(stub()), bundleDir(t), file, report.New(io.Discard)); err != nil {
+	if err := (packer{work: report.New(io.Discard)}).pack(bytes.NewReader(stub()), bundleDir(t), file); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 	return out
@@ -58,7 +58,7 @@ func packed(t *testing.T) string {
 
 func TestPackPrintsEachFileAsItIsWritten(t *testing.T) {
 	var progress bytes.Buffer
-	if err := Pack(bytes.NewReader(stub()), bundleDir(t), io.Discard, report.New(&progress)); err != nil {
+	if err := (packer{work: report.New(&progress)}).pack(bytes.NewReader(stub()), bundleDir(t), io.Discard); err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 	for _, name := range []string{"vessel.json", "images/index.json"} {
@@ -104,7 +104,7 @@ func TestPackRefusesALink(t *testing.T) {
 	if err := os.Symlink("/etc/hostname", filepath.Join(dir, "linked")); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-	err := Pack(bytes.NewReader(stub()), dir, io.Discard, report.New(io.Discard))
+	err := (packer{work: report.New(io.Discard)}).pack(bytes.NewReader(stub()), dir, io.Discard)
 	if !errors.Is(err, ErrNotAFile) {
 		t.Fatalf("got %v, want ErrNotAFile", err)
 	}

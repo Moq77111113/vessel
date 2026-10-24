@@ -31,7 +31,7 @@ func TestUninstallRemovesExactlyTheFilesTheRecordNames(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Uninstall(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(&out, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := os.Stat(mine); !os.IsNotExist(err) {
@@ -51,7 +51,7 @@ func TestUninstallRefusesARecordEntryThatLeavesTheRoot(t *testing.T) {
 		Files: []release.Entry{{Path: "../escape.txt"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
-	err := Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme")
+	err := at(t, root, testKinds(root)).uninstall(io.Discard, "acme")
 	if !errors.Is(err, disk.ErrPathEscapes) {
 		t.Errorf("got %v, want ErrPathEscapes", err)
 	}
@@ -72,7 +72,7 @@ func TestUninstallCountsOnlyTheFilesItActuallyRemoved(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Uninstall(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(&out, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), "removed: 1 files") {
@@ -90,7 +90,7 @@ func TestUninstallStopsTheServiceBeforeRemovingItsFile(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	kinds := []driver.Driver{brokenStop{quadlet.New(root, (&podmanStub{}).run)}}
-	err := Uninstall(context.Background(), io.Discard, kinds, root, "acme")
+	err := at(t, root, kinds).uninstall(io.Discard, "acme")
 	if !errors.Is(err, errBrokenStop) {
 		t.Fatalf("got %v, want errBrokenStop", err)
 	}
@@ -106,7 +106,7 @@ func TestUninstallNamesTheSecretsItLeavesOnTheMachine(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Uninstall(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(&out, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), "DB_PASSWORD") {
@@ -121,7 +121,7 @@ func TestUninstallNamesTheImagesItLeavesInLocalStorage(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Uninstall(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(&out, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), "sha256:aaaa") {
@@ -136,7 +136,7 @@ func TestUninstallNamesTheSiteValuesItLeaves(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Uninstall(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(&out, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !strings.Contains(out.String(), siteFor(t, root, "acme").Path()) {
@@ -150,18 +150,18 @@ func TestUninstallLeavesStatusReportingNoRecord(t *testing.T) {
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
-	if err := Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(io.Discard, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
-	err := Status(context.Background(), io.Discard, testKinds(root), root, "acme")
-	if !errors.Is(err, ErrNoRecord) {
+	err := at(t, root, testKinds(root)).status(io.Discard, "acme")
+	if !errors.Is(err, release.ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
 }
 
 func TestUninstallFailsOnAMachineThatHoldsNoRecord(t *testing.T) {
-	err := Uninstall(context.Background(), io.Discard, testKinds("/"), t.TempDir(), "acme")
-	if !errors.Is(err, ErrNoRecord) {
+	err := at(t, t.TempDir(), testKinds("/")).uninstall(io.Discard, "acme")
+	if !errors.Is(err, release.ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
 }
@@ -185,7 +185,7 @@ func writeFile(t *testing.T, path, body string) {
 }
 
 func TestUninstallRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
-	err := Uninstall(context.Background(), io.Discard, testKinds("/"), t.TempDir(), "../../../etc/cron.daily")
+	err := at(t, t.TempDir(), testKinds("/")).uninstall(io.Discard, "../../../etc/cron.daily")
 	if !errors.Is(err, delivery.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
@@ -201,7 +201,7 @@ func TestUninstallDisablesATimerTheDeliveryCarried(t *testing.T) {
 		Start:    time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	stub := &podmanStub{}
-	if err := Uninstall(context.Background(), io.Discard, []driver.Driver{quadlet.New(root, stub.run)}, root, "acme"); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).uninstall(io.Discard, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl disable --now backup.timer") {
@@ -211,14 +211,14 @@ func TestUninstallDisablesATimerTheDeliveryCarried(t *testing.T) {
 
 func TestUninstallRemovesAUnitAnInstallPut(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+	if err := at(t, root, nil).install(writeBundle(t, "acme", "1.4.0")); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	unit := filepath.Join(root, "etc/containers/systemd/web.container")
 	if _, err := os.Stat(unit); err != nil {
 		t.Fatalf("the unit never reached the root: %v", err)
 	}
-	if err := Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(io.Discard, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := os.Stat(unit); !errors.Is(err, os.ErrNotExist) {
@@ -243,12 +243,12 @@ func TestUninstallNamesTheEditedFileItKept(t *testing.T) {
 func uninstallAfterAnEdit(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "acme-1.3"))); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "edited on site\n")
 	var out bytes.Buffer
-	if err := Uninstall(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(&out, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	return root, out.String()
@@ -262,7 +262,7 @@ func TestUninstallRefusesARecordThatNamesNoService(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
 	writeFile(t, filepath.Join(root, "etc/containers/systemd/web.container"), "[Container]\n")
-	err = Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme")
+	err = at(t, root, testKinds(root)).uninstall(io.Discard, "acme")
 	if !errors.Is(err, ErrRecordNamesNoService) {
 		t.Fatalf("got %v, want ErrRecordNamesNoService", err)
 	}

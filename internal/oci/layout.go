@@ -152,8 +152,8 @@ func (l *Images) copyBlob(archive *tar.Writer, digest string) error {
 	if _, err := io.Copy(archive, io.TeeReader(file, hash)); err != nil {
 		return fmt.Errorf("write %s: %w", digest, err)
 	}
-	if got := hex.EncodeToString(hash.Sum(nil)); got != name {
-		return fmt.Errorf("%s: %w, hashes to sha256:%s", digest, ErrBlobDigest, got)
+	if actual := hex.EncodeToString(hash.Sum(nil)); actual != name {
+		return fmt.Errorf("%s: %w, hashes to sha256:%s", digest, ErrBlobDigest, actual)
 	}
 	return nil
 }
@@ -165,8 +165,8 @@ func (l *Images) blob(digest string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %w", digest, ErrBlobMissing)
 	}
 	sum := sha256.Sum256(data)
-	if got := hex.EncodeToString(sum[:]); got != name {
-		return nil, fmt.Errorf("%s: %w, hashes to sha256:%s", digest, ErrBlobDigest, got)
+	if actual := hex.EncodeToString(sum[:]); actual != name {
+		return nil, fmt.Errorf("%s: %w, hashes to sha256:%s", digest, ErrBlobDigest, actual)
 	}
 	return data, nil
 }

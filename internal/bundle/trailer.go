@@ -19,31 +19,36 @@ func Trailer(length int64) []byte {
 	return binary.BigEndian.AppendUint64([]byte(magic), uint64(length))
 }
 
-func Payload(path string) (int64, int64, error) {
+type Payload struct {
+	Offset int64
+	Length int64
+}
+
+func ReadPayload(path string) (Payload, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, 0, fmt.Errorf("open %s: %w", path, err)
+		return Payload{}, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer file.Close()
 
 	info, err := file.Stat()
 	if err != nil {
-		return 0, 0, fmt.Errorf("read %s: %w", path, err)
+		return Payload{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	if info.Size() < int64(trailerSize) {
-		return 0, 0, ErrNoPayload
+		return Payload{}, ErrNoPayload
 	}
 	trailer := make([]byte, trailerSize)
 	if _, err := file.ReadAt(trailer, info.Size()-int64(trailerSize)); err != nil {
-		return 0, 0, fmt.Errorf("read the trailer of %s: %w", path, err)
+		return Payload{}, fmt.Errorf("read the trailer of %s: %w", path, err)
 	}
 	if string(trailer[:len(magic)]) != magic {
-		return 0, 0, ErrNoPayload
+		return Payload{}, ErrNoPayload
 	}
 	length := int64(binary.BigEndian.Uint64(trailer[len(magic):]))
 	offset := info.Size() - int64(trailerSize) - length
 	if length <= 0 || offset < 0 {
-		return 0, 0, ErrNoPayload
+		return Payload{}, ErrNoPayload
 	}
-	return offset, length, nil
+	return Payload{Offset: offset, Length: length}, nil
 }

@@ -48,14 +48,14 @@ func (m *Machine) Stop(ctx context.Context, services []delivery.Service) error {
 }
 
 func (m *Machine) do(ctx context.Context, lines []string) error {
-	for _, line := range lines {
-		fields := strings.Fields(line)
+	for _, text := range lines {
+		fields := strings.Fields(text)
 		if len(fields) == 0 {
 			continue
 		}
-		output, err := m.podman.run(ctx, nil, fields[0], fields[1:]...)
+		output, err := m.podman.run(ctx, line(fields...))
 		if err != nil {
-			return fmt.Errorf("%s: %w: %s", line, ErrCommand, strings.TrimSpace(string(output)))
+			return fmt.Errorf("%s: %w: %s", text, ErrCommand, strings.TrimSpace(string(output)))
 		}
 	}
 	return nil
@@ -64,7 +64,7 @@ func (m *Machine) do(ctx context.Context, lines []string) error {
 func (m *Machine) Running(ctx context.Context, services []delivery.Service) ([]delivery.Service, error) {
 	var running []delivery.Service
 	for _, service := range services {
-		output, err := m.podman.run(ctx, nil, "systemctl", "is-active", service.Name)
+		output, err := m.podman.run(ctx, line("systemctl", "is-active", service.Name))
 		state := strings.TrimSpace(string(output))
 		if state == "" && err != nil {
 			return nil, fmt.Errorf("systemctl is-active %s: %w: %s", service.Name, ErrCommand, err)

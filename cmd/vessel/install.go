@@ -9,10 +9,11 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/site"
 	"github.com/Moq77111113/vessel/internal/site/disk"
+	"github.com/Moq77111113/vessel/internal/site/values"
 )
 
 func newInstallCommand() *cobra.Command {
-	var values answers
+	var flags answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -24,27 +25,28 @@ func newInstallCommand() *cobra.Command {
 			"For an operator, prefer an executable made by build: it needs no vessel binary.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			job, err := jobOnDisk(args[0], values)
+			req, err := requestOnDisk(args[0], flags, command)
 			if err != nil {
 				return err
 			}
-			return preview(job, dry).Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			_, err = preview(machine(), dry).Run(command.Context(), req)
+			return err
 		},
 	}
-	values.bind(command)
+	flags.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
-func jobOnDisk(dir string, values answers) (site.Install, error) {
+func requestOnDisk(dir string, flags answers, command *cobra.Command) (site.InstallRequest, error) {
 	if !bundle.IsBundle(dir) {
-		return site.Install{}, fmt.Errorf("%s %w", dir, bundle.ErrNotABundle)
+		return site.InstallRequest{}, fmt.Errorf("%s %w", dir, bundle.ErrNotABundle)
 	}
 	artifact, err := bundle.OpenNamed(dir)
 	if err != nil {
-		return site.Install{}, err
+		return site.InstallRequest{}, err
 	}
-	return values.job(artifact)
+	return flags.request(artifact, command)
 }
 
 type answers struct {
@@ -57,32 +59,35 @@ func (a *answers) bind(command *cobra.Command) {
 	command.Flags().StringArrayVar(&a.files, "set-file", nil, "answer a secret from a file only root reads: --set-file NAME=path")
 }
 
-func (a answers) job(artifact *bundle.Bundle) (site.Install, error) {
-	set, err := site.ParseSet(a.set)
+func (a answers) request(artifact *bundle.Bundle, command *cobra.Command) (site.InstallRequest, error) {
+	set, err := values.ParseSet(a.set)
 	if err != nil {
-		return site.Install{}, err
+		return site.InstallRequest{}, err
 	}
-	files, err := site.ReadSetFile(a.files)
+	files, err := values.ReadSetFile(a.files)
 	if err != nil {
-		return site.Install{}, err
+		return site.InstallRequest{}, err
 	}
-	return site.Install{
+	return site.InstallRequest{
 		Artifact: artifact,
-		Root:     machineRoot,
 		Set:      set,
 		SetFile:  files,
-		Machines: machines,
-		Shell:    disk.NewShell(disk.Sh),
+		Out:      command.OutOrStdout(),
+		Work:     report.New(command.ErrOrStderr()),
 	}, nil
+}
+
+func machine() site.Install {
+	return site.Install{Root: machineRoot, Drivers: machines, Shell: disk.NewShell(disk.Sh)}
 }
 
 func bindDryRunFlag(command *cobra.Command, dry *bool) {
 	command.Flags().BoolVar(dry, "dry-run", false, "check and print what would change, change nothing")
 }
 
-func preview(job site.Install, dry bool) site.Install {
+func preview(install site.Install, dry bool) site.Install {
 	if dry {
-		return job.Preview()
+		return install.Preview()
 	}
-	return job
+	return install
 }

@@ -25,7 +25,7 @@ func TestStatusReportsTheVersionTheMachineHolds(t *testing.T) {
 		Start: time.Unix(1757000000, 0).UTC(), End: time.Unix(1757000060, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "acme 1.4.0") {
@@ -39,7 +39,7 @@ func TestStatusSaysTheInstallNeverFinished(t *testing.T) {
 		Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "never finished") {
@@ -62,7 +62,7 @@ func TestStatusNamesAFileThatDiffersSinceTheInstall(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "Differs") || !strings.Contains(out.String(), "web.container") {
@@ -96,7 +96,7 @@ func TestStatusNamesAFileItCannotRead(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "Unreadable") || !strings.Contains(out.String(), "web.container") {
@@ -115,7 +115,7 @@ func TestStatusNamesAFileAbsentSinceTheInstall(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "Absent") || !strings.Contains(out.String(), "web.container") {
@@ -135,7 +135,7 @@ func TestStatusPrintsWhatTheMachineIsRunning(t *testing.T) {
 	})
 	kind := downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, []driver.Driver{kind}, root, "acme"); err != nil {
+	if err := at(t, root, []driver.Driver{kind}).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "web.service down") {
@@ -144,7 +144,7 @@ func TestStatusPrintsWhatTheMachineIsRunning(t *testing.T) {
 }
 
 func TestStatusFailsOnAKindThisBuildDoesNotKnow(t *testing.T) {
-	err := Status(context.Background(), io.Discard, testKinds("/"), rootHoldingAComposeRecord(t), "acme")
+	err := at(t, rootHoldingAComposeRecord(t), testKinds("/")).status(io.Discard, "acme")
 	if !errors.Is(err, driver.ErrUnknownDriver) {
 		t.Errorf("got %v, want ErrUnknownMachine", err)
 	}
@@ -152,7 +152,7 @@ func TestStatusFailsOnAKindThisBuildDoesNotKnow(t *testing.T) {
 
 func TestStatusPrintsTheVersionBeforeItFails(t *testing.T) {
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds("/"), rootHoldingAComposeRecord(t), "acme"); err == nil {
+	if err := at(t, rootHoldingAComposeRecord(t), testKinds("/")).status(&out, "acme"); err == nil {
 		t.Fatal("status succeeded on a kind this build does not know")
 	}
 	if !strings.Contains(out.String(), "acme 1.4.0") {
@@ -172,8 +172,8 @@ func rootHoldingAComposeRecord(t *testing.T) string {
 
 func TestStatusSaysTheMachineHoldsNoRecord(t *testing.T) {
 	var out bytes.Buffer
-	err := Status(context.Background(), &out, testKinds("/"), t.TempDir(), "acme")
-	if !errors.Is(err, ErrNoRecord) {
+	err := at(t, t.TempDir(), testKinds("/")).status(&out, "acme")
+	if !errors.Is(err, release.ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
 }
@@ -192,7 +192,7 @@ func TestStatusWithNoNameSkipsADeliveryWithAnOddName(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	var out bytes.Buffer
-	if err := List(&out, root); err != nil {
+	if _, err := (List{Root: root}).Run(context.Background(), ListRequest{Out: &out}); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	if want := "acme 1.4.0"; !strings.Contains(out.String(), want) {
@@ -230,7 +230,7 @@ func siteFor(t *testing.T, root, name string) *values.Store {
 }
 
 func TestStatusRefusesANameThatLeavesTheTargetRoot(t *testing.T) {
-	err := Status(context.Background(), io.Discard, testKinds("/"), t.TempDir(), "../../../etc/cron.daily")
+	err := at(t, t.TempDir(), testKinds("/")).status(io.Discard, "../../../etc/cron.daily")
 	if !errors.Is(err, delivery.ErrDeliveryName) {
 		t.Errorf("got %v, want ErrDeliveryName", err)
 	}
@@ -247,7 +247,7 @@ func TestStatusPrintsTheVersionThisMachineCameFrom(t *testing.T) {
 		Start: time.Unix(1757000000, 0).UTC(), End: time.Unix(1757000060, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	want := "1.3.0, installed " + time.Unix(1756000000, 0).UTC().Format(time.RFC3339)
@@ -267,7 +267,7 @@ func TestStatusWithNoNameListsEveryDeliveryTheMachineHolds(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := List(&out, root); err != nil {
+	if _, err := (List{Root: root}).Run(context.Background(), ListRequest{Out: &out}); err != nil {
 		t.Fatalf("list: %v", err)
 	}
 	for _, want := range []string{"acme 1.4.0", "gateway 2.0.0"} {
@@ -284,7 +284,7 @@ func TestStatusFailsWhenAFileTheRecordNamesNoLongerMatches(t *testing.T) {
 		Files: []release.Entry{{Path: "etc/containers/systemd/web.container", Digest: "sha256:0000"}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
-	err := Status(context.Background(), io.Discard, testKinds(root), root, "acme")
+	err := at(t, root, testKinds(root)).status(io.Discard, "acme")
 	if !errors.Is(err, ErrRecordDoesNotMatch) {
 		t.Errorf("got %v, want ErrRecordDoesNotMatch", err)
 	}
@@ -292,11 +292,11 @@ func TestStatusFailsWhenAFileTheRecordNamesNoLongerMatches(t *testing.T) {
 
 func TestStatusNamesTheVersionAnInstallPutOnTheMachine(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+	if err := at(t, root, nil).install(writeBundle(t, "acme", "1.4.0")); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "acme 1.4.0") {
@@ -311,7 +311,7 @@ func TestStatusSaysTheDeliveryIsInsecure(t *testing.T) {
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "insecure") {
@@ -325,7 +325,7 @@ func TestStatusNamesAnInsecureDeliveryThatNeverFinished(t *testing.T) {
 		Name: "acme", Version: "1.4.0", Machine: "quadlet", Insecure: true, Start: time.Unix(1, 0).UTC(),
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	for _, want := range []string{"insecure", "never finished"} {
@@ -342,7 +342,7 @@ func TestStatusNamesTheStepAnInstallStoppedAfter(t *testing.T) {
 		Steps: []release.Step{release.StepValues, release.StepActions, release.StepFiles},
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "stopped after files") {
@@ -358,7 +358,7 @@ func TestStatusNamesAnActionThatMayHaveStoppedHalfway(t *testing.T) {
 		Actions: []release.Action{{Command: "mkdir -p /srv/acme"}},
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "mkdir -p /srv/acme") {
@@ -370,7 +370,7 @@ func TestStatusOnAnOpenRecordOffersResume(t *testing.T) {
 	root := t.TempDir()
 	writeRecord(t, root, release.Record{Name: "acme", Version: "1.4.0", Machine: "quadlet", Start: time.Unix(1, 0).UTC()})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "run resume") {
@@ -385,7 +385,7 @@ func TestStatusNamesTheVersionToRollBackTo(t *testing.T) {
 		Prior: release.Release{Version: "1.3.0", Root: "sha256:aa"},
 	})
 	var out bytes.Buffer
-	if err := Status(context.Background(), &out, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).status(&out, "acme"); err != nil {
 		t.Fatalf("status: %v", err)
 	}
 	if !strings.Contains(out.String(), "the 1.3.0 installer") {
@@ -401,7 +401,7 @@ func TestStatusSaysARecordNamesNoService(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
 	var out bytes.Buffer
-	Status(context.Background(), &out, testKinds(root), root, "acme")
+	at(t, root, testKinds(root)).status(&out, "acme")
 	if !strings.Contains(out.String(), ErrRecordNamesNoService.Error()) {
 		t.Errorf("got %q, want it to say the record names no service", out.String())
 	}

@@ -51,11 +51,11 @@ func (p *podman) load(ctx context.Context, layout *oci.Images, i int) ([]byte, e
 	if _, err := archive.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("rewind the image archive: %w", err)
 	}
-	return p.run(ctx, archive, "podman", "load")
+	return p.run(ctx, Command{Line: []string{"podman", "load"}, Stdin: archive})
 }
 
 func (p *podman) Ready(ctx context.Context) error {
-	output, err := p.run(ctx, nil, "podman", "image", "ls")
+	output, err := p.run(ctx, line("podman", "image", "ls"))
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrPodmanBroken, strings.TrimSpace(string(output)))
 	}
@@ -63,7 +63,7 @@ func (p *podman) Ready(ctx context.Context) error {
 }
 
 func (p *podman) Secrets(ctx context.Context) ([]string, error) {
-	output, err := p.run(ctx, nil, "podman", "secret", "ls", "--format", "{{.Name}}")
+	output, err := p.run(ctx, line("podman", "secret", "ls", "--format", "{{.Name}}"))
 	if err != nil {
 		return nil, fmt.Errorf("podman secret ls: %w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -77,7 +77,7 @@ func (p *podman) Secrets(ctx context.Context) ([]string, error) {
 }
 
 func (p *podman) CreateSecret(ctx context.Context, name, value string) error {
-	output, err := p.run(ctx, strings.NewReader(value), "podman", "secret", "create", name, "-")
+	output, err := p.run(ctx, Command{Line: []string{"podman", "secret", "create", name, "-"}, Stdin: strings.NewReader(value)})
 	if err != nil {
 		return fmt.Errorf("podman secret create %s: %w: %s", name, err, strings.TrimSpace(string(output)))
 	}
@@ -85,7 +85,7 @@ func (p *podman) CreateSecret(ctx context.Context, name, value string) error {
 }
 
 func (p *podman) Version(ctx context.Context) (string, error) {
-	output, err := p.run(ctx, nil, "podman", "--version")
+	output, err := p.run(ctx, line("podman", "--version"))
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrPodmanMissing, strings.TrimSpace(string(output)))
 	}

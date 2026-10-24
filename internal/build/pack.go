@@ -14,12 +14,16 @@ import (
 
 var ErrNotAFile = errors.New("is not a regular file")
 
-func Pack(stub io.Reader, dir string, out io.Writer, work report.Report) error {
+type packer struct {
+	work report.Report
+}
+
+func (p packer) pack(stub io.Reader, dir string, out io.Writer) error {
 	if _, err := io.Copy(out, stub); err != nil {
 		return fmt.Errorf("copy the stub: %w", err)
 	}
 	counter := &counting{writer: out}
-	if err := writeTar(counter, dir, work); err != nil {
+	if err := writeTar(counter, dir, p.work); err != nil {
 		return err
 	}
 	if _, err := out.Write(bundle.Trailer(counter.bytes)); err != nil {
@@ -28,10 +32,10 @@ func Pack(stub io.Reader, dir string, out io.Writer, work report.Report) error {
 	return nil
 }
 
-func writeTar(out io.Writer, bundle string, work report.Report) error {
-	root, err := os.OpenRoot(bundle)
+func writeTar(out io.Writer, dir string, work report.Report) error {
+	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", bundle, err)
+		return fmt.Errorf("open %s: %w", dir, err)
 	}
 	defer root.Close()
 	archive := tar.NewWriter(out)
@@ -46,7 +50,7 @@ func writeTar(out io.Writer, bundle string, work report.Report) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("pack %s: %w", bundle, err)
+		return fmt.Errorf("pack %s: %w", dir, err)
 	}
 	return archive.Close()
 }

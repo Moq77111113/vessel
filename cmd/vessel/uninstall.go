@@ -12,7 +12,9 @@ func newUninstall() *cobra.Command {
 		Short: "Take a delivery off this machine",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			return site.Uninstall(command.Context(), command.OutOrStdout(), machines, machineRoot, args[0])
+			uninstall := site.Uninstall{Root: machineRoot, Drivers: machines}
+			_, err := uninstall.Run(command.Context(), site.UninstallRequest{Name: args[0], Out: command.OutOrStdout()})
+			return err
 		},
 	}
 	return command

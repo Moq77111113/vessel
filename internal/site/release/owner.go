@@ -14,7 +14,7 @@ func Owners(root, name string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		entry, _, err := NewRecords(dir).Read()
+		entry, err := NewRecords(dir).Read()
 		if err != nil {
 			return nil, err
 		}

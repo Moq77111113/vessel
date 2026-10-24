@@ -8,7 +8,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
-func digestsOf(images []bundle.Image) []string {
+func imageDigests(images []bundle.Image) []string {
 	digests := make([]string, 0, len(images))
 	for _, image := range images {
 		digests = append(digests, image.Digest)
@@ -16,7 +16,7 @@ func digestsOf(images []bundle.Image) []string {
 	return digests
 }
 
-func namesOf(secrets map[string]string) []string {
+func secretNames(secrets map[string]string) []string {
 	names := make([]string, 0, len(secrets))
 	for name := range secrets {
 		names = append(names, name)

@@ -53,11 +53,11 @@ func (m *Machine) Check(ctx context.Context) error {
 }
 
 func CheckPodman(version string) error {
-	major, minor, err := majorMinor(version)
+	podman, err := parseRelease(version)
 	if err != nil {
 		return err
 	}
-	if major > minPodmanMajor || (major == minPodmanMajor && minor >= minPodmanMinor) {
+	if podman.atLeast(release{minPodmanMajor, minPodmanMinor}) {
 		return nil
 	}
 	return fmt.Errorf("%w: found %s, want %d.%d or newer",
@@ -92,20 +92,32 @@ func checkWritable(root string) error {
 	return os.Remove(probe.Name())
 }
 
-func majorMinor(version string) (int, int, error) {
+type release struct {
+	major int
+	minor int
+}
+
+func (r release) atLeast(other release) bool {
+	if r.major != other.major {
+		return r.major > other.major
+	}
+	return r.minor >= other.minor
+}
+
+func parseRelease(version string) (release, error) {
 	fields := strings.SplitN(strings.TrimSpace(version), ".", 3)
 	if len(fields) < 2 {
-		return 0, 0, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
+		return release{}, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
 	}
 	major, err := strconv.Atoi(fields[0])
 	if err != nil {
-		return 0, 0, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
+		return release{}, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
 	}
 	minor, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return 0, 0, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
+		return release{}, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
 	}
-	return major, minor, nil
+	return release{major, minor}, nil
 }
 
 func readVersion(banner string) string {

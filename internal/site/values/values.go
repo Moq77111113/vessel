@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/Moq77111113/vessel/pkg/delivery"
@@ -30,23 +31,16 @@ type Secrets struct {
 }
 
 type Values struct {
-	site    *Store
-	shell   Shell
-	set     map[string]string
-	secrets map[string]bool
-	remove  func(secret string) string
+	Store   *Store
+	Shell   Shell
+	Set     map[string]string
+	Secrets Secrets
 }
 
-func NewValues(site *Store, shell Shell, set map[string]string, secrets Secrets) *Values {
-	machineSecrets := make(map[string]bool, len(secrets.Names))
-	for _, name := range secrets.Names {
-		machineSecrets[name] = true
-	}
-	return &Values{site: site, shell: shell, set: set, secrets: machineSecrets, remove: secrets.Remove}
-}
+func (s Secrets) holds(name string) bool { return slices.Contains(s.Names, name) }
 
-func (v *Values) Resolve(ctx context.Context, variables []delivery.Variable) (Resolution, error) {
-	values, err := v.site.Read()
+func (v Values) Resolve(ctx context.Context, variables []delivery.Variable) (Resolution, error) {
+	values, err := v.Store.Read()
 	if err != nil {
 		return Resolution{}, err
 	}
@@ -55,7 +49,7 @@ func (v *Values) Resolve(ctx context.Context, variables []delivery.Variable) (Re
 	}
 	resolution := Resolution{Values: map[string]string{}, Secrets: map[string]string{}}
 	for _, variable := range variables {
-		if variable.Secret && v.secrets[variable.Name] {
+		if variable.Secret && v.Secrets.holds(variable.Name) {
 			continue
 		}
 		value, err := v.value(ctx, variable, values)
@@ -74,13 +68,13 @@ func (v *Values) Resolve(ctx context.Context, variables []delivery.Variable) (Re
 	return resolution, nil
 }
 
-func (v *Values) checkSet(variables []delivery.Variable) error {
+func (v Values) checkSet(variables []delivery.Variable) error {
 	byName := make(map[string]delivery.Variable, len(variables))
 	for _, variable := range variables {
 		byName[variable.Name] = variable
 	}
-	names := make([]string, 0, len(v.set))
-	for name := range v.set {
+	names := make([]string, 0, len(v.Set))
+	for name := range v.Set {
 		names = append(names, name)
 	}
 	sort.Strings(names)
@@ -89,24 +83,24 @@ func (v *Values) checkSet(variables []delivery.Variable) error {
 		if !ok {
 			return fmt.Errorf("--set %s: %w", name, ErrSetIsUnknown)
 		}
-		if variable.Secret && v.secrets[name] {
+		if variable.Secret && v.Secrets.holds(name) {
 			return fmt.Errorf("--set %s: remove it with sudo %s, then install again: %w",
-				name, v.remove(name), ErrSecretHeld)
+				name, v.Secrets.Remove(name), ErrSecretHeld)
 		}
 	}
 	return nil
 }
 
-func (v *Values) value(ctx context.Context, variable delivery.Variable,
+func (v Values) value(ctx context.Context, variable delivery.Variable,
 	values map[string]string) (string, error) {
-	if value, ok := v.set[variable.Name]; ok {
+	if value, ok := v.Set[variable.Name]; ok {
 		return value, nil
 	}
 	if value, ok := values[variable.Name]; ok && !variable.Secret {
 		return value, nil
 	}
 	if variable.From != "" {
-		value, err := v.shell.Value(ctx, variable.From)
+		value, err := v.Shell.Value(ctx, variable.From)
 		if err != nil {
 			return "", fmt.Errorf("%s %w: %s", variable.Name, ErrNoValue, err)
 		}

@@ -14,8 +14,8 @@ var (
 	ErrFileTaken  = errors.New("belongs to another delivery")
 )
 
-func (i Install) claim(current release.Record, files []delivery.File) error {
-	others, err := release.Owners(i.Root, i.Artifact.Config.Name)
+func (i Install) claim(name string, current release.Record, files []delivery.File) error {
+	others, err := release.Owners(i.Root, name)
 	if err != nil {
 		return err
 	}
@@ -24,8 +24,8 @@ func (i Install) claim(current release.Record, files []delivery.File) error {
 		if release.Holds(current.Files, file.Path) {
 			continue
 		}
-		if delivery, ok := others[file.Path]; ok {
-			return fmt.Errorf("/%s %w, %s", file.Path, ErrFileTaken, delivery)
+		if owner, ok := others[file.Path]; ok {
+			return fmt.Errorf("/%s %w, %s", file.Path, ErrFileTaken, owner)
 		}
 		holds, err := tree.Holds(file.Path)
 		if err != nil {

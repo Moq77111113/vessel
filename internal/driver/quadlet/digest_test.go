@@ -27,7 +27,8 @@ func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
 	m := New("/", Exec)
 	skipUnlessPodmanReady(t, m)
 
-	dir, digest, root := realImageLayout(t, realImageRef)
+	image := realImageLayout(t, realImageRef)
+	dir, digest, root := image.dir, image.digest, image.root
 	lay, err := oci.Open(dir, root)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
@@ -58,7 +59,13 @@ func skipUnlessPodmanReady(t *testing.T, m *Machine) {
 	}
 }
 
-func realImageLayout(t *testing.T, ref string) (string, string, string) {
+type realImage struct {
+	dir    string
+	digest string
+	root   string
+}
+
+func realImageLayout(t *testing.T, ref string) realImage {
 	t.Helper()
 	base := mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), types.OCIConfigJSON)
 	body, err := random.Layer(128, types.OCILayer)
@@ -94,7 +101,7 @@ func realImageLayout(t *testing.T, ref string) (string, string, string) {
 	if err := path.WriteBlob(root, io.NopCloser(bytes.NewReader(index))); err != nil {
 		t.Fatalf("write the index blob: %v", err)
 	}
-	return dir, digest.String(), root.String()
+	return realImage{dir: dir, digest: digest.String(), root: root.String()}
 }
 
 func podmanImageDigest(t *testing.T, ref string) string {

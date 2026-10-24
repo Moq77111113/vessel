@@ -15,12 +15,12 @@ import (
 var ErrPathEscapes = errors.New("leaves the target directory")
 
 func CarriesABundle(path string) bool {
-	_, _, err := bundle.Payload(path)
+	_, err := bundle.ReadPayload(path)
 	return err == nil
 }
 
 func Unpack(path, dir string) error {
-	offset, length, err := bundle.Payload(path)
+	payload, err := bundle.ReadPayload(path)
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,7 @@ func Unpack(path, dir string) error {
 	}
 	defer file.Close()
 
-	archive := tar.NewReader(io.NewSectionReader(file, offset, length))
+	archive := tar.NewReader(io.NewSectionReader(file, payload.Offset, payload.Length))
 	for {
 		header, err := archive.Next()
 		if err == io.EOF {

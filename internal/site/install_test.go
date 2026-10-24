@@ -26,6 +26,7 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/site/disk"
 	"github.com/Moq77111113/vessel/internal/site/release"
+	"github.com/Moq77111113/vessel/internal/site/values"
 	"github.com/Moq77111113/vessel/pkg/delivery"
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
@@ -46,7 +47,7 @@ variables:
 	})
 	root := t.TempDir()
 	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
-	if err := jobFor(t, root, dir, nil, set).Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
+	if err := at(t, root, nil).job(dir, set).Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(root, "etc/acme/realm.json"))
@@ -62,7 +63,7 @@ func TestInstallWritesNothingWhenAValueIsMissing(t *testing.T) {
 	dir := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
 	root := t.TempDir()
 	stub := &podmanStub{}
-	if err := runInstall(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)}); err == nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).install(dir); err == nil {
 		t.Fatal("the install succeeded with no value for PUBLIC_HOST")
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd")); err == nil {
@@ -88,7 +89,7 @@ files:
 	})
 	root := t.TempDir()
 	stub := &podmanStub{watchFile: filepath.Join(root, "etc/acme/realm.json")}
-	if err := runInstall(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).install(dir); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if !stub.sawFileAtLoad {
@@ -109,7 +110,7 @@ variables:
 		})
 	root := t.TempDir()
 	stub := &podmanStub{}
-	job := jobFor(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)}, nil)
+	job := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).job(dir, nil)
 	job.SetFile = dbPassword
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
@@ -136,7 +137,7 @@ variables:
 func TestInstallStartsEveryServiceTheUnitsGenerate(t *testing.T) {
 	stub := &podmanStub{}
 	root := t.TempDir()
-	if err := runInstall(t, root, twoUnitBundle(t), []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).install(twoUnitBundle(t)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl start db.service web.service") {
@@ -147,7 +148,7 @@ func TestInstallStartsEveryServiceTheUnitsGenerate(t *testing.T) {
 func TestInstallAsksSystemdWhetherEveryServiceCameUp(t *testing.T) {
 	stub := &podmanStub{}
 	root := t.TempDir()
-	if err := runInstall(t, root, twoUnitBundle(t), []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).install(twoUnitBundle(t)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	for _, call := range []string{"systemctl is-active db.service", "systemctl is-active web.service"} {
@@ -159,7 +160,7 @@ func TestInstallAsksSystemdWhetherEveryServiceCameUp(t *testing.T) {
 
 func TestASecondInstallLeavesAFileItDidNotChangeAlone(t *testing.T) {
 	root, dir := t.TempDir(), writeBundle(t, "acme", "1.4.0")
-	if err := runInstall(t, root, dir, nil); err != nil {
+	if err := at(t, root, nil).install(dir); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	unit := filepath.Join(root, "etc/containers/systemd/web.container")
@@ -167,7 +168,7 @@ func TestASecondInstallLeavesAFileItDidNotChangeAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if err := runInstall(t, root, dir, nil); err != nil {
+	if err := at(t, root, nil).install(dir); err != nil {
 		t.Fatalf("second install: %v", err)
 	}
 	after, err := os.Stat(unit)
@@ -190,7 +191,7 @@ func twoUnitBundle(t *testing.T) string {
 func TestInstallFailsWhenAServiceDidNotStart(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
-	err := runInstall(t, root, dir, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}})
+	err := at(t, root, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}}).install(dir)
 	if err == nil {
 		t.Fatal("install succeeded with a service that is down")
 	}
@@ -206,7 +207,7 @@ func TestInstallNamesEveryServiceThatDidNotStart(t *testing.T) {
 	root := t.TempDir()
 	dir := twoUnitBundle(t)
 	down := []string{"db.service", "web.service"}
-	err := runInstall(t, root, dir, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), down}})
+	err := at(t, root, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), down}}).install(dir)
 	if err == nil {
 		t.Fatal("install succeeded with two services down")
 	}
@@ -220,15 +221,12 @@ func TestInstallNamesEveryServiceThatDidNotStart(t *testing.T) {
 func TestInstallLeavesTheRecordOpenWhenAServiceDidNotStart(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
-	if err := runInstall(t, root, dir, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}}); err == nil {
+	if err := at(t, root, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}}).install(dir); err == nil {
 		t.Fatal("install succeeded with a service that is down")
 	}
-	record, found, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
-	}
-	if !found {
-		t.Fatal("no record after an install that failed")
 	}
 	if record.Done() {
 		t.Error("the record is closed even though a service failed to start")
@@ -288,15 +286,12 @@ func TestTheRecordDigestMatchesTheFileOnDisk(t *testing.T) {
 
 func recordAfterAnInstall(t *testing.T, root string) release.Record {
 	t.Helper()
-	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+	if err := at(t, root, nil).install(writeBundle(t, "acme", "1.4.0")); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	record, found, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
-	}
-	if !found {
-		t.Fatal("no record after an install that succeeded")
 	}
 	return record
 }
@@ -309,12 +304,9 @@ func TestAFailedInstallLeavesAnOpenRecord(t *testing.T) {
 	if err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
-	record, found, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
-	}
-	if !found {
-		t.Fatal("no record after an install that failed midway")
 	}
 	if record.Done() {
 		t.Error("the record is closed after an install that failed")
@@ -334,31 +326,9 @@ func writeBundle(t *testing.T, delivery, version string) string {
 	})
 }
 
-func jobFor(t *testing.T, root, dir string, kinds []driver.Driver, set map[string]string) Install {
-	t.Helper()
-	if kinds == nil {
-		kinds = []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}
-	}
-	artifact, err := bundle.OpenNamed(dir)
-	if err != nil {
-		t.Fatalf("open the bundle: %v", err)
-	}
-	return Install{Artifact: artifact, Root: root, Set: set, Machines: kinds, Shell: disk.NewShell(noCapture)}
-}
-
-func runInstall(t *testing.T, root, dir string, kinds []driver.Driver) error {
-	t.Helper()
-	return jobFor(t, root, dir, kinds, nil).Run(context.Background(), io.Discard, report.New(io.Discard))
-}
-
-func runUpgrade(t *testing.T, root, dir string, kinds []driver.Driver) error {
-	t.Helper()
-	return jobFor(t, root, dir, kinds, nil).Upgrade(context.Background(), io.Discard, report.New(io.Discard))
-}
-
 func installWithABrokenImageLoad(t *testing.T, root, dir string) error {
 	t.Helper()
-	return runInstall(t, root, dir, []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}})
+	return at(t, root, []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}}).install(dir)
 }
 
 type brokenImages struct {
@@ -383,7 +353,8 @@ type podmanStub struct {
 	stdinErr      error
 }
 
-func (p *podmanStub) run(_ context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
+func (p *podmanStub) run(_ context.Context, command quadlet.Command) ([]byte, error) {
+	stdin, name, args := command.Stdin, command.Line[0], command.Line[1:]
 	p.calls = append(p.calls, strings.TrimSpace(name+" "+strings.Join(args, " ")))
 	switch {
 	case len(args) > 0 && args[0] == "--version":
@@ -456,22 +427,16 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 		}
 	}
 	out := filepath.Join(t.TempDir(), "bundle")
-	job := build.Job{Source: source, Platform: "linux/amd64"}
-	if err := build.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds("/"), job, out); err != nil {
+	link := build.Link{Drivers: testKinds("/")}
+	if _, err := link.Run(context.Background(), build.LinkRequest{Source: source, Platform: "linux/amd64", Dir: out, Work: report.New(io.Discard)}); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
 }
 
-func TestSetRefusesAnEmptyValue(t *testing.T) {
-	if _, err := ParseSet([]string{"PUBLIC_HOST="}); !errors.Is(err, ErrSetIsEmpty) {
-		t.Errorf("got %v, want ErrSetIsEmpty", err)
-	}
-}
-
 func TestInstallRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T) {
 	root := t.TempDir()
-	err := runInstall(t, root, unknownKindBundle(t), nil)
+	err := at(t, root, nil).install(unknownKindBundle(t))
 	if !errors.Is(err, driver.ErrUnknownDriver) {
 		t.Fatalf("got %v, want ErrUnknownMachine", err)
 	}
@@ -532,7 +497,7 @@ func emptyLayout(t *testing.T) string {
 
 func TestInstallRefusesABundleWhoseNameLeavesTheTargetRoot(t *testing.T) {
 	root := t.TempDir()
-	err := runInstall(t, root, hostileBundle(t, "../../../etc/cron.daily"), nil)
+	err := at(t, root, nil).install(hostileBundle(t, "../../../etc/cron.daily"))
 	if !errors.Is(err, delivery.ErrDeliveryName) {
 		t.Fatalf("got %v, want ErrDeliveryName", err)
 	}
@@ -577,12 +542,12 @@ variables:
 		})
 	root := t.TempDir()
 	kinds := []driver.Driver{heldSecrets{quadlet.New(root, (&podmanStub{}).run), []string{"OLD_PASSWORD"}}}
-	job := jobFor(t, root, dir, kinds, nil)
+	job := at(t, root, kinds).job(dir, nil)
 	job.SetFile = map[string]string{"NEW_PASSWORD": "hunter2"}
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	record, _, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -603,16 +568,16 @@ variables:
 `,
 		})
 	root := t.TempDir()
-	first := jobFor(t, root, dir, []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}, nil)
+	first := at(t, root, []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}).job(dir, nil)
 	first.SetFile = map[string]string{"NEW_PASSWORD": "hunter2"}
 	if err := first.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	second := []driver.Driver{heldSecrets{quadlet.New(root, (&podmanStub{}).run), []string{"NEW_PASSWORD"}}}
-	if err := runUpgrade(t, root, dir, second); err != nil {
+	if err := at(t, root, second).upgrade(dir); err != nil {
 		t.Fatalf("second install: %v", err)
 	}
-	record, _, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -623,10 +588,10 @@ variables:
 
 func TestTheRecordNamesThePlatformTheBundleWasLinkedFor(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
+	if err := at(t, root, nil).install(writeBundle(t, "acme", "1.4.0")); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	record, _, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -639,7 +604,7 @@ func TestAnInstallThatDiesWritingAFileStoresTheSiteValues(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/acme"), "an ordinary file where the delivery wants a directory")
 	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
-	job := jobFor(t, root, blockedFileBundle(t), testKinds(root), set)
+	job := at(t, root, testKinds(root)).job(blockedFileBundle(t), set)
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
 		t.Fatal("the install succeeded even though no file could be written")
 	}
@@ -655,7 +620,7 @@ func TestAnInstallThatDiesWritingAFileStoresTheSiteValues(t *testing.T) {
 func TestAnInstallThatDiesWritingAFileSaysTheMachineIsPartwayThrough(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/acme"), "an ordinary file where the delivery wants a directory")
-	job := jobFor(t, root, blockedFileBundle(t), testKinds(root), map[string]string{"PUBLIC_HOST": "dmas.acme.local"})
+	job := at(t, root, testKinds(root)).job(blockedFileBundle(t), map[string]string{"PUBLIC_HOST": "dmas.acme.local"})
 	err := job.Run(context.Background(), io.Discard, report.New(io.Discard))
 	if err == nil {
 		t.Fatal("the install succeeded even though no file could be written")
@@ -705,7 +670,7 @@ func TestInstallReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testin
 		}
 	})
 	kinds := []driver.Driver{unreadyMachine{quadlet.New(root, (&podmanStub{}).run)}}
-	err := runInstall(t, root, dir, kinds)
+	err := at(t, root, kinds).install(dir)
 	if !errors.Is(err, driver.ErrNotReady) {
 		t.Fatalf("got %v, want the machine-not-ready error", err)
 	}
@@ -726,10 +691,10 @@ func (h heldSecrets) Secrets(context.Context) ([]string, error) { return h.names
 
 func TestTheRecordSaysTheBundleIsInsecure(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkInsecureBundle(t), nil); err != nil {
+	if err := at(t, root, nil).install(linkInsecureBundle(t)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	record, _, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -748,8 +713,8 @@ func linkInsecureBundle(t *testing.T) string {
 	}
 	writeFile(t, filepath.Join(source, "vessel.yaml"), string(body))
 	out := filepath.Join(t.TempDir(), "bundle")
-	job := build.Job{Source: source, Platform: "linux/amd64", InsecureUnsigned: true}
-	if err := build.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds("/"), job, out); err != nil {
+	link := build.Link{Drivers: testKinds("/")}
+	if _, err := link.Run(context.Background(), build.LinkRequest{Source: source, Platform: "linux/amd64", InsecureUnsigned: true, Dir: out, Work: report.New(io.Discard)}); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
@@ -757,7 +722,7 @@ func linkInsecureBundle(t *testing.T) string {
 
 func TestInstallSaysTheBundleIsInsecure(t *testing.T) {
 	var out bytes.Buffer
-	job := jobFor(t, t.TempDir(), linkInsecureBundle(t), nil, nil)
+	job := at(t, t.TempDir(), nil).job(linkInsecureBundle(t), nil)
 	if err := job.Run(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
@@ -780,7 +745,7 @@ func TestAnInstallCutAtTheImagesNamesTheStepsBefore(t *testing.T) {
 	if err := installWithABrokenImageLoad(t, root, writeBundle(t, "acme", "1.4.0")); err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
-	entry, _, err := recordsFor(t, root, "acme").Read()
+	entry, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -792,12 +757,12 @@ func TestAnInstallCutAtTheImagesNamesTheStepsBefore(t *testing.T) {
 
 func TestAFinishedActionCarriesItsEndInTheRecord(t *testing.T) {
 	root := t.TempDir()
-	job := jobFor(t, root, linkTestBundle(t, fixture(t, "one-action")), nil, nil)
+	job := at(t, root, nil).job(linkTestBundle(t, fixture(t, "one-action")), nil)
 	job.Shell = disk.NewShell(quietShell)
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	entry, _, err := recordsFor(t, root, "acme").Read()
+	entry, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -808,10 +773,10 @@ func TestAFinishedActionCarriesItsEndInTheRecord(t *testing.T) {
 
 func TestAnActionThatFailsLeavesNoOpenActionInTheRecord(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "one-action")), nil); err == nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "one-action"))); err == nil {
 		t.Fatal("the install succeeded with an action that failed")
 	}
-	entry, _, err := recordsFor(t, root, "acme").Read()
+	entry, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -825,14 +790,14 @@ func TestAnActionThatFailsLeavesNoOpenActionInTheRecord(t *testing.T) {
 
 func TestAnActionKilledBySignalStaysOpenInTheRecord(t *testing.T) {
 	root := t.TempDir()
-	job := jobFor(t, root, linkTestBundle(t, fixture(t, "one-action")), nil, nil)
+	job := at(t, root, nil).job(linkTestBundle(t, fixture(t, "one-action")), nil)
 	job.Shell = disk.NewShell(func(ctx context.Context, _ string) ([]byte, error) {
 		return disk.Sh(ctx, "kill -9 $$")
 	})
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
 		t.Fatal("the install succeeded with an action killed by a signal")
 	}
-	entry, _, err := recordsFor(t, root, "acme").Read()
+	entry, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -868,7 +833,7 @@ func TestInstallRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
 		t.Fatal("install succeeded with a broken image load")
 	}
 	stub := &podmanStub{}
-	err := runInstall(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)})
+	err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).install(dir)
 	if !errors.Is(err, ErrRecordOpen) {
 		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
@@ -889,7 +854,7 @@ func TestInstallRefusesAnInstallAnOlderVesselLeftHalfway(t *testing.T) {
 		t.Fatalf("read the fixture: %v", err)
 	}
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
-	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); !errors.Is(err, ErrRecordOpen) {
+	if err := at(t, root, nil).install(writeBundle(t, "acme", "1.4.0")); !errors.Is(err, ErrRecordOpen) {
 		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
 }
@@ -900,72 +865,48 @@ func TestTheRefusalOffersResume(t *testing.T) {
 	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
-	err := runInstall(t, root, dir, nil)
+	err := at(t, root, nil).install(dir)
 	if err == nil || !strings.Contains(err.Error(), "run resume") {
 		t.Errorf("got %v, want resume offered", err)
 	}
 }
 
 func TestInstallRefusesASecretPassedWithSet(t *testing.T) {
-	job := jobFor(t, t.TempDir(), dryRunBundle(t), nil, dbPassword)
-	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, ErrSecretOnCommandLine) {
-		t.Fatalf("got %v, want ErrSecretOnCommandLine", err)
+	job := at(t, t.TempDir(), nil).job(dryRunBundle(t), dbPassword)
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, values.ErrSecretOnCommandLine) {
+		t.Fatalf("got %v, want values.ErrSecretOnCommandLine", err)
 	}
 }
 
 func TestInstallRefusesAPlainValuePassedWithSetFile(t *testing.T) {
-	job := jobFor(t, t.TempDir(), linkTestBundle(t, fixture(t, "one-value")), nil, nil)
+	job := at(t, t.TempDir(), nil).job(linkTestBundle(t, fixture(t, "one-value")), nil)
 	job.SetFile = map[string]string{"PUBLIC_HOST": "a.acme.local"}
-	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, ErrSetFilePlain) {
-		t.Fatalf("got %v, want ErrSetFilePlain", err)
-	}
-}
-
-func TestReadSetFileTakesTheValueWithoutItsNewline(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "db-password")
-	if err := os.WriteFile(path, []byte("hunter2\n"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	values, err := ReadSetFile([]string{"DB_PASSWORD=" + path})
-	if err != nil {
-		t.Fatalf("ReadSetFile: %v", err)
-	}
-	if values["DB_PASSWORD"] != "hunter2" {
-		t.Errorf("got %q, want %q", values["DB_PASSWORD"], "hunter2")
-	}
-}
-
-func TestReadSetFileRefusesAFileOtherUsersCanRead(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "db-password")
-	if err := os.WriteFile(path, []byte("hunter2"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if _, err := ReadSetFile([]string{"DB_PASSWORD=" + path}); !errors.Is(err, ErrSecretFileOpen) {
-		t.Fatalf("got %v, want ErrSecretFileOpen", err)
+	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); !errors.Is(err, values.ErrSetFilePlain) {
+		t.Fatalf("got %v, want values.ErrSetFilePlain", err)
 	}
 }
 
 func TestInstallRefusesAFileNoDeliveryPutThere(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "written by the admin\n")
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); !errors.Is(err, ErrFileExists) {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "acme-1.3"))); !errors.Is(err, ErrFileExists) {
 		t.Fatalf("got %v, want ErrFileExists", err)
 	}
 }
 
 func TestInstallRefusesAFileAnotherDeliveryOwns(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "acme-1.3"))); err != nil {
 		t.Fatalf("install acme: %v", err)
 	}
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "billing")), nil); !errors.Is(err, ErrFileTaken) {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "billing"))); !errors.Is(err, ErrFileTaken) {
 		t.Fatalf("got %v, want ErrFileTaken", err)
 	}
 }
 
 func TestInstallWritesTheModeTheDescriptorDeclares(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "file-mode")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "file-mode"))); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	info, err := os.Stat(filepath.Join(root, "etc/acme/token"))
@@ -979,10 +920,10 @@ func TestInstallWritesTheModeTheDescriptorDeclares(t *testing.T) {
 
 func TestInstallRecordsTheServicesItStarts(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, twoUnitBundle(t), []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}).install(twoUnitBundle(t)); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	record, _, err := recordsFor(t, root, "acme").Read()
+	record, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}

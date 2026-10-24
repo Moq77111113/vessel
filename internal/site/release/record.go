@@ -2,6 +2,7 @@ package release
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -109,9 +110,9 @@ func Deliveries(root string) ([]string, error) {
 	return names, nil
 }
 
-func (r *Records) Read() (Record, bool, error) { return read(filepath.Join(r.dir, recordName)) }
+func (r *Records) Read() (Record, error) { return read(filepath.Join(r.dir, recordName)) }
 
-func (r *Records) Previous() (Record, bool, error) {
+func (r *Records) Previous() (Record, error) {
 	return read(filepath.Join(r.dir, previousName))
 }
 
@@ -124,8 +125,9 @@ func (r *Records) Write(record Record) error {
 		return err
 	}
 	path := filepath.Join(r.dir, recordName)
-	current, found, err := read(path)
-	if err != nil {
+	current, err := read(path)
+	exists := !errors.Is(err, ErrNoRecord)
+	if exists && err != nil {
 		return err
 	}
 	record.Format = Format
@@ -133,7 +135,7 @@ func (r *Records) Write(record Record) error {
 	if err != nil {
 		return fmt.Errorf("encode the record: %w", err)
 	}
-	if found && current.Done() && current.Version != record.Version {
+	if exists && current.Done() && current.Version != record.Version {
 		if err := keep(path, filepath.Join(r.dir, previousName)); err != nil {
 			return err
 		}
@@ -149,17 +151,19 @@ func keep(from, to string) error {
 	return atomicfile.Write(to, body, 0o600)
 }
 
-func read(path string) (Record, bool, error) {
+var ErrNoRecord = errors.New("this machine holds no record of that delivery")
+
+func read(path string) (Record, error) {
 	body, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return Record{}, false, nil
+		return Record{}, ErrNoRecord
 	}
 	if err != nil {
-		return Record{}, false, fmt.Errorf("read %s: %w", path, err)
+		return Record{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	var record Record
 	if err := json.Unmarshal(body, &record); err != nil {
-		return Record{}, false, fmt.Errorf("decode %s: %w", path, err)
+		return Record{}, fmt.Errorf("decode %s: %w", path, err)
 	}
-	return record, true, nil
+	return record, nil
 }

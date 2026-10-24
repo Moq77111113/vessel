@@ -1,13 +1,8 @@
 package site
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/Moq77111113/vessel/internal/report"
@@ -35,8 +30,18 @@ type change struct {
 	line string
 }
 
-func (i Install) plan(ctx context.Context, before prelude, resolution values.Resolution, files []delivery.File) (plan, error) {
-	config := i.Artifact.Config
+func (i Install) dryRun(req InstallRequest, c *pass) error {
+	p, err := i.plan(req, c)
+	if err != nil {
+		return err
+	}
+	p.print(req.Out, req.Artifact.Config.Name, req.Artifact.Config.Version)
+	return nil
+}
+
+func (i Install) plan(req InstallRequest, c *pass) (plan, error) {
+	config := req.Artifact.Config
+	before, resolution, files := c.before, c.resolution, c.files
 	progress := before.progress
 	p := plan{checks: checks(before), skip: progress.Steps}
 	if before.skip != "" {
@@ -47,19 +52,19 @@ func (i Install) plan(ctx context.Context, before prelude, resolution values.Res
 	}
 	unknown := dryValues(config.Variables, resolution)
 	if !progress.Has(release.StepFiles) {
-		changes, err := fileChanges(i.Root, files, before.current.Files, unknown)
+		changes, err := i.fileChanges(files, before.current.Files, unknown)
 		if err != nil {
 			return plan{}, err
 		}
 		p.files = changes
-		stops, err := i.stops(ctx, before, files)
+		stops, err := i.stops(before, files)
 		if err != nil {
 			return plan{}, err
 		}
 		p.stops = stops
 	}
 	if !progress.Has(release.StepSecrets) {
-		p.secrets = namesOf(resolution.Secrets)
+		p.secrets = secretNames(resolution.Secrets)
 	}
 	if !progress.Has(release.StepImages) {
 		for _, image := range config.Images {
@@ -69,29 +74,30 @@ func (i Install) plan(ctx context.Context, before prelude, resolution values.Res
 	for _, service := range config.Services {
 		p.starts = append(p.starts, service.Name)
 	}
-	p.unknowns = unknowns(config.Variables, unknown, before.bypass, p.actions, p.starts)
+	p.unknowns = p.unknownLines(config.Variables, unknown, before.bypass)
 	return p, nil
 }
 
-func checks(before prelude) []string {
+func checks(before state) []string {
 	record := "no install is left unfinished"
 	switch {
 	case before.progress.Root != "":
 		record = "this bundle is the one the machine stopped installing"
-	case before.found && !before.current.Done():
+	case before.exists && !before.current.Done():
 		record = "this bundle is the last finished release"
 	}
 	return []string{"the machine is ready", "the bundle matches its digests", "every variable has a value", record}
 }
 
-func (i Install) stops(ctx context.Context, before prelude, files []delivery.File) ([]string, error) {
-	if !before.found {
+func (i Install) stops(before state, files []delivery.File) ([]string, error) {
+	if !before.exists {
 		return nil, nil
 	}
-	remove, _, err := release.Drops(disk.NewTree(i.Root), before.current.Files, release.Entries(files))
+	drop, err := release.Drops(disk.NewTree(i.Root), before.current.Files, release.Entries(files))
 	if err != nil {
 		return nil, err
 	}
+	remove := drop.Remove
 	services := servicesIn(before.current.Services, remove)
 	names := make([]string, 0, len(services))
 	for _, service := range services {
@@ -114,48 +120,7 @@ func dryValues(variables []delivery.Variable, resolution values.Resolution) map[
 	return marks
 }
 
-func fileChanges(root string, files []delivery.File, current []release.Entry, unknown map[string]string) ([]change, error) {
-	changes := make([]change, 0, len(files))
-	for _, file := range files {
-		changes = append(changes, fileChange(filepath.Join(root, file.Path), file, unknown))
-	}
-	remove, keep, err := release.Drops(disk.NewTree(root), current, release.Entries(files))
-	if err != nil {
-		return nil, err
-	}
-	for _, path := range remove {
-		changes = append(changes, change{verb: "Remove", line: path})
-	}
-	for _, path := range keep {
-		changes = append(changes, change{verb: "Keep", line: path + ", edited on this machine"})
-	}
-	return changes, nil
-}
-
-func fileChange(path string, file delivery.File, unknown map[string]string) change {
-	var names []string
-	for mark, name := range unknown {
-		if bytes.Contains(file.Data, []byte(mark)) {
-			names = append(names, name)
-		}
-	}
-	slices.Sort(names)
-	_, err := os.Stat(path)
-	absent := os.IsNotExist(err)
-	switch {
-	case len(names) > 0 && absent:
-		return change{verb: "Add", line: file.Path + ", content depends on " + strings.Join(names, ", ")}
-	case len(names) > 0:
-		return change{verb: "Depends", line: file.Path + " on " + strings.Join(names, ", ")}
-	case absent:
-		return change{verb: "Add", line: file.Path}
-	case disk.Same(path, disk.DigestOf(file.Data)):
-		return change{verb: "Keep", line: file.Path}
-	}
-	return change{verb: "Replace", line: file.Path}
-}
-
-func unknowns(variables []delivery.Variable, unknown map[string]string, bypass string, actions, services []string) []string {
+func (p plan) unknownLines(variables []delivery.Variable, unknown map[string]string, bypass string) []string {
 	var lines []string
 	for _, variable := range variables {
 		for _, name := range unknown {
@@ -167,10 +132,10 @@ func unknowns(variables []delivery.Variable, unknown map[string]string, bypass s
 	if bypass != "" {
 		lines = append(lines, bypass+" may have stopped halfway, this rollback passes over it")
 	}
-	if len(actions) > 0 {
+	if len(p.actions) > 0 {
 		lines = append(lines, "the result of every action")
 	}
-	if len(services) > 0 {
+	if len(p.starts) > 0 {
 		lines = append(lines, "service health, known once started")
 	}
 	return lines
