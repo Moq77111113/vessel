@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
 // imageLayout writes the OCI layout a fetch run would leave behind: one image manifest and its config.
@@ -48,7 +48,7 @@ func contents(t *testing.T) Contents {
 			Name: "acme", Version: "1.4.0", Machine: "quadlet", Platform: "linux/amd64",
 			Images: []Image{{Ref: "reg.io/app:1.0", Digest: "sha256:aaa"}},
 		},
-		Files: []descriptor.File{
+		Files: []delivery.File{
 			{Path: "etc/containers/systemd/app.container", Data: []byte("[Container]\nImage=reg.io/app@sha256:aaa\n")},
 			{Path: "etc/containers/systemd/app.network", Data: []byte("[Network]\nNetworkName=app\n")},
 		},
@@ -239,7 +239,7 @@ func TestWriteOverAnOldBundleDropsItsBlobs(t *testing.T) {
 }
 
 func TestABundleKeepsAFileMode(t *testing.T) {
-	archive, err := packFiles([]descriptor.File{{Path: "etc/acme/token", Data: []byte("x"), Mode: 0o600}})
+	archive, err := packFiles([]delivery.File{{Path: "etc/acme/token", Data: []byte("x"), Mode: 0o600}})
 	if err != nil {
 		t.Fatalf("packFiles: %v", err)
 	}

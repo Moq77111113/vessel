@@ -9,11 +9,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-func packFiles(files []descriptor.File) ([]byte, error) {
-	byPath := append([]descriptor.File(nil), files...)
+func packFiles(files []delivery.File) ([]byte, error) {
+	byPath := append([]delivery.File(nil), files...)
 	sort.Slice(byPath, func(a, b int) bool { return byPath[a].Path < byPath[b].Path })
 
 	var out strings.Builder
@@ -39,8 +39,8 @@ func packFiles(files []descriptor.File) ([]byte, error) {
 	return []byte(out.String()), nil
 }
 
-func unpackFiles(body []byte) ([]descriptor.File, error) {
-	var files []descriptor.File
+func unpackFiles(body []byte) ([]delivery.File, error) {
+	var files []delivery.File
 	archive := tar.NewReader(strings.NewReader(string(body)))
 	for {
 		header, err := archive.Next()
@@ -60,7 +60,7 @@ func unpackFiles(body []byte) ([]descriptor.File, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", header.Name, err)
 		}
-		files = append(files, descriptor.File{Path: header.Name, Data: data, Mode: fs.FileMode(header.Mode).Perm()})
+		files = append(files, delivery.File{Path: header.Name, Data: data, Mode: fs.FileMode(header.Mode).Perm()})
 	}
 }
 

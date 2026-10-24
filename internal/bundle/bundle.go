@@ -17,7 +17,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
 const (
@@ -61,27 +61,27 @@ type Image struct {
 // Config is the bundle manifest's config blob: what this bundle is, every image in it, and the
 // variables and actions its install side needs.
 type Config struct {
-	Name      string                `json:"name"`
-	Version   string                `json:"version"`
-	Machine   string                `json:"machine"`
-	Platform  string                `json:"platform"`
-	Images    []Image               `json:"images"`
-	Variables []descriptor.Variable `json:"variables,omitempty"`
-	Actions   []string              `json:"actions,omitempty"`
-	Insecure  bool                  `json:"insecure,omitempty"`
+	Name      string              `json:"name"`
+	Version   string              `json:"version"`
+	Machine   string              `json:"machine"`
+	Platform  string              `json:"platform"`
+	Images    []Image             `json:"images"`
+	Variables []delivery.Variable `json:"variables,omitempty"`
+	Actions   []string            `json:"actions,omitempty"`
+	Insecure  bool                `json:"insecure,omitempty"`
 }
 
 // Contents is everything a link run hands to Write.
 type Contents struct {
 	Config Config
 	Layout string
-	Files  []descriptor.File
+	Files  []delivery.File
 }
 
 // Bundle is an artifact whose parts match the digests that pin them.
 type Bundle struct {
 	Config    Config
-	Files     []descriptor.File
+	Files     []delivery.File
 	Evidence  []Evidence
 	LayoutDir string
 	// Root is the bundle manifest digest, the value a signature covers.
