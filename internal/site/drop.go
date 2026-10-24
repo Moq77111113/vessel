@@ -11,7 +11,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// removeGone stops the services of the files the new version drops, then removes them, keeping one edited on this machine.
 func removeGone(ctx context.Context, work report.Report, host driver.Machine, tree *disk.Tree,
 	current, next release.Record) error {
 	remove, keep, err := release.Drops(tree, current.Files, next.Files)
@@ -39,7 +38,6 @@ func removeGone(ctx context.Context, work report.Report, host driver.Machine, tr
 	return nil
 }
 
-// servicesIn names the services declared by one of these files.
 func servicesIn(services []delivery.Service, paths []string) []delivery.Service {
 	var declared []delivery.Service
 	for _, service := range services {

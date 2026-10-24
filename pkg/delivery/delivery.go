@@ -32,11 +32,8 @@ var (
 	ErrFileMode          = errors.New("a file mode is not octal permission bits, write it as 0600")
 )
 
-// variableName is the shape a name takes, so a marker cannot be mistaken for prose.
 var variableName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 
-// deliveryName is the shape a delivery name takes: a single path segment, so it can name a
-// directory under the target root without ever leaving it.
 var deliveryName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // Mapping is one plain file the delivery carries, and where it lands on the machine.
@@ -99,7 +96,6 @@ func SecretNames(variables []Variable) []string {
 	return names
 }
 
-// leaves reports whether a target walks back up out of the directory it names.
 func leaves(target string) bool {
 	for _, segment := range strings.Split(target, "/") {
 		if segment == ".." {
@@ -162,7 +158,6 @@ func Read(dir fs.FS) (Delivery, error) {
 	return declaration, nil
 }
 
-// local cleans a path the descriptor names under its own directory, refusing one that leaves it.
 func local(name string) (string, error) {
 	clean := path.Clean(name)
 	if !fs.ValidPath(clean) {

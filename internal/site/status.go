@@ -21,10 +21,8 @@ var ErrNoRecord = errors.New("this machine holds no record of that delivery")
 
 var ErrRecordDoesNotMatch = errors.New("this machine no longer matches the record")
 
-// ErrRecordNamesNoService says an older vessel wrote the record, before it named the services it starts.
 var ErrRecordNamesNoService = errors.New("an older vessel wrote this record and named no service, uninstall with the executable that installed it, then install")
 
-// Status prints what this machine holds for a delivery, and fails when disk no longer matches it.
 func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, name string) error {
 	dir, err := release.Dir(root, name)
 	if err != nil {
@@ -88,7 +86,6 @@ func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, nam
 	return nil
 }
 
-// List names every delivery this machine holds a record of, with the version it holds.
 func List(out io.Writer, root string) error {
 	names, err := release.Deliveries(root)
 	if err != nil {
@@ -112,7 +109,6 @@ func List(out io.Writer, root string) error {
 	return nil
 }
 
-// reportFile names entry as Absent, Unreadable or Differs, and reports whether disk still matches it.
 func reportFile(lines report.Report, root string, entry release.Entry) bool {
 	path := filepath.Join(root, entry.Path)
 	body, err := os.ReadFile(path)

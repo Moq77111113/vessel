@@ -1,4 +1,3 @@
-// Package oci reads an OCI image layout and streams each image out of it.
 package oci
 
 import (
@@ -16,10 +15,8 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
-// RefNameAnnotation is the key a runtime reads to name an image it takes in.
 const RefNameAnnotation = "org.opencontainers.image.ref.name"
 
-// Errors a layout returns when its content does not hold together.
 var (
 	ErrBlobDigest  = errors.New("blob content does not match its digest")
 	ErrBlobMissing = errors.New("blob missing from the layout")
@@ -51,13 +48,11 @@ type imageManifest struct {
 	Layers []blobRef `json:"layers"`
 }
 
-// Images reads an OCI layout directory and cuts single-image archives out of it.
 type Images struct {
 	dir   string
 	index indexFile
 }
 
-// Open reads the index root pins in the OCI layout at dir, refusing one that does not hash to root.
 func Open(dir, root string) (*Images, error) {
 	layout := &Images{dir: dir}
 	body, err := layout.blob(root)
@@ -70,7 +65,6 @@ func Open(dir, root string) (*Images, error) {
 	return layout, nil
 }
 
-// images lists the manifests that are container images, skipping vessel's own.
 func (l *Images) images() []manifest {
 	var images []manifest
 	for _, entry := range l.index.Manifests {
@@ -85,7 +79,6 @@ func (l *Images) images() []manifest {
 	return images
 }
 
-// Names returns the reference every image in the layout carries.
 func (l *Images) Names() ([]string, error) {
 	images := l.images()
 	names := make([]string, 0, len(images))
@@ -95,7 +88,6 @@ func (l *Images) Names() ([]string, error) {
 	return names, nil
 }
 
-// Archive writes a single-image oci-archive for the image at position i.
 func (l *Images) Archive(i int, out io.Writer) error {
 	entry := l.images()[i]
 	body, err := l.blob(entry.Digest)
@@ -141,7 +133,6 @@ func (l *Images) Archive(i int, out io.Writer) error {
 	return archive.Close()
 }
 
-// copyBlob streams one blob into the archive, then refuses it if it did not hash to its name.
 func (l *Images) copyBlob(archive *tar.Writer, digest string) error {
 	name := strings.TrimPrefix(digest, "sha256:")
 	file, err := os.Open(filepath.Join(l.dir, "blobs", "sha256", name))
@@ -167,7 +158,6 @@ func (l *Images) copyBlob(archive *tar.Writer, digest string) error {
 	return nil
 }
 
-// blob reads one blob and refuses content that does not hash to the name it sits under.
 func (l *Images) blob(digest string) ([]byte, error) {
 	name := strings.TrimPrefix(digest, "sha256:")
 	data, err := os.ReadFile(filepath.Join(l.dir, "blobs", "sha256", name))
@@ -192,5 +182,4 @@ func writeEntry(archive *tar.Writer, name string, data []byte) error {
 	return nil
 }
 
-// Count is how many images the layout holds.
 func (l *Images) Count() int { return len(l.images()) }

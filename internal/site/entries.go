@@ -8,7 +8,6 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
-// digestsOf names the digest an install resolved each image to.
 func digestsOf(images []bundle.Image) []string {
 	digests := make([]string, 0, len(images))
 	for _, image := range images {
@@ -17,7 +16,6 @@ func digestsOf(images []bundle.Image) []string {
 	return digests
 }
 
-// namesOf names the secrets this install creates, in a stable order.
 func namesOf(secrets map[string]string) []string {
 	names := make([]string, 0, len(secrets))
 	for name := range secrets {
@@ -27,7 +25,6 @@ func namesOf(secrets map[string]string) []string {
 	return names
 }
 
-// unionNames merges two name lists, sorted and without duplicates.
 func unionNames(previous, next []string) []string {
 	names := make(map[string]bool, len(previous)+len(next))
 	for _, name := range previous {
@@ -44,7 +41,6 @@ func unionNames(previous, next []string) []string {
 	return all
 }
 
-// unionServices names every service the machine runs for this delivery and every service the new version declares.
 func unionServices(previous, next []delivery.Service) []delivery.Service {
 	services := slices.Clone(next)
 	for _, service := range previous {

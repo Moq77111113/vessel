@@ -45,7 +45,6 @@ func TestVesselListsItsVerbsInOrder(t *testing.T) {
 	}
 }
 
-// verbs names the commands vessel offers, in the order it lists them.
 func verbs() []string {
 	var names []string
 	for _, command := range newVessel().Commands() {
@@ -81,8 +80,6 @@ func TestEveryCommandCarriesAShortDescription(t *testing.T) {
 		}
 	}
 }
-
-// runVessel runs the command line with its output captured.
 
 func TestInstallOnADirectoryThatIsNotABundleSaysSo(t *testing.T) {
 	err := runVessel("install", t.TempDir())

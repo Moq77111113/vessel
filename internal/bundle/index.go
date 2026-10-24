@@ -39,7 +39,6 @@ type index struct {
 	Manifests     []entry `json:"manifests"`
 }
 
-// filesManifest writes the config and the descriptor files, and returns the manifest over them.
 func filesManifest(dir string, contents Contents) (entry, error) {
 	archive, err := packFiles(contents.Files)
 	if err != nil {
@@ -71,9 +70,6 @@ func filesManifest(dir string, contents Contents) (entry, error) {
 	}, nil
 }
 
-// bundleEntry finds the bundle root by reading each candidate index, not by trusting the
-// entry that points at it: a registry round trip drops artifactType from the entry while
-// the blob it names keeps it.
 func bundleEntry(dir string) (entry, error) {
 	var indexFile index
 	if err := readJSON(filepath.Join(dir, indexName), &indexFile); err != nil {
@@ -100,7 +96,6 @@ func bundleEntry(dir string) (entry, error) {
 			return candidate, nil
 		}
 	}
-	// A blob that does not hash to its name is a damaged bundle, not a foreign directory.
 	if corruption != nil {
 		return entry{}, corruption
 	}

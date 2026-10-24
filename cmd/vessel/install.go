@@ -36,7 +36,6 @@ func newInstallCommand() *cobra.Command {
 	return command
 }
 
-// jobOnDisk reads the bundle an operator named, checking it carries digests and a name first.
 func jobOnDisk(dir string, values answers) (site.Install, error) {
 	if !bundle.IsBundle(dir) {
 		return site.Install{}, fmt.Errorf("%s %w", dir, bundle.ErrNotABundle)
@@ -48,19 +47,16 @@ func jobOnDisk(dir string, values answers) (site.Install, error) {
 	return values.job(artifact)
 }
 
-// answers is what an operator gives the variables: plain values with --set, secrets with --set-file.
 type answers struct {
 	set   []string
 	files []string
 }
 
-// bind gives command the repeated --set and --set-file flags.
 func (a *answers) bind(command *cobra.Command) {
 	command.Flags().StringArrayVar(&a.set, "set", nil, "answer a plain variable: --set NAME=value")
 	command.Flags().StringArrayVar(&a.files, "set-file", nil, "answer a secret from a file only root reads: --set-file NAME=path")
 }
 
-// job wires an install of artifact to this machine, the machines this build knows and the system shell.
 func (a answers) job(artifact *bundle.Bundle) (site.Install, error) {
 	set, err := site.ParseSet(a.set)
 	if err != nil {
@@ -80,12 +76,10 @@ func (a answers) job(artifact *bundle.Bundle) (site.Install, error) {
 	}, nil
 }
 
-// bindDryRunFlag gives command the --dry-run flag that prints the plan and changes nothing.
 func bindDryRunFlag(command *cobra.Command, dry *bool) {
 	command.Flags().BoolVar(dry, "dry-run", false, "check and print what would change, change nothing")
 }
 
-// preview turns job into its dry run when the flag asks for one.
 func preview(job site.Install, dry bool) site.Install {
 	if dry {
 		return job.Preview()

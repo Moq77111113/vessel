@@ -1,6 +1,5 @@
 package release
 
-// Owners maps every file another delivery's record names to that delivery.
 func Owners(root, name string) (map[string]string, error) {
 	deliveries, err := Deliveries(root)
 	if err != nil {
@@ -26,7 +25,6 @@ func Owners(root, name string) (map[string]string, error) {
 	return paths, nil
 }
 
-// Holds reports whether entries name path.
 func Holds(entries []Entry, path string) bool {
 	for _, entry := range entries {
 		if entry.Path == path {

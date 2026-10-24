@@ -166,17 +166,14 @@ func TestUninstallFailsOnAMachineThatHoldsNoRecord(t *testing.T) {
 	}
 }
 
-// brokenStop fails Stop, where an uninstall must not have touched a file yet.
 type brokenStop struct {
 	driver.Driver
 }
 
-// errBrokenStop is the failure brokenStop.Stop reports.
 var errBrokenStop = errors.New("broken stop")
 
 func (brokenStop) Stop(context.Context, []delivery.Service) error { return errBrokenStop }
 
-// writeFile creates path with body, making its parent directories as needed.
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -243,7 +240,6 @@ func TestUninstallNamesTheEditedFileItKept(t *testing.T) {
 	}
 }
 
-// uninstallAfterAnEdit installs acme 1.3, edits one of its files, uninstalls, and returns the root and what uninstall printed.
 func uninstallAfterAnEdit(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()

@@ -1,4 +1,3 @@
-// Package site is what a packed executable does on the machine: install, upgrade, resume, status, uninstall.
 package site
 
 import (
@@ -22,7 +21,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// Install is one run of putting a bundle on one machine.
 type Install struct {
 	Artifact *bundle.Bundle
 	Root     string
@@ -33,7 +31,6 @@ type Install struct {
 	preview  bool
 }
 
-// shell is the shell a from: runs in: one that runs nothing on a dry run.
 func (i Install) shell() *disk.Shell {
 	if i.preview {
 		return disk.NewShell(disk.Dry)
@@ -41,13 +38,11 @@ func (i Install) shell() *disk.Shell {
 	return i.Shell
 }
 
-// Preview returns this install as a dry run: it checks and plans, runs no from:, and changes nothing.
 func (i Install) Preview() Install {
 	i.preview = true
 	return i
 }
 
-// prelude carries what both Run and Upgrade need before either touches the machine.
 type prelude struct {
 	dir      string
 	host     driver.Machine
@@ -59,7 +54,6 @@ type prelude struct {
 	skip     string
 }
 
-// prepare checks the machine is ready, then reads the record this delivery may already hold.
 func (i Install) prepare(ctx context.Context, name, machineName string) (prelude, error) {
 	dir, err := release.Dir(i.Root, name)
 	if err != nil {
@@ -77,7 +71,6 @@ func (i Install) prepare(ctx context.Context, name, machineName string) (prelude
 	return prelude{dir: dir, host: host, records: records, current: current, found: found}, nil
 }
 
-// Upgrade installs a newer version, refusing a machine that holds no record of this delivery.
 func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report) error {
 	config := i.Artifact.Config
 	before, err := i.prepare(ctx, config.Name, config.Machine)
@@ -97,7 +90,6 @@ func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report)
 	return i.run(ctx, out, work, before)
 }
 
-// Run puts the images, the files and the secrets on the machine, then starts the services once.
 func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) error {
 	config := i.Artifact.Config
 	before, err := i.prepare(ctx, config.Name, config.Machine)
@@ -114,7 +106,6 @@ func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) err
 	return i.run(ctx, out, work, before)
 }
 
-// Errors Resume returns before it changes anything.
 var (
 	ErrNothingToResume = errors.New("this machine holds no unfinished install of that delivery")
 	ErrOtherBundle     = errors.New("this bundle is not the one the machine stopped installing")
@@ -123,7 +114,6 @@ var (
 	ErrRecordTooOld    = errors.New("an older vessel left this install unfinished, it cannot say how far it ran")
 )
 
-// Resume finishes the install this bundle started, skipping every step and action the record says finished.
 func (i Install) Resume(ctx context.Context, out io.Writer, work report.Report) error {
 	config := i.Artifact.Config
 	before, err := i.prepare(ctx, config.Name, config.Machine)
@@ -142,7 +132,6 @@ func (i Install) Resume(ctx context.Context, out io.Writer, work report.Report) 
 
 var ErrNoOpenAction = errors.New("the unfinished install left no action halfway, run resume")
 
-// SkipAction marks the action an install left halfway as finished, without running it, then resumes.
 func (i Install) SkipAction(ctx context.Context, out io.Writer, work report.Report) error {
 	config := i.Artifact.Config
 	before, err := i.prepare(ctx, config.Name, config.Machine)
@@ -162,7 +151,6 @@ func (i Install) SkipAction(ctx context.Context, out io.Writer, work report.Repo
 	return i.run(ctx, out, work, before)
 }
 
-// checkResume refuses a record this bundle and these flags cannot resume.
 func (i Install) checkResume(before prelude) error {
 	if !before.found || before.current.Done() {
 		return fmt.Errorf("%s: %w", i.Artifact.Config.Name, ErrNothingToResume)
@@ -180,7 +168,6 @@ func (i Install) checkResume(before prelude) error {
 	return nil
 }
 
-// plainSet names the first variable a --set answers that is not a secret, or nothing.
 func plainSet(variables []delivery.Variable, set map[string]string) string {
 	for _, variable := range variables {
 		if _, ok := set[variable.Name]; ok && !variable.Secret {
@@ -192,7 +179,6 @@ func plainSet(variables []delivery.Variable, set map[string]string) string {
 
 var ErrRecordOpen = errors.New("the last install on this machine never finished")
 
-// refuseOld refuses the record this machine holds when an older vessel wrote it.
 func (p prelude) refuseOld() error {
 	if !p.found {
 		return nil
@@ -200,7 +186,6 @@ func (p prelude) refuseOld() error {
 	return refuseOldRecord(p.current)
 }
 
-// refuseOldRecord refuses a record an older vessel wrote before it named the services it starts.
 func refuseOldRecord(current release.Record) error {
 	if current.Format >= release.Format {
 		return nil
@@ -208,7 +193,6 @@ func refuseOldRecord(current release.Record) error {
 	return fmt.Errorf("%s %s: %w", current.Name, current.Version, ErrRecordNamesNoService)
 }
 
-// refuseOpenRecord lets an install over an open record through only when it puts the last finished release back.
 func (i Install) refuseOpenRecord(before prelude) error {
 	if !before.found || before.current.Done() {
 		return nil
@@ -220,7 +204,6 @@ func (i Install) refuseOpenRecord(before prelude) error {
 		position(before.current), recovery(before.current.Prior), ErrRecordOpen)
 }
 
-// bypass names the action a rollback passes over without knowing how far it ran, or nothing.
 func bypass(current release.Record) string {
 	if action, open := current.OpenAction(); open {
 		return action.Command
@@ -228,7 +211,6 @@ func bypass(current release.Record) string {
 	return ""
 }
 
-// prior names the last finished release an install opening now would fall back to.
 func prior(before prelude) release.Release {
 	if before.found && before.current.Done() {
 		return release.Release{Version: before.current.Version, Root: before.current.Root}
@@ -236,7 +218,6 @@ func prior(before prelude) release.Release {
 	return before.current.Prior
 }
 
-// recovery names what an operator runs on a machine an install left unfinished.
 func recovery(prior release.Release) string {
 	if prior.Root == "" {
 		return "run resume, or uninstall"
@@ -244,7 +225,6 @@ func recovery(prior release.Release) string {
 	return fmt.Sprintf("run resume, or install with the %s installer", prior.Version)
 }
 
-// position says where an open record stopped, in words an operator reads.
 func position(r release.Record) string {
 	if len(r.Steps) == 0 {
 		return "stopped before its first step"
@@ -252,7 +232,6 @@ func position(r release.Record) string {
 	return "stopped after " + string(r.Steps[len(r.Steps)-1])
 }
 
-// run installs or upgrades once the machine is known ready and the record is known read.
 func (i Install) run(ctx context.Context, out io.Writer, work report.Report, before prelude) error {
 	config := i.Artifact.Config
 	secrets, err := before.host.Secrets(ctx)
@@ -329,7 +308,6 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 	return nil
 }
 
-// machineChange carries what applyToMachine needs, once the record has marked the machine changed.
 type machineChange struct {
 	host       driver.Machine
 	records    *release.Records
@@ -343,7 +321,6 @@ type machineChange struct {
 	files      []delivery.File
 }
 
-// step runs do unless the record already has step, then writes step into the record.
 func (c *machineChange) step(step release.Step, do func() error) error {
 	if c.opening.Has(step) {
 		return nil
@@ -355,7 +332,6 @@ func (c *machineChange) step(step release.Step, do func() error) error {
 	return c.records.Write(c.opening)
 }
 
-// close writes the finished record: the new version's files, every step, every action, an end.
 func (c *machineChange) close() error {
 	c.next.Steps = c.opening.Steps
 	c.next.Actions = c.opening.Actions
@@ -363,7 +339,6 @@ func (c *machineChange) close() error {
 	return c.records.Write(c.next)
 }
 
-// applyToMachine runs every install step in order, writing each into the record, then closes it.
 func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.Report,
 	change *machineChange) (int, error) {
 	tree := disk.NewTree(i.Root)
@@ -411,7 +386,6 @@ func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.
 	return changes, change.close()
 }
 
-// checkMachine finds the machine that built this bundle and refuses one that is not ready.
 func (i Install) checkMachine(ctx context.Context, name string) (driver.Machine, error) {
 	host, err := driver.ByName(i.Machines, name)
 	if err != nil {
@@ -423,7 +397,6 @@ func (i Install) checkMachine(ctx context.Context, name string) (driver.Machine,
 	return host, nil
 }
 
-// resolveValues answers every variable the delivery declares, from this machine and this operator.
 func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Config,
 	secrets values.Secrets) (*values.Store, values.Resolution, error) {
 	flags, err := answers(config.Variables, i.Set, i.SetFile)
@@ -438,7 +411,6 @@ func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Co
 	return store, resolution, nil
 }
 
-// openRecord writes the record this install opens: the files both versions carry, and any progress it continues.
 func openRecord(records *release.Records, current, next, progress release.Record) (release.Record, error) {
 	opening := next
 	opening.Files = release.Union(current.Files, next.Files)
@@ -448,7 +420,6 @@ func openRecord(records *release.Records, current, next, progress release.Record
 	return opening, records.Write(opening)
 }
 
-// runActions runs the declared commands in order, writing each into the record before and after.
 func (i Install) runActions(ctx context.Context, change *machineChange) error {
 	for index, command := range i.Artifact.Config.Actions {
 		if index < len(change.opening.Actions) {
@@ -475,7 +446,6 @@ func (i Install) runActions(ctx context.Context, change *machineChange) error {
 	return nil
 }
 
-// writeFiles puts every file under the target root and counts the ones whose content changed.
 func writeFiles(tree *disk.Tree, files []delivery.File) (int, error) {
 	changes := 0
 	for _, file := range files {
@@ -490,7 +460,6 @@ func writeFiles(tree *disk.Tree, files []delivery.File) (int, error) {
 	return changes, nil
 }
 
-// addSecrets puts every secret this run resolved into the machine's own secret store.
 func addSecrets(ctx context.Context, host driver.Machine, secrets map[string]string) error {
 	for name, value := range secrets {
 		if err := host.AddSecret(ctx, delivery.Secret{Name: name, Value: value}); err != nil {
@@ -500,7 +469,6 @@ func addSecrets(ctx context.Context, host driver.Machine, secrets map[string]str
 	return nil
 }
 
-// addImages puts the images the bundle carries into local storage, and names them.
 func addImages(ctx context.Context, work report.Report, host driver.Machine, artifact *bundle.Bundle) ([]string, error) {
 	images, err := oci.Open(artifact.LayoutDir, artifact.Root)
 	if err != nil {
@@ -509,7 +477,6 @@ func addImages(ctx context.Context, work report.Report, host driver.Machine, art
 	return host.AddImages(ctx, work, images)
 }
 
-// startServices starts the services and fails on any that did not come up.
 func startServices(ctx context.Context, host driver.Machine, services []delivery.Service) error {
 	if err := host.Start(ctx, services); err != nil {
 		return err
@@ -517,10 +484,8 @@ func startServices(ctx context.Context, host driver.Machine, services []delivery
 	return checkServicesUp(ctx, host, services)
 }
 
-// ErrPartlyInstalled says the machine was already changed when this install stopped.
 var ErrPartlyInstalled = errors.New("this machine is partway through the install")
 
-// partway marks an error the machine was already changed for, and never marks it twice.
 func partway(err error) error {
 	if errors.Is(err, ErrPartlyInstalled) {
 		return err
@@ -530,7 +495,6 @@ func partway(err error) error {
 
 var ErrServiceIsDown = errors.New("did not start")
 
-// checkServicesUp fails naming every service the machine reports as down.
 func checkServicesUp(ctx context.Context, host driver.Machine, services []delivery.Service) error {
 	running, err := host.Running(ctx, services)
 	if err != nil {
@@ -548,7 +512,6 @@ func checkServicesUp(ctx context.Context, host driver.Machine, services []delive
 	return fmt.Errorf("%s: %w", strings.Join(down, ", "), ErrServiceIsDown)
 }
 
-// reportMissingSecrets names the secrets the services read and the machine does not hold.
 func reportMissingSecrets(out io.Writer, secrets, read []string) {
 	if len(read) == 0 {
 		return
@@ -572,7 +535,6 @@ func reportMissingSecrets(out io.Writer, secrets, read []string) {
 	}
 }
 
-// Errors a --set or --set-file flag draws.
 var (
 	ErrBadSet              = errors.New("is not NAME=value")
 	ErrSetIsEmpty          = errors.New("gives no value, and a value is never empty")
@@ -581,7 +543,6 @@ var (
 	ErrSetFilePlain        = errors.New("is not a secret, pass it with --set")
 )
 
-// ParseSet turns a repeated --set NAME=value flag into the values it names.
 func ParseSet(pairs []string) (map[string]string, error) {
 	values := make(map[string]string, len(pairs))
 	for _, pair := range pairs {
@@ -597,7 +558,6 @@ func ParseSet(pairs []string) (map[string]string, error) {
 	return values, nil
 }
 
-// ReadSetFile turns a repeated --set-file NAME=path flag into the values those files hold.
 func ReadSetFile(pairs []string) (map[string]string, error) {
 	values := make(map[string]string, len(pairs))
 	for _, pair := range pairs {
@@ -618,7 +578,6 @@ func ReadSetFile(pairs []string) (map[string]string, error) {
 	return values, nil
 }
 
-// readSecret reads a file no other user can read, through one handle so it cannot change in between.
 func readSecret(path string) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -635,7 +594,6 @@ func readSecret(path string) ([]byte, error) {
 	return io.ReadAll(file)
 }
 
-// answers joins --set and --set-file, refusing a secret on the command line and a plain value in a file.
 func answers(variables []delivery.Variable, set, files map[string]string) (map[string]string, error) {
 	values := make(map[string]string, len(set)+len(files))
 	for _, variable := range variables {

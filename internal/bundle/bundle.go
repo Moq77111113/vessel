@@ -1,11 +1,3 @@
-// Package bundle reads and writes the OCI artifact vessel produces.
-//
-// A bundle is a plain OCI layout, so any registry or OCI tool can carry it.
-//
-// The root is an image index, not a manifest, because an index takes its children with it
-// through a registry: copy the bundle and the images follow. That index references every
-// image manifest plus one manifest holding the config and the descriptor files. Its digest
-// is the root of everything, and it is what a signature covers.
 package bundle
 
 import (
@@ -21,16 +13,13 @@ import (
 )
 
 const (
-	// ArtifactType marks the index that is the bundle root.
 	ArtifactType = "application/vnd.vessel.bundle.v1"
-	// FilesType marks the manifest holding the config and the descriptor files.
 	FilesType    = "application/vnd.vessel.files.manifest.v1"
 	configType   = "application/vnd.vessel.bundle.config.v1+json"
 	filesType    = "application/vnd.vessel.files.v1.tar"
 	manifestType = "application/vnd.oci.image.manifest.v1+json"
 	indexType    = "application/vnd.oci.image.index.v1+json"
 
-	// refNameAnnotation is how an OCI layout names a manifest, so a tool can address it.
 	refNameAnnotation = "org.opencontainers.image.ref.name"
 
 	indexName  = "index.json"
@@ -38,7 +27,6 @@ const (
 	blobsDir   = "blobs/sha256"
 )
 
-// Errors Open returns when a bundle no longer matches what it says it is.
 var (
 	ErrDigestMismatch   = errors.New("does not match the digest that pins it")
 	ErrPathEscapes      = errors.New("leaves the target root")
@@ -49,17 +37,13 @@ var (
 	ErrEvidenceSameName = errors.New("two evidence files share one name")
 )
 
-// InsecureWarning is the line every command prints about a bundle built with --insecure-unsigned.
 const InsecureWarning = "insecure: built with --insecure-unsigned, for development use only"
 
-// Image is one image reference and the digest it resolved to.
 type Image struct {
 	Ref    string `json:"ref"`
 	Digest string `json:"digest"`
 }
 
-// Config is the bundle manifest's config blob: what this bundle is, every image in it, and the
-// variables and actions its install side needs.
 type Config struct {
 	Name      string              `json:"name"`
 	Version   string              `json:"version"`
@@ -73,24 +57,20 @@ type Config struct {
 	Insecure  bool                `json:"insecure,omitempty"`
 }
 
-// Contents is everything a link run hands to Write.
 type Contents struct {
 	Config Config
 	Layout string
 	Files  []delivery.File
 }
 
-// Bundle is an artifact whose parts match the digests that pin them.
 type Bundle struct {
 	Config    Config
 	Files     []delivery.File
 	Evidence  []Evidence
 	LayoutDir string
-	// Root is the bundle manifest digest, the value a signature covers.
-	Root string
+	Root      string
 }
 
-// Write turns the image layout into a bundle by adding the files and the bundle index, dropping any blob an older bundle left in dir.
 func Write(dir string, contents Contents) error {
 	if err := copyTree(contents.Layout, dir); err != nil {
 		return err
@@ -129,7 +109,6 @@ func Write(dir string, contents Contents) error {
 	return prune(dir)
 }
 
-// prune removes the blobs an older bundle left in dir.
 func prune(dir string) error {
 	oci := layout.Path(dir)
 	stale, err := oci.GarbageCollect()
@@ -144,7 +123,6 @@ func prune(dir string) error {
 	return nil
 }
 
-// Open reads a bundle and refuses any part whose digest left its manifest behind.
 func Open(dir string) (*Bundle, error) {
 	root, err := bundleEntry(dir)
 	if err != nil {
@@ -196,13 +174,11 @@ func Open(dir string) (*Bundle, error) {
 	return &Bundle{Config: decoded, Files: files, Evidence: evidence, LayoutDir: dir, Root: root.Digest}, nil
 }
 
-// IsBundle reports whether dir is an OCI layout holding a vessel bundle manifest.
 func IsBundle(dir string) bool {
 	_, err := bundleEntry(dir)
 	return err == nil
 }
 
-// RootBytes returns the bundle manifest digest, the value a signature covers.
 func RootBytes(dir string) ([]byte, error) {
 	root, err := bundleEntry(dir)
 	if err != nil {
@@ -211,7 +187,6 @@ func RootBytes(dir string) ([]byte, error) {
 	return []byte(root.Digest), nil
 }
 
-// mustMarshal encodes a value vessel just built, so it cannot carry an unencodable field.
 func mustMarshal(value any) []byte {
 	body, err := json.Marshal(value)
 	if err != nil {

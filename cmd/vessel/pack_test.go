@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// buildVessel compiles the binary the operator would receive.
 func buildVessel(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "vessel")
@@ -19,7 +18,6 @@ func buildVessel(t *testing.T) string {
 	return path
 }
 
-// packStack builds the fixture stack into one executable.
 func packStack(t *testing.T) string {
 	t.Helper()
 	vessel, out := buildVessel(t), filepath.Join(t.TempDir(), "myapp")

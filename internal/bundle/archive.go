@@ -19,7 +19,6 @@ func packFiles(files []delivery.File) ([]byte, error) {
 	var out strings.Builder
 	archive := tar.NewWriter(&out)
 	for _, file := range byPath {
-		// Mode 0 says the descriptor declared none; a bundle built before modes says 0644 for every file.
 		header := &tar.Header{
 			Name:     file.Path,
 			Mode:     int64(file.Mode),

@@ -13,13 +13,9 @@ var (
 	ErrSecretInAFile   = errors.New("a secret cannot be written into a file, a service reads it from the machine")
 )
 
-// marker is how a variable appears inside a carried file. Three hashes on each side collide with
-// neither unit specifiers nor INI, JSON or TOML syntax.
 var marker = regexp.MustCompile(`###([A-Z][A-Z0-9_]*)###`)
 
 // Substitute puts every value in place of its marker, and returns the files with new bytes.
-// A marker naming a secret is refused: a secret reaches a service through the driver, never as
-// plain bytes on the disk.
 func Substitute(files []File, values map[string]string, secrets []string) ([]File, error) {
 	out := make([]File, len(files))
 	for i, file := range files {
@@ -50,7 +46,6 @@ func Substitute(files []File, values map[string]string, secrets []string) ([]Fil
 }
 
 // CheckMarkers refuses a marker naming a variable the delivery never declared, or naming a secret.
-// link runs it on the files it carries, so a typo is caught where the YAML can still be edited.
 func CheckMarkers(files []File, variables []Variable) error {
 	names := make(map[string]bool, len(variables))
 	for _, variable := range variables {

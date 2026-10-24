@@ -235,13 +235,11 @@ func TestResumeAfterAFailedUpgradeRemovesTheStaleFile(t *testing.T) {
 	}
 }
 
-// runResume resumes the bundle in dir under root, printing nothing.
 func runResume(t *testing.T, root, dir string, kinds []driver.Driver) error {
 	t.Helper()
 	return jobFor(t, root, dir, kinds, nil).Resume(context.Background(), io.Discard, report.New(io.Discard))
 }
 
-// countingShell succeeds on every command and remembers each one.
 type countingShell struct {
 	commands []string
 }
@@ -251,7 +249,6 @@ func (c *countingShell) run(_ context.Context, command string) ([]byte, error) {
 	return nil, nil
 }
 
-// openAnAction leaves the record as a kill during the bundle's one action would.
 func openAnAction(t *testing.T, root, dir string) {
 	t.Helper()
 	if err := installWithABrokenImageLoad(t, root, dir); err == nil {

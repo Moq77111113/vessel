@@ -80,14 +80,12 @@ func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []dr
 	return binary.publishSigned(stdout, key, layout)
 }
 
-// executable is a packed file waiting beside the path it is published at, with the sha256 of its bytes.
 type executable struct {
 	temp   string
 	out    string
 	digest []byte
 }
 
-// pack writes the executable next to out through one handle, hashing exactly the bytes it writes.
 func pack(stub io.Reader, dir, out string, work report.Report) (executable, error) {
 	temp, err := os.CreateTemp(filepath.Dir(out), ".vessel-build-*")
 	if err != nil {
@@ -105,14 +103,12 @@ func pack(stub io.Reader, dir, out string, work report.Report) (executable, erro
 	return executable{temp: temp.Name(), out: out, digest: hash.Sum(nil)}, nil
 }
 
-// Errors Build returns for a bundle given as its source.
 var (
 	ErrBundleSourceFlags   = errors.New("a bundle already carries its name, version, platform and layout, drop those flags")
 	ErrSigningMismatch     = errors.New("the bundle says how it is signed, build it the same way")
 	ErrEvidenceNeedsBundle = errors.New("evidence describes a bundle, build the layout first, then build from it with --evidence")
 )
 
-// bundleSource reports whether the job names a bundle, and refuses one its flags contradict.
 func bundleSource(job Job) (bool, error) {
 	artifact, err := bundle.Open(job.Source)
 	if errors.Is(err, bundle.ErrNotABundle) {
@@ -130,12 +126,10 @@ func bundleSource(job Job) (bool, error) {
 	return true, nil
 }
 
-// bundleLayouts packs and signs the bundle the job names, as it is on disk.
 func bundleLayouts(job Job) (pack, sign string, cleanup func(), err error) {
 	return job.Source, job.Source, func() {}, dropLayoutSignature(job.Source)
 }
 
-// linkLayouts links the descriptor the job names into a layout, kept when the job asks for one.
 func linkLayouts(ctx context.Context, work report.Report, kinds []driver.Driver, job Job) (pack, sign string, cleanup func(), err error) {
 	dir, cleanup, err := layoutDir(job.Layout)
 	if err != nil {
@@ -152,7 +146,6 @@ func linkLayouts(ctx context.Context, work report.Report, kinds []driver.Driver,
 	return dir, job.Layout, cleanup, nil
 }
 
-// attachEvidence reads each file the job names and attaches it to the layout under its base name.
 func attachEvidence(dir string, paths []string) error {
 	if len(paths) == 0 {
 		return nil
@@ -168,7 +161,6 @@ func attachEvidence(dir string, paths []string) error {
 	return bundle.Attach(dir, evidence)
 }
 
-// dropLayoutSignature removes a signature an earlier build left, since this build changes what it covers.
 func dropLayoutSignature(layout string) error {
 	err := os.Remove(filepath.Join(layout, "index.json"+attest.SignatureSuffix))
 	if err == nil || os.IsNotExist(err) {
@@ -200,7 +192,6 @@ func openSelf() (*os.File, error) {
 	return stub, nil
 }
 
-// publishInsecure moves the executable into place with no signature.
 func (e executable) publishInsecure(stdout io.Writer) error {
 	if err := e.move(stdout); err != nil {
 		return err
@@ -209,7 +200,6 @@ func (e executable) publishInsecure(stdout io.Writer) error {
 	return nil
 }
 
-// publishSigned signs the kept layout, writes the executable's signature, and only then moves the executable into place.
 func (e executable) publishSigned(stdout io.Writer, key *attest.Key, layout string) error {
 	signature, err := key.Sign(e.digest)
 	if err != nil {
@@ -233,7 +223,6 @@ func (e executable) publishSigned(stdout io.Writer, key *attest.Key, layout stri
 	return nil
 }
 
-// move renames the executable to the path it is published at, and says so.
 func (e executable) move(stdout io.Writer) error {
 	if err := os.Rename(e.temp, e.out); err != nil {
 		return fmt.Errorf("publish %s: %w", e.out, err)
@@ -246,14 +235,10 @@ func (e executable) move(stdout io.Writer) error {
 	return nil
 }
 
-// ErrSecretNotRead says a delivery declares a secret no service reads.
 var ErrSecretNotRead = errors.New("no service reads this secret")
 
-// ErrTargetInDriverDirectory says a delivery file lands where the driver writes what it reads. A file
-// carried there is never read, so its image is never pinned to a digest.
 var ErrTargetInDriverDirectory = errors.New("a file target lands in a directory the driver fills")
 
-// checkOutsideTheDriverDirectories refuses a plain file that lands where the driver writes what it reads.
 func checkOutsideTheDriverDirectories(dirs []string, files []delivery.File) error {
 	for _, file := range files {
 		for _, dir := range dirs {
@@ -265,7 +250,6 @@ func checkOutsideTheDriverDirectories(dirs []string, files []delivery.File) erro
 	return nil
 }
 
-// checkEverySecretIsRead refuses a secret variable no service reads under that same name.
 func checkEverySecretIsRead(read []string, variables []delivery.Variable) error {
 	for _, name := range delivery.SecretNames(variables) {
 		if !slices.Contains(read, name) {

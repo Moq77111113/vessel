@@ -12,7 +12,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// Uninstall stops the services, removes exactly the files the record names, then retires the record.
 func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Driver, root, name string) error {
 	dir, err := release.Dir(root, name)
 	if err != nil {
@@ -77,8 +76,6 @@ func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Driver, root, 
 	return nil
 }
 
-// differs reports whether a finished install's file changed on this machine since.
-// An open record holds the next version's digest for files it may not have written yet, so it proves no edit.
 func differs(tree *disk.Tree, entry release.Record, file release.Entry) (bool, error) {
 	if !entry.Done() {
 		return false, nil
@@ -86,7 +83,6 @@ func differs(tree *disk.Tree, entry release.Record, file release.Entry) (bool, e
 	return tree.Differs(file.Path, file.Digest)
 }
 
-// reportWhatStays names the secrets, the images, and the site values an uninstall leaves behind.
 func reportWhatStays(out io.Writer, values string, record release.Record, kind driver.Machine) {
 	if len(record.Secrets) > 0 {
 		fmt.Fprintln(out, "\nThese secrets stay on this machine, another delivery may read them:")

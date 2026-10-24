@@ -32,7 +32,6 @@ func TestInspectSaysNothingAboutSigningForASignedBundle(t *testing.T) {
 	}
 }
 
-// bundleWith writes a bundle over testdata/empty-layout whose config carries insecure.
 func bundleWith(t *testing.T, insecure bool) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bundle")
@@ -91,7 +90,6 @@ func TestInspectRefusesToOverwriteAFileWhileExtracting(t *testing.T) {
 	}
 }
 
-// bundleWithSBOM writes a signed-config bundle carrying testdata/sbom.spdx.json.
 func bundleWithSBOM(t *testing.T) string {
 	t.Helper()
 	dir := bundleWith(t, false)

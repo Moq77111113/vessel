@@ -15,7 +15,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// anImage builds a pseudo-random image and the reference pinning it to its own digest.
 func anImage(t *testing.T, repository string) (v1.Image, delivery.Ref) {
 	t.Helper()
 	image, err := random.Image(256, 1)
@@ -33,8 +32,6 @@ func anImage(t *testing.T, repository string) (v1.Image, delivery.Ref) {
 	return image, ref
 }
 
-// The invariant CLAUDE.md names: the digest a unit pins is the digest of the manifest blob the
-// bundle carries, byte for byte.
 func TestWriteLayoutWritesTheBlobTheImageDigestNames(t *testing.T) {
 	image, ref := anImage(t, "registry.test/acme/web")
 	dir := t.TempDir()

@@ -179,7 +179,6 @@ func TestASecondInstallLeavesAFileItDidNotChangeAlone(t *testing.T) {
 	}
 }
 
-// twoUnitBundle links a bundle carrying two units, so a claim about every service has two to name.
 func twoUnitBundle(t *testing.T) string {
 	t.Helper()
 	return linkTestBundle(t, map[string]string{
@@ -236,7 +235,6 @@ func TestInstallLeavesTheRecordOpenWhenAServiceDidNotStart(t *testing.T) {
 	}
 }
 
-// downServices reports the named services as not running, whatever the machine did.
 type downServices struct {
 	driver.Driver
 	names []string
@@ -288,7 +286,6 @@ func TestTheRecordDigestMatchesTheFileOnDisk(t *testing.T) {
 	}
 }
 
-// recordAfterAnInstall installs one bundle under root and returns the record it left.
 func recordAfterAnInstall(t *testing.T, root string) release.Record {
 	t.Helper()
 	if err := runInstall(t, root, writeBundle(t, "acme", "1.4.0"), nil); err != nil {
@@ -330,7 +327,6 @@ func TestAFailedInstallLeavesAnOpenRecord(t *testing.T) {
 	}
 }
 
-// writeBundle links a minimal bundle named delivery at version and returns its directory.
 func writeBundle(t *testing.T, delivery, version string) string {
 	t.Helper()
 	return linkTestBundle(t, map[string]string{
@@ -338,7 +334,6 @@ func writeBundle(t *testing.T, delivery, version string) string {
 	})
 }
 
-// jobFor builds the install a test drives, through kinds or a working podman stub when nil.
 func jobFor(t *testing.T, root, dir string, kinds []driver.Driver, set map[string]string) Install {
 	t.Helper()
 	if kinds == nil {
@@ -351,42 +346,35 @@ func jobFor(t *testing.T, root, dir string, kinds []driver.Driver, set map[strin
 	return Install{Artifact: artifact, Root: root, Set: set, Machines: kinds, Shell: disk.NewShell(noCapture)}
 }
 
-// runInstall installs the bundle in dir under root, printing nothing.
 func runInstall(t *testing.T, root, dir string, kinds []driver.Driver) error {
 	t.Helper()
 	return jobFor(t, root, dir, kinds, nil).Run(context.Background(), io.Discard, report.New(io.Discard))
 }
 
-// runUpgrade upgrades the bundle in dir under root, printing nothing.
 func runUpgrade(t *testing.T, root, dir string, kinds []driver.Driver) error {
 	t.Helper()
 	return jobFor(t, root, dir, kinds, nil).Upgrade(context.Background(), io.Discard, report.New(io.Discard))
 }
 
-// installWithABrokenImageLoad installs through a machine whose AddImages fails.
 func installWithABrokenImageLoad(t *testing.T, root, dir string) error {
 	t.Helper()
 	return runInstall(t, root, dir, []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}})
 }
 
-// brokenImages fails AddImages, after the files and before the images.
 type brokenImages struct {
 	driver.Driver
 }
 
-// errBrokenImageLoad is the failure brokenImages.AddImages reports.
 var errBrokenImageLoad = errors.New("broken image load")
 
 func (brokenImages) AddImages(context.Context, report.Report, *oci.Images) ([]string, error) {
 	return nil, errBrokenImageLoad
 }
 
-// noCapture is the shell of a test where no delivery action or "from" ever runs.
 func noCapture(context.Context, string) ([]byte, error) {
 	return nil, errors.New("the shell should not run in this test")
 }
 
-// podmanStub answers podman well enough to drive an install without podman, remembering every call.
 type podmanStub struct {
 	calls         []string
 	secrets       map[string]string
@@ -427,7 +415,6 @@ func (p *podmanStub) run(_ context.Context, stdin io.Reader, name string, args .
 	return nil, nil
 }
 
-// registryHost starts a local registry seeded with one image and returns its host:port.
 func registryHost(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(ggcrregistry.New())
@@ -450,13 +437,11 @@ func registryHost(t *testing.T) string {
 	return address.Host
 }
 
-// linkTestBundle links a one-unit source plus these files into a bundle, against a local registry.
 func linkTestBundle(t *testing.T, files map[string]string) string {
 	t.Helper()
 	return linkTestDelivery(t, "", files)
 }
 
-// linkTestDelivery does the same, with extra lines appended to the unit.
 func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) string {
 	t.Helper()
 	host := registryHost(t)
@@ -502,7 +487,6 @@ func TestABundleThatCarriesNoNameIsRefused(t *testing.T) {
 	}
 }
 
-// unknownKindBundle writes a bundle naming a machine kind this build cannot install.
 func unknownKindBundle(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bundle")
@@ -517,7 +501,6 @@ func unknownKindBundle(t *testing.T) string {
 	return dir
 }
 
-// namelessBundle writes a bundle whose config carries no name, as an older vessel produced one.
 func namelessBundle(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bundle")
@@ -531,7 +514,6 @@ func namelessBundle(t *testing.T) string {
 	return dir
 }
 
-// emptyLayout writes an OCI layout carrying no image.
 func emptyLayout(t *testing.T) string {
 	t.Helper()
 	layout := t.TempDir()
@@ -563,7 +545,6 @@ func TestInstallRefusesABundleWhoseNameLeavesTheTargetRoot(t *testing.T) {
 	}
 }
 
-// hostileBundle writes a bundle carrying name, a name link itself would never let through.
 func hostileBundle(t *testing.T, name string) string {
 	t.Helper()
 	layout := t.TempDir()
@@ -684,8 +665,6 @@ func TestAnInstallThatDiesWritingAFileSaysTheMachineIsPartwayThrough(t *testing.
 	}
 }
 
-// blockedFileBundle links a bundle whose one file can never be written: the directory it needs
-// is already an ordinary file.
 func blockedFileBundle(t *testing.T) string {
 	t.Helper()
 	return linkTestBundle(t, map[string]string{
@@ -732,14 +711,12 @@ func TestInstallReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testin
 	}
 }
 
-// unreadyMachine wraps a driver.Machine and fails Check, as an operator's own machine would.
 type unreadyMachine struct {
 	driver.Driver
 }
 
 func (unreadyMachine) Check(context.Context) error { return driver.ErrNotReady }
 
-// heldSecrets wraps a driver.Machine and reports secrets the machine already holds.
 type heldSecrets struct {
 	driver.Driver
 	names []string
@@ -761,7 +738,6 @@ func TestTheRecordSaysTheBundleIsInsecure(t *testing.T) {
 	}
 }
 
-// linkInsecureBundle links testdata/insecure and one unit as --insecure-unsigned would.
 func linkInsecureBundle(t *testing.T) string {
 	t.Helper()
 	source := t.TempDir()
@@ -865,7 +841,6 @@ func TestAnActionKilledBySignalStaysOpenInTheRecord(t *testing.T) {
 	}
 }
 
-// fixture reads every file of testdata/name, keyed by file name, for linkTestBundle.
 func fixture(t *testing.T, name string) map[string]string {
 	t.Helper()
 	dir := filepath.Join("testdata", name)
@@ -884,7 +859,6 @@ func fixture(t *testing.T, name string) map[string]string {
 	return files
 }
 
-// quietShell succeeds on every command and prints nothing.
 func quietShell(context.Context, string) ([]byte, error) { return nil, nil }
 
 func TestInstallRefusesAMachineAnInstallLeftHalfway(t *testing.T) {

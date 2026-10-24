@@ -153,7 +153,6 @@ func TestResolveRefusesASetTheDeliveryNeverDeclared(t *testing.T) {
 	}
 }
 
-// An install runs as root, so the command the error names has to carry sudo to reach the store.
 func TestResolveRefusesToReplaceASecretTheMachineHolds(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", From: "printf x", Secret: true}}
 	_, err := newValues(t, map[string]string{"DB_PASSWORD": "new"}, []string{"DB_PASSWORD"}).

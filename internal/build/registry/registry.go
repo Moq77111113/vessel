@@ -1,5 +1,3 @@
-// Package registry pulls the images a descriptor names into an OCI layout: Client reads the
-// network, WriteLayout writes the disk.
 package registry
 
 import (
@@ -16,21 +14,15 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// Errors a client returns before it ever reaches a registry.
 var (
 	ErrPlatform  = errors.New("unreadable platform")
 	ErrRefSyntax = errors.New("unreadable image reference")
 )
 
-// Client reads registries over the network.
 type Client struct{}
 
-// New returns a client that reads public registries, and private ones through the credentials
-// the container engines on this machine already keep.
 func New() *Client { return &Client{} }
 
-// Resolve returns the digest of the manifest a reference points at right now: the platform's
-// manifest, not the index that may list it, so the digest names the very blob Image returns.
 func (c *Client) Resolve(ctx context.Context, ref delivery.Ref, platform string) (string, error) {
 	options, err := remoteOptions(ctx, platform)
 	if err != nil {
@@ -55,7 +47,6 @@ func (c *Client) Resolve(ctx context.Context, ref delivery.Ref, platform string)
 	return digest.String(), nil
 }
 
-// Image pulls a reference already pinned to a digest.
 func (c *Client) Image(ctx context.Context, ref delivery.Ref) (v1.Image, error) {
 	target, err := name.ParseReference(ref.String())
 	if err != nil {

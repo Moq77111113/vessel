@@ -73,7 +73,6 @@ func TestOpenRefusesEvidenceNamedToLeaveADirectory(t *testing.T) {
 	}
 }
 
-// emptyBundle writes a bundle with no image and no file over testdata/empty-layout.
 func emptyBundle(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "bundle")
@@ -87,7 +86,6 @@ func emptyBundle(t *testing.T) string {
 	return dir
 }
 
-// sbom is testdata/sbom.spdx.json as one piece of evidence.
 func sbom(t *testing.T) Evidence {
 	t.Helper()
 	body, err := os.ReadFile("testdata/sbom.spdx.json")

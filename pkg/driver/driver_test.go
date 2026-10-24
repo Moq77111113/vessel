@@ -14,7 +14,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// stub is a machine that recognizes one file name and does nothing else.
 type stub struct {
 	name string
 	mark string

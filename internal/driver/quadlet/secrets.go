@@ -10,7 +10,6 @@ import (
 
 const secretKey = "Secret"
 
-// reads names the podman secrets these units expect to find on the machine.
 func reads(files []delivery.File) []string {
 	seen := map[string]bool{}
 	for _, file := range files {

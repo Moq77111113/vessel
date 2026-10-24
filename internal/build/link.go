@@ -1,4 +1,3 @@
-// Package build resolves a delivery to digests, writes the bundle that carries it, and packs it into one signed executable.
 package build
 
 import (
@@ -19,17 +18,13 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// puller is what resolveAll needs from a registry: resolve a reference to a digest, then pull
-// the manifest that digest names. *registry.Client satisfies it.
 type puller interface {
 	Resolve(ctx context.Context, ref delivery.Ref, platform string) (string, error)
 	Image(ctx context.Context, ref delivery.Ref) (v1.Image, error)
 }
 
-// defaultPlatform is what every reference resolves for when the job names no platform.
 const defaultPlatform = "linux/amd64"
 
-// Link resolves the delivery the job names to digests and writes its bundle in out.
 func Link(ctx context.Context, work, summary report.Report, kinds []driver.Driver, job Job, out string) error {
 	source, err := os.OpenRoot(job.Source)
 	if err != nil {
@@ -124,8 +119,6 @@ func Link(ctx context.Context, work, summary report.Report, kinds []driver.Drive
 	return nil
 }
 
-// resolveAll pulls every relocation's image into the layout, announcing each before the call it
-// precedes so a long pull shows it is moving rather than going silent until it returns.
 func resolveAll(ctx context.Context, work report.Report, client puller, relocs []delivery.Relocation, platform, layout string) (map[string]string, error) {
 	digests := make(map[string]string, len(relocs))
 	for _, reloc := range relocs {
@@ -152,7 +145,6 @@ func resolveAll(ctx context.Context, work report.Report, client puller, relocs [
 	return digests, nil
 }
 
-// carryFiles reads the plain files a delivery declares, keyed by the path they take under the root.
 func carryFiles(source fs.FS, mappings []delivery.Mapping) ([]delivery.File, error) {
 	files := make([]delivery.File, 0, len(mappings))
 	for _, mapping := range mappings {
@@ -165,7 +157,6 @@ func carryFiles(source fs.FS, mappings []delivery.Mapping) ([]delivery.File, err
 	return files, nil
 }
 
-// imagesOf turns the resolution map into the ordered list the config carries.
 func imagesOf(digests map[string]string) []bundle.Image {
 	images := make([]bundle.Image, 0, len(digests))
 	for ref, digest := range digests {

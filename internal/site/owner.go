@@ -9,13 +9,11 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// Errors an install returns for a file it does not own, before it changes anything.
 var (
 	ErrFileExists = errors.New("is already on this machine and no delivery put it there, move it away or drop it from the descriptor")
 	ErrFileTaken  = errors.New("belongs to another delivery")
 )
 
-// claim refuses a file this install would write that another delivery owns, or that no delivery put there.
 func (i Install) claim(current release.Record, files []delivery.File) error {
 	others, err := release.Owners(i.Root, i.Artifact.Config.Name)
 	if err != nil {

@@ -206,7 +206,6 @@ func TestASignedBuildSignsTheExecutable(t *testing.T) {
 	}
 }
 
-// buildSignedLayout builds with --layout and a fresh key, and returns the layout and the key.
 func buildSignedLayout(t *testing.T) (string, string) {
 	t.Helper()
 	source := t.TempDir()
@@ -249,7 +248,6 @@ func TestAnExecutableIsNeverPublishedWithoutItsSignature(t *testing.T) {
 	}
 }
 
-// blockSignature puts a directory where the signature of out goes, so writing it fails.
 func blockSignature(t *testing.T, out string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(out+attest.SignatureSuffix, "taken"), 0o755); err != nil {
@@ -371,7 +369,6 @@ func TestBuildFromABundleRefusesAFlagTheBundleAlreadyAnswers(t *testing.T) {
 	}
 }
 
-// buildUnsignedLayout builds with --layout --insecure-unsigned and returns the layout.
 func buildUnsignedLayout(t *testing.T) string {
 	t.Helper()
 	source := t.TempDir()

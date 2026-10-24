@@ -17,7 +17,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// plan is what an install would do to this machine, in the order it would do it.
 type plan struct {
 	checks   []string
 	skip     []release.Step
@@ -31,13 +30,11 @@ type plan struct {
 	unknowns []string
 }
 
-// change is one file an install would add, replace, keep or remove: the verb and the line it prints.
 type change struct {
 	verb string
 	line string
 }
 
-// plan reads the machine and lays out what run would change, touching nothing.
 func (i Install) plan(ctx context.Context, before prelude, resolution values.Resolution, files []delivery.File) (plan, error) {
 	config := i.Artifact.Config
 	progress := before.progress
@@ -76,7 +73,6 @@ func (i Install) plan(ctx context.Context, before prelude, resolution values.Res
 	return p, nil
 }
 
-// checks names what the dry run confirmed before it planned anything.
 func checks(before prelude) []string {
 	record := "no install is left unfinished"
 	switch {
@@ -88,7 +84,6 @@ func checks(before prelude) []string {
 	return []string{"the machine is ready", "the bundle matches its digests", "every variable has a value", record}
 }
 
-// stops names the services of the files the previous version carried and this one drops.
 func (i Install) stops(ctx context.Context, before prelude, files []delivery.File) ([]string, error) {
 	if !before.found {
 		return nil, nil
@@ -105,7 +100,6 @@ func (i Install) stops(ctx context.Context, before prelude, files []delivery.Fil
 	return names, nil
 }
 
-// dryValues maps the value a dry run put in place of each from: command to the variable it answers.
 func dryValues(variables []delivery.Variable, resolution values.Resolution) map[string]string {
 	marks := map[string]string{}
 	for _, variable := range variables {
@@ -120,7 +114,6 @@ func dryValues(variables []delivery.Variable, resolution values.Resolution) map[
 	return marks
 }
 
-// fileChanges compares every file the install carries with the disk, then names the files it would remove or keep.
 func fileChanges(root string, files []delivery.File, current []release.Entry, unknown map[string]string) ([]change, error) {
 	changes := make([]change, 0, len(files))
 	for _, file := range files {
@@ -139,7 +132,6 @@ func fileChanges(root string, files []delivery.File, current []release.Entry, un
 	return changes, nil
 }
 
-// fileChange says what writing file at path would do, naming the from: values its content waits on.
 func fileChange(path string, file delivery.File, unknown map[string]string) change {
 	var names []string
 	for mark, name := range unknown {
@@ -163,7 +155,6 @@ func fileChange(path string, file delivery.File, unknown map[string]string) chan
 	return change{verb: "Replace", line: file.Path}
 }
 
-// unknowns names what a dry run cannot know: from: values, an action a rollback passes, action results, service health.
 func unknowns(variables []delivery.Variable, unknown map[string]string, bypass string, actions, services []string) []string {
 	var lines []string
 	for _, variable := range variables {
@@ -185,7 +176,6 @@ func unknowns(variables []delivery.Variable, unknown map[string]string, bypass s
 	return lines
 }
 
-// print writes the plan, one verb per line.
 func (p plan) print(out io.Writer, name, version string) {
 	fmt.Fprintf(out, "%s %s, dry run: nothing on this machine changed\n", name, version)
 	lines := report.New(out)

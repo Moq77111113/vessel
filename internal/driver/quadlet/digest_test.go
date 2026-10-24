@@ -21,11 +21,8 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// realImageRef is the reference AddImages must land in podman's local storage.
 const realImageRef = "vessel-quadlet-test.local/probe:1.0"
 
-// The invariant the whole design rests on: the digest a unit pins is the digest of
-// the image podman actually holds, not just the digest the bundle's own bytes carry.
 func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
 	m := New("/", Exec)
 	skipUnlessPodmanReady(t, m)
@@ -46,7 +43,6 @@ func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
 	}
 }
 
-// skipUnlessPodmanReady skips naming exactly what podman lacks: missing, too old, or unable to run.
 func skipUnlessPodmanReady(t *testing.T, m *Machine) {
 	t.Helper()
 	ctx := context.Background()
@@ -62,8 +58,6 @@ func skipUnlessPodmanReady(t *testing.T, m *Machine) {
 	}
 }
 
-// realImageLayout writes an OCI layout holding one real, podman-loadable image at ref,
-// and returns its directory and the digest of the image manifest it carries.
 func realImageLayout(t *testing.T, ref string) (string, string, string) {
 	t.Helper()
 	base := mutate.ConfigMediaType(mutate.MediaType(empty.Image, types.OCIManifestSchema1), types.OCIConfigJSON)
@@ -103,7 +97,6 @@ func realImageLayout(t *testing.T, ref string) (string, string, string) {
 	return dir, digest.String(), root.String()
 }
 
-// podmanImageDigest asks podman itself for the manifest digest it holds ref at.
 func podmanImageDigest(t *testing.T, ref string) string {
 	t.Helper()
 	out, err := exec.Command("podman", "image", "inspect", "--format", "{{.Digest}}", ref).Output()
@@ -113,7 +106,6 @@ func podmanImageDigest(t *testing.T, ref string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// removePodmanImage drops ref from podman's local storage, cleaning up after the test.
 func removePodmanImage(t *testing.T, ref string) {
 	t.Helper()
 	if err := exec.Command("podman", "image", "rm", "-f", ref).Run(); err != nil {

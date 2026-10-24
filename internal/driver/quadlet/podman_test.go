@@ -13,13 +13,10 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// orderRecorder stands in for a report.Report and remembers, in order, when a line was
-// written relative to the calls a test also logs into it.
 type orderRecorder struct{ log *[]string }
 
 func (o *orderRecorder) Line(_, _ string) { *o.log = append(*o.log, "line") }
 
-// recorder stands in for podman and remembers what it was handed.
 type recorder struct {
 	args      []string
 	stdin     [][]byte
@@ -90,8 +87,6 @@ func TestLoadNamesTheImageInItsAnnouncement(t *testing.T) {
 	}
 }
 
-// install runs on a client site with no network for minutes at a time; if nothing prints
-// until podman load returns, the operator cannot tell it apart from a dead process.
 func TestLoadAnnouncesEachImageBeforePodmanLoadRuns(t *testing.T) {
 	var log []string
 	run := func(_ context.Context, _ io.Reader, _ string, _ ...string) ([]byte, error) {

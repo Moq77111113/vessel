@@ -12,7 +12,6 @@ import (
 	"github.com/Moq77111113/vessel/internal/site"
 )
 
-// newPacked is the command tree of an executable that carries its own bundle.
 func newPacked(self string) *cobra.Command {
 	name := filepath.Base(os.Args[0])
 	command := &cobra.Command{
@@ -138,8 +137,6 @@ func packedUninstall(self string) *cobra.Command {
 	return command
 }
 
-// withJob lays the carried bundle down and hands the install it describes to run. A binary
-// cannot vouch for the payload it carries, so the operator checks the file itself.
 func withJob(self string, values answers, run func(site.Install) error) error {
 	return withPayload(self, func(dir string) error {
 		artifact, err := bundle.OpenNamed(dir)
@@ -154,7 +151,6 @@ func withJob(self string, values answers, run func(site.Install) error) error {
 	})
 }
 
-// withPayload lays the carried bundle down in a working directory and hands it to run.
 func withPayload(self string, run func(dir string) error) error {
 	dir, err := os.MkdirTemp("", "vessel-bundle-*")
 	if err != nil {

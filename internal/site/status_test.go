@@ -160,7 +160,6 @@ func TestStatusPrintsTheVersionBeforeItFails(t *testing.T) {
 	}
 }
 
-// rootHoldingAComposeRecord writes a record naming a machine kind this build cannot read.
 func rootHoldingAComposeRecord(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

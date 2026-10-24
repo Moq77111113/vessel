@@ -10,21 +10,17 @@ import (
 )
 
 const (
-	// EvidenceType marks the manifest carrying the SBOMs and reports a CI attached to a bundle.
 	EvidenceType = "application/vnd.vessel.evidence.v1"
 	evidenceFile = "application/vnd.vessel.evidence.file.v1"
-	// OCI 1.1 empty descriptor: an artifact manifest with no config points at the two bytes "{}".
-	emptyType = "application/vnd.oci.empty.v1+json"
-	titleKey  = "org.opencontainers.image.title"
+	emptyType    = "application/vnd.oci.empty.v1+json"
+	titleKey     = "org.opencontainers.image.title"
 )
 
-// Evidence is one file a CI made from a bundle: an SBOM, a scan report.
 type Evidence struct {
 	Name string
 	Data []byte
 }
 
-// Attach adds evidence to the bundle at dir, bound to its root; the same file attached again is kept once.
 func Attach(dir string, evidence []Evidence) error {
 	root, err := bundleEntry(dir)
 	if err != nil {
@@ -41,7 +37,6 @@ func Attach(dir string, evidence []Evidence) error {
 	return attach(dir, root, fresh)
 }
 
-// freshEvidence keeps the files the bundle does not carry yet, refusing a name taken by other content.
 func freshEvidence(present, evidence []Evidence) ([]Evidence, error) {
 	carried := make(map[string][]byte, len(present))
 	for _, file := range present {
@@ -69,7 +64,6 @@ func freshEvidence(present, evidence []Evidence) ([]Evidence, error) {
 	return fresh, nil
 }
 
-// attach writes the evidence manifest bound to root and lists it in index.json beside the root.
 func attach(dir string, root entry, evidence []Evidence) error {
 	config, err := putBlob(dir, []byte("{}"))
 	if err != nil {
@@ -105,7 +99,6 @@ func attach(dir string, root entry, evidence []Evidence) error {
 	return writeIndex(dir, indexFile)
 }
 
-// readEvidence returns every file the evidence manifests bound to root carry, refusing a name that is a path.
 func readEvidence(dir string, root entry) ([]Evidence, error) {
 	indexFile, err := readIndex(dir)
 	if err != nil {
@@ -150,7 +143,6 @@ func readEvidence(dir string, root entry) ([]Evidence, error) {
 	return evidence, nil
 }
 
-// checkEvidenceName refuses a name that is empty, a dot entry, or anything but one path segment.
 func checkEvidenceName(name string) error {
 	if name == "" || name == "." || name == ".." || path.Base(name) != name {
 		return fmt.Errorf("%q: %w", name, ErrEvidenceName)

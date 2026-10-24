@@ -11,7 +11,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// imageLayout writes the OCI layout a fetch run would leave behind: one image manifest and its config.
 func imageLayout(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

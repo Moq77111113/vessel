@@ -22,7 +22,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// access says whether a fixture registry demands credentials.
 type access int
 
 const (
@@ -30,7 +29,6 @@ const (
 	privateAccess
 )
 
-// payload says whether a fixture registry serves a single image or a multi-platform index.
 type payload int
 
 const (
@@ -38,10 +36,6 @@ const (
 	multiPlatformIndex
 )
 
-// serveRegistry starts an in-memory registry holding acme/web:1.0 and returns its reference.
-// A privateAccess registry answers 401 until it is given user:password, and points DOCKER_CONFIG
-// at those credentials. A multiPlatformIndex payload serves an index over one linux/amd64 image
-// rather than the image directly.
 func serveRegistry(t *testing.T, access access, payload payload) delivery.Ref {
 	t.Helper()
 	const user, password = "user", "password"
@@ -141,11 +135,6 @@ func TestImageReadsARegistryThatDemandsCredentials(t *testing.T) {
 	}
 }
 
-// The seam the invariant rests on: Resolve names a manifest, Image hands back that same
-// manifest, and WriteLayout stores it under the digest Resolve returned. It has to hold whether
-// the reference names a single image or an index over several platforms: DMAS shipped an index
-// pinned by digest, and it broke on install because the two halves disagreed on which manifest
-// the digest named.
 func TestImageReturnsTheManifestResolveNamed(t *testing.T) {
 	cases := []struct {
 		name    string

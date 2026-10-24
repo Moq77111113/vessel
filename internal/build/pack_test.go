@@ -12,12 +12,10 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// orderRecorder stands in for a report.Report and logs "line" every time it is called.
 type orderRecorder struct{ log *[]string }
 
 func (o *orderRecorder) Line(_, _ string) { *o.log = append(*o.log, "line") }
 
-// recordingWriter logs "write" every time it is written to, dropping the bytes.
 type recordingWriter struct{ log *[]string }
 
 func (w *recordingWriter) Write(data []byte) (int, error) {
@@ -58,9 +56,6 @@ func packed(t *testing.T) string {
 	return out
 }
 
-// Pack writes hundreds of megabytes into one file with nothing else running: the operator
-// watching a silent terminal for minutes cannot tell it from a dead process. A line per file
-// as it is archived is enough to show it is moving.
 func TestPackPrintsEachFileAsItIsWritten(t *testing.T) {
 	var progress bytes.Buffer
 	if err := Pack(bytes.NewReader(stub()), bundleDir(t), io.Discard, report.New(&progress)); err != nil {
@@ -73,8 +68,6 @@ func TestPackPrintsEachFileAsItIsWritten(t *testing.T) {
 	}
 }
 
-// install runs on a client site with no network for minutes at a time; if a file's announcement
-// waited until after it was written, hundreds of megabytes could pass in silence.
 func TestPackAnnouncesEachFileBeforeWritingIt(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.json", "b.json"} {

@@ -158,7 +158,6 @@ func TestReadReportsAFileItCannotRead(t *testing.T) {
 	}
 }
 
-// unreadable is a directory that holds vessel.yaml and refuses to give it up.
 type unreadable struct{}
 
 func (unreadable) Open(string) (fs.File, error) { return nil, fs.ErrPermission }

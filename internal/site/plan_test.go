@@ -129,14 +129,11 @@ func TestADryRunStillRefusesAnUnfinishedInstall(t *testing.T) {
 	}
 }
 
-// readOnly reports whether a podman or systemctl call only reads the machine.
 func readOnly(call string) bool {
 	return call == "podman --version" || call == "podman image ls" || call == "podman secret ls --format {{.Name}}" ||
 		strings.HasPrefix(call, "systemctl is-active ")
 }
 
-// dryRunBundle links testdata/dry-run with a unit that reads DB_PASSWORD.
-// dbPassword answers the secret the dry-run fixture declares, as --set-file would.
 var dbPassword = map[string]string{"DB_PASSWORD": "hunter2"}
 
 func dryRunBundle(t *testing.T) string {
@@ -144,7 +141,6 @@ func dryRunBundle(t *testing.T) string {
 	return linkTestDelivery(t, "Secret=DB_PASSWORD,type=env,target=DB\n", fixture(t, "dry-run"))
 }
 
-// dryRun previews an install of the dry-run fixture under root, and returns what it printed.
 func dryRun(t *testing.T, root, dir string) string {
 	t.Helper()
 	var out bytes.Buffer
@@ -156,7 +152,6 @@ func dryRun(t *testing.T, root, dir string) string {
 	return collapse(out.String())
 }
 
-// collapse turns every run of blanks into one space, so a test reads a line without the verb column.
 func collapse(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }

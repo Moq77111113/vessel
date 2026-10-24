@@ -1,4 +1,3 @@
-// Package disk writes under the target root and runs the commands a delivery declares.
 package disk
 
 import (
@@ -16,21 +15,17 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// Errors a tree returns before it touches a path.
 var (
 	ErrPathEscapes  = errors.New("leaves the target root")
 	ErrUnsafeParent = errors.New("sits under a directory another user can change")
 )
 
-// Tree is the file tree of the target machine, rooted where a bundle is written.
 type Tree struct {
 	root string
 }
 
-// NewTree returns the file tree rooted at dir.
 func NewTree(dir string) *Tree { return &Tree{root: dir} }
 
-// Write puts the file in place and reports whether the content on disk differed.
 func (t *Tree) Write(file delivery.File) (bool, error) {
 	path, err := t.resolve(file.Path)
 	if err != nil {
@@ -53,7 +48,6 @@ func (t *Tree) Write(file delivery.File) (bool, error) {
 	return true, nil
 }
 
-// Remove deletes the file at name under the root and reports whether it was there to delete.
 func (t *Tree) Remove(name string) (bool, error) {
 	path, err := t.resolve(name)
 	if err != nil {
@@ -71,7 +65,6 @@ func (t *Tree) Remove(name string) (bool, error) {
 	return true, nil
 }
 
-// modeFor is the declared mode, else the mode of the file in place, else readable by all.
 func modeFor(path string, declared fs.FileMode) fs.FileMode {
 	if declared != 0 {
 		return declared
@@ -82,7 +75,6 @@ func modeFor(path string, declared fs.FileMode) fs.FileMode {
 	return 0o644
 }
 
-// permOf is the permission bits of the file at path, or 0 when nothing is there.
 func permOf(path string) fs.FileMode {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -91,7 +83,6 @@ func permOf(path string) fs.FileMode {
 	return info.Mode().Perm()
 }
 
-// Holds reports whether anything sits at name under the root.
 func (t *Tree) Holds(name string) (bool, error) {
 	path, err := t.resolve(name)
 	if err != nil {
@@ -107,7 +98,6 @@ func (t *Tree) Holds(name string) (bool, error) {
 	return true, nil
 }
 
-// Differs reports whether the file at name is there and no longer hashes to digest.
 func (t *Tree) Differs(name, digest string) (bool, error) {
 	path, err := t.resolve(name)
 	if err != nil {
@@ -131,7 +121,6 @@ func (t *Tree) resolve(name string) (string, error) {
 	return filepath.Join(t.root, clean), nil
 }
 
-// checkParents refuses a path when a directory leading to it, or one a link leads to, is not this process's alone.
 func (t *Tree) checkParents(path string) error {
 	for dir := filepath.Dir(path); within(t.root, dir); dir = filepath.Dir(dir) {
 		real, err := filepath.EvalSymlinks(dir)
@@ -148,7 +137,6 @@ func (t *Tree) checkParents(path string) error {
 	return nil
 }
 
-// checkChain refuses dir, or a directory above it up to the tree root or /, that is not ours alone.
 func (t *Tree) checkChain(dir string) error {
 	top := string(filepath.Separator)
 	if within(t.root, dir) {
@@ -164,7 +152,6 @@ func (t *Tree) checkChain(dir string) error {
 	}
 }
 
-// ours refuses a directory that another user owns, or that its group or anyone may write.
 func ours(dir string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -177,13 +164,11 @@ func ours(dir string) error {
 	return nil
 }
 
-// within reports whether path is root or sits under it.
 func within(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
-// Same reports whether the file at path still hashes to digest.
 func Same(path, digest string) bool {
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -192,7 +177,6 @@ func Same(path, digest string) bool {
 	return DigestOf(body) == digest
 }
 
-// DigestOf is the sha256 of data, in the form a bundle records.
 func DigestOf(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])

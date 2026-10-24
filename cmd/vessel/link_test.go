@@ -29,9 +29,6 @@ func TestLinkPinsEveryUnitToADigest(t *testing.T) {
 	}
 }
 
-// link resolves web.container's image after db.container's, since a reader visits units in
-// name order; a line printed as each image is resolved carries that order, not the sorted one
-// the final lock uses.
 func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
 	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
 	output, err := runVesselCapture("build", "-o", exe, "--layout", out, "--name", "acme", "--version", "1.0", "--insecure-unsigned", serveStack(t))
@@ -48,10 +45,6 @@ func TestLinkPrintsEachImageAsItIsResolvedRatherThanAllAtTheEnd(t *testing.T) {
 	}
 }
 
-// Two link runs over the same source and registry are how an audit checks a bundle against
-// the commit it claims to come from: they must produce the same bundle, byte for byte. The
-// two runs are spaced over a second apart, the resolution a stamped build time would show a
-// difference at, so a build time sneaking back into the hashed config would show up here.
 func TestLinkTwiceFromTheSameSourceProducesTheSameBundle(t *testing.T) {
 	source := serveStack(t)
 	first, firstExe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")

@@ -1,4 +1,3 @@
-// Package quadlet reads a directory of systemd quadlet units and runs them on podman.
 package quadlet
 
 import (
@@ -17,28 +16,22 @@ import (
 
 const systemdPath = "etc/containers/systemd"
 
-// siblingPath is where a plain systemd unit goes: quadlet does not generate those, systemd reads
-// them directly.
 const siblingPath = "etc/systemd/system"
 
 const imageKey = "Image"
 
 var ErrNoUnit = errors.New("no quadlet unit in the source directory")
 
-// ErrUnitName says a unit file name is not one systemd takes as a unit name.
 var ErrUnitName = errors.New("is not a systemd unit name")
 
-// unitName is what systemd takes as a unit name, never opening on a dash systemctl reads as an option.
 var unitName = regexp.MustCompile(`^[A-Za-z0-9:_.@\\][A-Za-z0-9:_.@\\-]*$`)
 
 var unitSuffixes = []string{".container", ".network", ".volume", ".pod", ".build", ".image", ".kube"}
 
 var siblingSuffixes = []string{".timer", ".socket", ".path"}
 
-// suffixes is every unit file kind vessel takes out of a source directory.
 var suffixes = slices.Concat(unitSuffixes, siblingSuffixes)
 
-// pathFor returns where a unit file goes under the target root.
 func pathFor(name string) string {
 	for _, suffix := range siblingSuffixes {
 		if strings.HasSuffix(name, suffix) {
@@ -48,25 +41,20 @@ func pathFor(name string) string {
 	return path.Join(systemdPath, name)
 }
 
-// owns reports whether a path under the target root lands in a directory this reader fills.
 func owns(name string) bool {
 	return under(name, systemdPath) || under(name, siblingPath)
 }
 
-// under reports whether a path lands inside a directory, at any depth.
 func under(name, dir string) bool {
 	return strings.HasPrefix(path.Clean(name), dir+"/")
 }
 
-// Reader turns a directory of quadlet units into a format-neutral manifest.
 type Reader struct{}
 
-// NewReader returns a reader for quadlet unit directories.
 func NewReader() *Reader { return &Reader{} }
 
 func (r *Reader) Name() string { return "quadlet" }
 
-// Detect reports whether the directory holds at least one .container unit.
 func (r *Reader) Detect(dir fs.FS) bool {
 	entries, err := fs.ReadDir(dir, ".")
 	if err != nil {
@@ -80,7 +68,6 @@ func (r *Reader) Detect(dir fs.FS) bool {
 	return false
 }
 
-// Read carries every unit file, marks the byte range of each Image= reference, and names the services and secrets the units declare.
 func (r *Reader) Read(dir fs.FS) (delivery.Manifest, error) {
 	names, err := unitNames(dir)
 	if err != nil {

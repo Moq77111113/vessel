@@ -8,15 +8,12 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// serviceSuffixes maps a quadlet unit to the suffix systemd generates for it.
-// A .network or a .volume starts nothing on its own: the services that need it pull it in.
 var serviceSuffixes = map[string]string{
 	".container": ".service",
 	".kube":      ".service",
 	".pod":       "-pod.service",
 }
 
-// services names what these units start: the services systemd generates, in order, then the plain units beside them.
 func services(files []delivery.File) []delivery.Service {
 	var generated, plain []delivery.Service
 	for _, file := range files {
@@ -38,11 +35,6 @@ func services(files []delivery.File) []delivery.Service {
 	return append(generated, plain...)
 }
 
-// startLines returns the systemctl lines that bring these services up.
-//
-// systemctl start on a quadlet unit, never enable: it is generated, so enable fails on it. Starting
-// at boot comes from the [Install] section the unit already carries. A .timer is not generated, so
-// it takes enable --now like any hand-written unit.
 func startLines(services []delivery.Service) []string {
 	generated, plain := split(services)
 	if len(generated) == 0 && len(plain) == 0 {
@@ -58,7 +50,6 @@ func startLines(services []delivery.Service) []string {
 	return lines
 }
 
-// stopLines returns the systemctl lines that bring these services down, plain units included.
 func stopLines(services []delivery.Service) []string {
 	generated, plain := split(services)
 	var lines []string
@@ -71,7 +62,6 @@ func stopLines(services []delivery.Service) []string {
 	return lines
 }
 
-// split names the services systemd generates from a unit apart from the plain units beside them.
 func split(services []delivery.Service) (generated, plain []string) {
 	for _, service := range services {
 		if under(service.Path, siblingPath) {

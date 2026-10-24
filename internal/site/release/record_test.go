@@ -152,7 +152,6 @@ func TestAFailedWriteLeavesTheDamagedRecordOnDisk(t *testing.T) {
 	}
 }
 
-// damagedRecord writes a valid record, then replaces it on disk with bytes that are not JSON.
 func damagedRecord(t *testing.T, root string) (records *release.Records, path string, junk []byte) {
 	t.Helper()
 	dir := filepath.Join(root, "acme")

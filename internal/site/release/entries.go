@@ -7,7 +7,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// Entries names every file this install puts down, with the digest of what it wrote.
 func Entries(files []delivery.File) []Entry {
 	entries := make([]Entry, 0, len(files))
 	for _, file := range files {
@@ -19,7 +18,6 @@ func Entries(files []delivery.File) []Entry {
 	return entries
 }
 
-// Union names every file the machine holds for this delivery and every file the new version carries.
 func Union(previous, next []Entry) []Entry {
 	entries := slices.Clone(next)
 	for _, entry := range previous {

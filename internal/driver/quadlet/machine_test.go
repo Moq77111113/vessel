@@ -12,7 +12,6 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// calls records what a machine asked the system to run.
 type calls struct {
 	lines  []string
 	answer map[string]string

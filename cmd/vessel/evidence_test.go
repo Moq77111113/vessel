@@ -41,7 +41,6 @@ func TestAPackedFileExtractsTheEvidenceItCarries(t *testing.T) {
 	}
 }
 
-// buildWithEvidence packs the fixture stack with the SBOM, returning vessel, the layout and the executable.
 func buildWithEvidence(t *testing.T) (string, string, string) {
 	t.Helper()
 	vessel, dir := buildVessel(t), t.TempDir()

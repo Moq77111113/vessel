@@ -35,7 +35,6 @@ func newResumeCommand() *cobra.Command {
 	return command
 }
 
-// resume picks the one call the --skip-action flag names.
 func resume(ctx context.Context, out io.Writer, work report.Report, job site.Install, skip bool) error {
 	if skip {
 		return job.SkipAction(ctx, out, work)
@@ -43,7 +42,6 @@ func resume(ctx context.Context, out io.Writer, work report.Report, job site.Ins
 	return job.Resume(ctx, out, work)
 }
 
-// bindSkipFlag gives command the --skip-action flag an operator answers an open action with.
 func bindSkipFlag(command *cobra.Command, skip *bool) {
 	command.Flags().BoolVar(skip, "skip-action", false,
 		"treat the action the last install left halfway as finished, without running it")
