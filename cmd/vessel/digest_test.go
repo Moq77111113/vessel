@@ -89,9 +89,9 @@ func TestEveryImageCutsIntoItsOwnArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	layout, err := oci.OpenLayout(artifact.LayoutDir, artifact.Root)
+	layout, err := oci.Open(artifact.LayoutDir, artifact.Root)
 	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	if got, want := layout.Count(), len(images); got != want {
 		t.Fatalf("images: got %d, want %d", got, want)

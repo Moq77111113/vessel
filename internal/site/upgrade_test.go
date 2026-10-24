@@ -120,9 +120,9 @@ func TestUpgradeReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testin
 			t.Errorf("chmod: %v", err)
 		}
 	})
-	kinds := []driver.Machine{unreadyMachine{quadlet.New((&podmanStub{}).run)}}
+	kinds := []driver.Driver{unreadyMachine{quadlet.New(root, (&podmanStub{}).run)}}
 	err := runUpgrade(t, root, dir, kinds)
-	if !errors.Is(err, quadlet.ErrNotReady) {
+	if !errors.Is(err, driver.ErrNotReady) {
 		t.Fatalf("got %v, want the machine-not-ready error", err)
 	}
 }
@@ -139,7 +139,7 @@ func TestUpgradeStopsTheServiceOfAUnitItDrops(t *testing.T) {
 
 	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	stub := &podmanStub{}
-	if err := runUpgrade(t, root, second, []driver.Machine{quadlet.New(stub.run)}); err != nil {
+	if err := runUpgrade(t, root, second, []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
 		t.Fatalf("upgrade 1.4.0: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl stop cache.service") {
@@ -216,7 +216,7 @@ func TestUpgradeDisablesATimerItDrops(t *testing.T) {
 
 	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	stub := &podmanStub{}
-	if err := runUpgrade(t, root, second, []driver.Machine{quadlet.New(stub.run)}); err != nil {
+	if err := runUpgrade(t, root, second, []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
 		t.Fatalf("upgrade 1.4.0: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl disable --now backup.timer") {
@@ -265,7 +265,7 @@ func TestUninstallAfterAFailedUpgradeRemovesTheStaleFile(t *testing.T) {
 	if err := runUpgrade(t, root, linkTestBundle(t, fixture(t, "stale-1.4")), nil); err == nil {
 		t.Fatal("upgrade succeeded despite a shell that refuses every action")
 	}
-	if err := Uninstall(context.Background(), io.Discard, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); !os.IsNotExist(err) {
@@ -295,5 +295,21 @@ func TestAnUpgradeKeepsAFileItDropsWhenEditedOnSite(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); err != nil {
 		t.Errorf("the upgrade removed a file edited on this machine: %v", err)
+	}
+}
+
+func TestUpgradeRefusesARecordThatNamesNoService(t *testing.T) {
+	root := t.TempDir()
+	body, err := os.ReadFile("testdata/older-vessel/acme/record.json")
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
+	err = runUpgrade(t, root, writeBundle(t, "acme", "1.4.0"), nil)
+	if !errors.Is(err, ErrRecordNamesNoService) {
+		t.Fatalf("got %v, want ErrRecordNamesNoService", err)
+	}
+	if errors.Is(err, ErrPartlyInstalled) {
+		t.Error("a refusal before any change says the machine changed")
 	}
 }

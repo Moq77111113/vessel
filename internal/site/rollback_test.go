@@ -93,7 +93,7 @@ func TestAnInstallCutAfterAnUninstallNamesNoRemovedVersion(t *testing.T) {
 	if err := runInstall(t, root, older, nil); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
-	if err := Uninstall(context.Background(), io.Discard, testKinds(), root, "acme"); err != nil {
+	if err := Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if err := installWithABrokenImageLoad(t, root, linkTestBundle(t, fixture(t, "acme-1.4"))); err == nil {

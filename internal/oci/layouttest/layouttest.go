@@ -94,12 +94,12 @@ func TwoImages(t *testing.T) (string, string) {
 }
 
 // Open returns the layout TwoImages writes, already open.
-func Open(t *testing.T) *oci.Layout {
+func Open(t *testing.T) *oci.Images {
 	t.Helper()
 	dir, root := TwoImages(t)
-	layout, err := oci.OpenLayout(dir, root)
+	layout, err := oci.Open(dir, root)
 	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	return layout
 }

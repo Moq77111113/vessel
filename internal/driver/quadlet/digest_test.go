@@ -27,13 +27,13 @@ const realImageRef = "vessel-quadlet-test.local/probe:1.0"
 // The invariant the whole design rests on: the digest a unit pins is the digest of
 // the image podman actually holds, not just the digest the bundle's own bytes carry.
 func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
-	m := New(Exec)
+	m := New("/", Exec)
 	skipUnlessPodmanReady(t, m)
 
 	dir, digest, root := realImageLayout(t, realImageRef)
-	lay, err := oci.OpenLayout(dir, root)
+	lay, err := oci.Open(dir, root)
 	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { removePodmanImage(t, realImageRef) })
 

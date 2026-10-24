@@ -41,7 +41,7 @@ func TestResumeRunsNoActionTheCutInstallFinished(t *testing.T) {
 	root := t.TempDir()
 	dir := linkTestBundle(t, fixture(t, "one-action"))
 	shell := &countingShell{}
-	first := jobFor(t, root, dir, []driver.Machine{brokenImages{quadlet.New((&podmanStub{}).run)}}, nil)
+	first := jobFor(t, root, dir, []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}}, nil)
 	first.Shell = disk.NewShell(shell.run)
 	if err := first.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
 		t.Fatal("install succeeded with a broken image load")
@@ -147,7 +147,7 @@ func TestResumeRefusesAnInstallAnOlderVesselLeftHalfway(t *testing.T) {
 func TestResumeRefusesASetOnceTheValuesAreStored(t *testing.T) {
 	root := t.TempDir()
 	dir := linkTestBundle(t, fixture(t, "one-value"))
-	broken := []driver.Machine{brokenImages{quadlet.New((&podmanStub{}).run)}}
+	broken := []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}}
 	first := jobFor(t, root, dir, broken, map[string]string{"PUBLIC_HOST": "a.acme.local"})
 	if err := first.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
 		t.Fatal("install succeeded with a broken image load")
@@ -160,20 +160,22 @@ func TestResumeRefusesASetOnceTheValuesAreStored(t *testing.T) {
 
 func TestResumeFinishesAnInstallCutAtAnyStep(t *testing.T) {
 	cuts := map[string]struct {
-		kinds func() []driver.Machine
+		kinds func(root string) []driver.Driver
 		want  []release.Step
 	}{
-		"images": {func() []driver.Machine { return []driver.Machine{brokenImages{quadlet.New((&podmanStub{}).run)}} },
+		"images": {func(root string) []driver.Driver {
+			return []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}}
+		},
 			[]release.Step{release.StepValues, release.StepActions, release.StepFiles, release.StepSecrets}},
-		"services": {func() []driver.Machine {
-			return []driver.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}}
+		"services": {func(root string) []driver.Driver {
+			return []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}}
 		}, []release.Step{release.StepValues, release.StepActions, release.StepFiles, release.StepSecrets, release.StepImages}},
 	}
 	for name, cut := range cuts {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			dir := writeBundle(t, "acme", "1.4.0")
-			if err := runInstall(t, root, dir, cut.kinds()); err == nil {
+			if err := runInstall(t, root, dir, cut.kinds(root)); err == nil {
 				t.Fatal("the install succeeded through the cut")
 			}
 			entry, _, err := recordsFor(t, root, "acme").Read()
@@ -234,7 +236,7 @@ func TestResumeAfterAFailedUpgradeRemovesTheStaleFile(t *testing.T) {
 }
 
 // runResume resumes the bundle in dir under root, printing nothing.
-func runResume(t *testing.T, root, dir string, kinds []driver.Machine) error {
+func runResume(t *testing.T, root, dir string, kinds []driver.Driver) error {
 	t.Helper()
 	return jobFor(t, root, dir, kinds, nil).Resume(context.Background(), io.Discard, report.New(io.Discard))
 }
@@ -270,7 +272,7 @@ func openAnAction(t *testing.T, root, dir string) {
 func TestResumeCountsTheImagesTheDeliveryCarries(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
-	down := []driver.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}}
+	down := []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}}
 	if err := runInstall(t, root, dir, down); err == nil {
 		t.Fatal("install succeeded with a service down")
 	}

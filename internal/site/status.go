@@ -7,13 +7,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/site/disk"
 	"github.com/Moq77111113/vessel/internal/site/release"
-	"github.com/Moq77111113/vessel/pkg/delivery"
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
@@ -21,8 +21,11 @@ var ErrNoRecord = errors.New("this machine holds no record of that delivery")
 
 var ErrRecordDoesNotMatch = errors.New("this machine no longer matches the record")
 
+// ErrRecordNamesNoService says an older vessel wrote the record, before it named the services it starts.
+var ErrRecordNamesNoService = errors.New("an older vessel wrote this record and named no service, uninstall with the executable that installed it, then install")
+
 // Status prints what this machine holds for a delivery, and fails when disk no longer matches it.
-func Status(ctx context.Context, out io.Writer, kinds []driver.Machine, root, name string) error {
+func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, name string) error {
 	dir, err := release.Dir(root, name)
 	if err != nil {
 		return err
@@ -54,10 +57,8 @@ func Status(ctx context.Context, out io.Writer, kinds []driver.Machine, root, na
 	}
 
 	lines := report.New(out)
-	files := make([]delivery.File, 0, len(record.Files))
 	changes := 0
 	for _, entry := range record.Files {
-		files = append(files, delivery.File{Path: entry.Path})
 		if reportFile(lines, root, entry) {
 			changes++
 		}
@@ -67,13 +68,16 @@ func Status(ctx context.Context, out io.Writer, kinds []driver.Machine, root, na
 	if err != nil {
 		return err
 	}
-	services, err := kind.Services(ctx, files)
+	if record.Format < release.Format {
+		fmt.Fprintln(out, ErrRecordNamesNoService)
+	}
+	running, err := kind.Running(ctx, record.Services)
 	if err != nil {
 		return err
 	}
-	for _, service := range services {
+	for _, service := range record.Services {
 		state := "down"
-		if service.Running {
+		if slices.Contains(running, service) {
 			state = "running"
 		}
 		lines.Line("Service", fmt.Sprintf("%s %s", service.Name, state))

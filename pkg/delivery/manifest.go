@@ -19,8 +19,24 @@ type Relocation struct {
 	Ref    Ref
 }
 
-// Manifest is what a reader returns: the files to carry, and where their image references sit.
+// Service is one thing a driver starts, and the file under the target root that declares it.
+type Service struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// Secret is one secret value a driver puts on the machine.
+type Secret struct {
+	Name  string
+	Value string
+}
+
+// Manifest is what a driver reads: the files to carry, where their image references sit, the
+// services they declare, the secrets those services read, and the directories the driver fills.
 type Manifest struct {
-	Files  []File
-	Relocs []Relocation
+	Files    []File
+	Relocs   []Relocation
+	Services []Service
+	Secrets  []string
+	Dirs     []string
 }

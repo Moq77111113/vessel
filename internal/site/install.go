@@ -28,7 +28,7 @@ type Install struct {
 	Root     string
 	Set      map[string]string
 	SetFile  map[string]string
-	Machines []driver.Machine
+	Machines []driver.Driver
 	Shell    *disk.Shell
 	preview  bool
 }
@@ -90,6 +90,9 @@ func (i Install) Upgrade(ctx context.Context, out io.Writer, work report.Report)
 	if err := i.refuseOpenRecord(before); err != nil {
 		return err
 	}
+	if err := before.refuseOld(); err != nil {
+		return err
+	}
 	before.bypass = bypass(before.current)
 	return i.run(ctx, out, work, before)
 }
@@ -102,6 +105,9 @@ func (i Install) Run(ctx context.Context, out io.Writer, work report.Report) err
 		return err
 	}
 	if err := i.refuseOpenRecord(before); err != nil {
+		return err
+	}
+	if err := before.refuseOld(); err != nil {
 		return err
 	}
 	before.bypass = bypass(before.current)
@@ -186,6 +192,22 @@ func plainSet(variables []delivery.Variable, set map[string]string) string {
 
 var ErrRecordOpen = errors.New("the last install on this machine never finished")
 
+// refuseOld refuses the record this machine holds when an older vessel wrote it.
+func (p prelude) refuseOld() error {
+	if !p.found {
+		return nil
+	}
+	return refuseOldRecord(p.current)
+}
+
+// refuseOldRecord refuses a record an older vessel wrote before it named the services it starts.
+func refuseOldRecord(current release.Record) error {
+	if current.Format >= release.Format {
+		return nil
+	}
+	return fmt.Errorf("%s %s: %w", current.Name, current.Version, ErrRecordNamesNoService)
+}
+
 // refuseOpenRecord lets an install over an open record through only when it puts the last finished release back.
 func (i Install) refuseOpenRecord(before prelude) error {
 	if !before.found || before.current.Done() {
@@ -237,7 +259,7 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 	if err != nil {
 		return err
 	}
-	store, resolution, err := i.resolveValues(ctx, before.dir, config, secrets)
+	store, resolution, err := i.resolveValues(ctx, before.dir, config, values.Secrets{Names: secrets, Remove: before.host.RemoveHint})
 	if err != nil {
 		return err
 	}
@@ -269,6 +291,7 @@ func (i Install) run(ctx context.Context, out io.Writer, work report.Report, bef
 		Root:     i.Artifact.Root,
 		Files:    release.Entries(files),
 		Images:   digestsOf(config.Images),
+		Services: config.Services,
 		Secrets:  unionNames(before.current.Secrets, namesOf(resolution.Secrets)),
 		Insecure: config.Insecure,
 		Prior:    prior(before),
@@ -364,7 +387,7 @@ func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.
 		if !change.found {
 			return nil
 		}
-		return removeGone(ctx, work, change.host, tree, change.current.Files, change.next.Files)
+		return removeGone(ctx, work, change.host, tree, change.current, change.next)
 	}); err != nil {
 		return 0, err
 	}
@@ -380,8 +403,8 @@ func (i Install) applyToMachine(ctx context.Context, out io.Writer, work report.
 		return 0, err
 	}
 	if err := change.step(release.StepServices, func() error {
-		reportMissingSecrets(out, change.secrets, change.host.Requires(change.files))
-		return startServices(ctx, change.host, change.files)
+		reportMissingSecrets(out, change.secrets, i.Artifact.Config.Secrets)
+		return startServices(ctx, change.host, i.Artifact.Config.Services)
 	}); err != nil {
 		return 0, err
 	}
@@ -394,7 +417,7 @@ func (i Install) checkMachine(ctx context.Context, name string) (driver.Machine,
 	if err != nil {
 		return nil, err
 	}
-	if err := host.Check(ctx, i.Root); err != nil {
+	if err := host.Check(ctx); err != nil {
 		return nil, err
 	}
 	return host, nil
@@ -402,7 +425,7 @@ func (i Install) checkMachine(ctx context.Context, name string) (driver.Machine,
 
 // resolveValues answers every variable the delivery declares, from this machine and this operator.
 func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Config,
-	secrets []string) (*values.Store, values.Resolution, error) {
+	secrets values.Secrets) (*values.Store, values.Resolution, error) {
 	flags, err := answers(config.Variables, i.Set, i.SetFile)
 	if err != nil {
 		return nil, values.Resolution{}, err
@@ -419,6 +442,7 @@ func (i Install) resolveValues(ctx context.Context, dir string, config bundle.Co
 func openRecord(records *release.Records, current, next, progress release.Record) (release.Record, error) {
 	opening := next
 	opening.Files = release.Union(current.Files, next.Files)
+	opening.Services = unionServices(current.Services, next.Services)
 	opening.Steps = progress.Steps
 	opening.Actions = progress.Actions
 	return opening, records.Write(opening)
@@ -467,9 +491,9 @@ func writeFiles(tree *disk.Tree, files []delivery.File) (int, error) {
 }
 
 // addSecrets puts every secret this run resolved into the machine's own secret store.
-func addSecrets(ctx context.Context, host driver.Host, secrets map[string]string) error {
+func addSecrets(ctx context.Context, host driver.Machine, secrets map[string]string) error {
 	for name, value := range secrets {
-		if err := host.AddSecret(ctx, name, value); err != nil {
+		if err := host.AddSecret(ctx, delivery.Secret{Name: name, Value: value}); err != nil {
 			return err
 		}
 	}
@@ -477,20 +501,20 @@ func addSecrets(ctx context.Context, host driver.Host, secrets map[string]string
 }
 
 // addImages puts the images the bundle carries into local storage, and names them.
-func addImages(ctx context.Context, work report.Report, host driver.Host, artifact *bundle.Bundle) ([]string, error) {
-	layout, err := oci.OpenLayout(artifact.LayoutDir, artifact.Root)
+func addImages(ctx context.Context, work report.Report, host driver.Machine, artifact *bundle.Bundle) ([]string, error) {
+	images, err := oci.Open(artifact.LayoutDir, artifact.Root)
 	if err != nil {
 		return nil, err
 	}
-	return host.AddImages(ctx, work, layout)
+	return host.AddImages(ctx, work, images)
 }
 
-// startServices starts the services the units generate and fails on any that did not come up.
-func startServices(ctx context.Context, host driver.Host, files []delivery.File) error {
-	if err := host.Start(ctx, files); err != nil {
+// startServices starts the services and fails on any that did not come up.
+func startServices(ctx context.Context, host driver.Machine, services []delivery.Service) error {
+	if err := host.Start(ctx, services); err != nil {
 		return err
 	}
-	return checkServicesUp(ctx, host, files)
+	return checkServicesUp(ctx, host, services)
 }
 
 // ErrPartlyInstalled says the machine was already changed when this install stopped.
@@ -507,14 +531,14 @@ func partway(err error) error {
 var ErrServiceIsDown = errors.New("did not start")
 
 // checkServicesUp fails naming every service the machine reports as down.
-func checkServicesUp(ctx context.Context, host driver.Host, files []delivery.File) error {
-	services, err := host.Services(ctx, files)
+func checkServicesUp(ctx context.Context, host driver.Machine, services []delivery.Service) error {
+	running, err := host.Running(ctx, services)
 	if err != nil {
 		return err
 	}
 	var down []string
 	for _, service := range services {
-		if !service.Running {
+		if !slices.Contains(running, service) {
 			down = append(down, service.Name)
 		}
 	}
@@ -524,9 +548,9 @@ func checkServicesUp(ctx context.Context, host driver.Host, files []delivery.Fil
 	return fmt.Errorf("%s: %w", strings.Join(down, ", "), ErrServiceIsDown)
 }
 
-// reportMissingSecrets names the secrets the units expect and the machine does not hold.
-func reportMissingSecrets(out io.Writer, secrets, units []string) {
-	if len(units) == 0 {
+// reportMissingSecrets names the secrets the services read and the machine does not hold.
+func reportMissingSecrets(out io.Writer, secrets, read []string) {
+	if len(read) == 0 {
 		return
 	}
 	present := make(map[string]bool, len(secrets))
@@ -534,7 +558,7 @@ func reportMissingSecrets(out io.Writer, secrets, units []string) {
 		present[name] = true
 	}
 	var missing []string
-	for _, name := range units {
+	for _, name := range read {
 		if !present[name] {
 			missing = append(missing, name)
 		}
@@ -542,9 +566,9 @@ func reportMissingSecrets(out io.Writer, secrets, units []string) {
 	if len(missing) == 0 {
 		return
 	}
-	fmt.Fprintf(out, "\nThese secrets are not on this machine yet, the units need them:\n")
+	fmt.Fprintf(out, "\nThese secrets are not on this machine yet, the services read them:\n")
 	for _, name := range missing {
-		fmt.Fprintf(out, "  podman secret create %s <file>\n", name)
+		fmt.Fprintf(out, "  %s\n", name)
 	}
 }
 

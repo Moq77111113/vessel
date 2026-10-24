@@ -69,11 +69,7 @@ func (i Install) plan(ctx context.Context, before prelude, resolution values.Res
 			p.images = append(p.images, image.Ref+" "+image.Digest)
 		}
 	}
-	services, err := before.host.Services(ctx, files)
-	if err != nil {
-		return plan{}, err
-	}
-	for _, service := range services {
+	for _, service := range config.Services {
 		p.starts = append(p.starts, service.Name)
 	}
 	p.unknowns = unknowns(config.Variables, unknown, before.bypass, p.actions, p.starts)
@@ -101,10 +97,7 @@ func (i Install) stops(ctx context.Context, before prelude, files []delivery.Fil
 	if err != nil {
 		return nil, err
 	}
-	services, err := before.host.Services(ctx, units(remove))
-	if err != nil {
-		return nil, err
-	}
+	services := servicesIn(before.current.Services, remove)
 	names := make([]string, 0, len(services))
 	for _, service := range services {
 		names = append(names, service.Name)

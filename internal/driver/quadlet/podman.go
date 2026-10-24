@@ -24,7 +24,7 @@ type podman struct {
 //
 // podman only takes one image per oci-archive, and only an oci-archive keeps a
 // manifest byte for byte, which is what keeps the registry digest alive.
-func (p *podman) Load(ctx context.Context, work report.Report, layout *oci.Layout) ([]string, error) {
+func (p *podman) Load(ctx context.Context, work report.Report, layout *oci.Images) ([]string, error) {
 	names, err := layout.Names()
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func (p *podman) Load(ctx context.Context, work report.Report, layout *oci.Layou
 }
 
 // load cuts image i into an archive on disk and hands that file to podman load.
-func (p *podman) load(ctx context.Context, layout *oci.Layout, i int) ([]byte, error) {
+func (p *podman) load(ctx context.Context, layout *oci.Images, i int) ([]byte, error) {
 	archive, err := os.CreateTemp("", "vessel-image-*.tar")
 	if err != nil {
 		return nil, fmt.Errorf("create the image archive: %w", err)

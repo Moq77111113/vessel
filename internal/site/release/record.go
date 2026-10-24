@@ -19,7 +19,7 @@ const (
 )
 
 // Format numbers the shape of the record this vessel writes; a record without it predates the steps.
-const Format = 1
+const Format = 2
 
 // Step is one part of an install, named in the order an install runs them.
 type Step string
@@ -53,21 +53,22 @@ type Entry struct {
 
 // Record is what one delivery put on this machine.
 type Record struct {
-	Format   int       `json:"format"`
-	Name     string    `json:"name"`
-	Version  string    `json:"version"`
-	Machine  string    `json:"machine"`
-	Platform string    `json:"platform"`
-	Root     string    `json:"root"`
-	Files    []Entry   `json:"files"`
-	Images   []string  `json:"images"`
-	Secrets  []string  `json:"secrets"`
-	Insecure bool      `json:"insecure,omitempty"`
-	Steps    []Step    `json:"steps,omitempty"`
-	Actions  []Action  `json:"actions,omitempty"`
-	Prior    Release   `json:"prior,omitzero"`
-	Start    time.Time `json:"start"`
-	End      time.Time `json:"end,omitzero"`
+	Format   int                `json:"format"`
+	Name     string             `json:"name"`
+	Version  string             `json:"version"`
+	Machine  string             `json:"machine"`
+	Platform string             `json:"platform"`
+	Root     string             `json:"root"`
+	Files    []Entry            `json:"files"`
+	Images   []string           `json:"images"`
+	Secrets  []string           `json:"secrets"`
+	Services []delivery.Service `json:"services,omitempty"`
+	Insecure bool               `json:"insecure,omitempty"`
+	Steps    []Step             `json:"steps,omitempty"`
+	Actions  []Action           `json:"actions,omitempty"`
+	Prior    Release            `json:"prior,omitzero"`
+	Start    time.Time          `json:"start"`
+	End      time.Time          `json:"end,omitzero"`
 }
 
 // Done reports whether the install that opened this record ran to its end.

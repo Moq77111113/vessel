@@ -9,12 +9,11 @@ import (
 	"github.com/Moq77111113/vessel/internal/site/disk"
 	"github.com/Moq77111113/vessel/internal/site/release"
 	"github.com/Moq77111113/vessel/internal/site/values"
-	"github.com/Moq77111113/vessel/pkg/delivery"
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
 // Uninstall stops the services, removes exactly the files the record names, then retires the record.
-func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Machine, root, name string) error {
+func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Driver, root, name string) error {
 	dir, err := release.Dir(root, name)
 	if err != nil {
 		return err
@@ -34,11 +33,10 @@ func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Machine, root,
 		return err
 	}
 
-	files := make([]delivery.File, 0, len(record.Files))
-	for _, entry := range record.Files {
-		files = append(files, delivery.File{Path: entry.Path})
+	if err := refuseOldRecord(record); err != nil {
+		return err
 	}
-	if err := kind.Stop(ctx, files); err != nil {
+	if err := kind.Stop(ctx, record.Services); err != nil {
 		return err
 	}
 
@@ -75,7 +73,7 @@ func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Machine, root,
 			fmt.Fprintf(out, "  /%s\n", path)
 		}
 	}
-	reportWhatStays(out, store.Path(), record)
+	reportWhatStays(out, store.Path(), record, kind)
 	return nil
 }
 
@@ -89,11 +87,11 @@ func differs(tree *disk.Tree, entry release.Record, file release.Entry) (bool, e
 }
 
 // reportWhatStays names the secrets, the images, and the site values an uninstall leaves behind.
-func reportWhatStays(out io.Writer, values string, record release.Record) {
+func reportWhatStays(out io.Writer, values string, record release.Record, kind driver.Machine) {
 	if len(record.Secrets) > 0 {
 		fmt.Fprintln(out, "\nThese secrets stay on this machine, another delivery may read them:")
 		for _, secret := range record.Secrets {
-			fmt.Fprintf(out, "  podman secret rm %s\n", secret)
+			fmt.Fprintf(out, "  %s\n", kind.RemoveHint(secret))
 		}
 	}
 	if len(record.Images) > 0 {

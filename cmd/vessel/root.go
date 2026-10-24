@@ -10,8 +10,8 @@ import (
 )
 
 // machines is the one place that names a concrete deployment kind. Pick tries them in order.
-var machines = []driver.Machine{
-	quadlet.New(quadlet.Exec),
+var machines = []driver.Driver{
+	quadlet.New(machineRoot, quadlet.Exec),
 }
 
 // binary reads the running binary, even after the path it was started from names another file.

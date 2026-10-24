@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -12,7 +13,7 @@ func TestReadTakesTheWholeDeclaration(t *testing.T) {
 	dir := fstest.MapFS{DeliveryFile: {Data: []byte(`
 name: dmas
 version: 1.4.0
-units: ./units
+source: ./units
 files:
   - source: realm.json
     target: /etc/dmas/realm.json
@@ -29,7 +30,7 @@ actions:
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
-	if got.Name != "dmas" || got.Version != "1.4.0" || got.Units != "units" {
+	if got.Name != "dmas" || got.Version != "1.4.0" || got.Source != "units" {
 		t.Errorf("got %+v, want dmas 1.4.0 units", got)
 	}
 	if len(got.Files) != 1 || got.Files[0].Target != "/etc/dmas/realm.json" {
@@ -49,14 +50,14 @@ func TestReadSaysWhenThereIsNoDeclaration(t *testing.T) {
 	}
 }
 
-func TestUnitsDefaultsToTheSourceDirectory(t *testing.T) {
+func TestSourceDefaultsToTheDeliveryDirectory(t *testing.T) {
 	dir := fstest.MapFS{DeliveryFile: {Data: []byte("name: dmas\n")}}
 	got, err := Read(dir)
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
-	if got.Units != "." {
-		t.Errorf("got %q, want %q", got.Units, ".")
+	if got.Source != "." {
+		t.Errorf("got %q, want %q", got.Source, ".")
 	}
 }
 
@@ -195,7 +196,7 @@ func TestReadRefusesASourceThatLeavesTheDeliveryDirectory(t *testing.T) {
 }
 
 func TestReadRefusesAUnitDirectoryThatLeavesTheDeliveryDirectory(t *testing.T) {
-	if _, err := Read(os.DirFS("testdata/units-escapes")); !errors.Is(err, ErrSourceEscapes) {
+	if _, err := Read(os.DirFS("testdata/source-escapes")); !errors.Is(err, ErrSourceEscapes) {
 		t.Errorf("got %v, want ErrSourceEscapes", err)
 	}
 }
@@ -213,5 +214,12 @@ func TestReadTakesAFileMode(t *testing.T) {
 func TestReadRefusesAFileModeThatIsNotOctal(t *testing.T) {
 	if _, err := Read(os.DirFS("testdata/bad-mode")); !errors.Is(err, ErrFileMode) {
 		t.Fatalf("got %v, want ErrFileMode", err)
+	}
+}
+
+func TestReadRefusesAKeyItDoesNotKnow(t *testing.T) {
+	_, err := Read(os.DirFS("testdata/units-key"))
+	if err == nil || !strings.Contains(err.Error(), "units") {
+		t.Errorf("got %v, want a refusal naming units", err)
 	}
 }

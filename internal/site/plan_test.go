@@ -22,7 +22,7 @@ import (
 func TestADryRunChangesNothingOnTheMachine(t *testing.T) {
 	root := t.TempDir()
 	stub := &podmanStub{}
-	job := jobFor(t, root, dryRunBundle(t), []driver.Machine{quadlet.New(stub.run)}, nil)
+	job := jobFor(t, root, dryRunBundle(t), []driver.Driver{quadlet.New(root, stub.run)}, nil)
 	job.SetFile = dbPassword
 	if err := job.Preview().Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)

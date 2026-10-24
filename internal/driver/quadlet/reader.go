@@ -48,8 +48,8 @@ func pathFor(name string) string {
 	return path.Join(systemdPath, name)
 }
 
-// Owns reports whether a path under the target root lands in a directory this reader fills.
-func (r *Reader) Owns(name string) bool {
+// owns reports whether a path under the target root lands in a directory this reader fills.
+func owns(name string) bool {
 	return under(name, systemdPath) || under(name, siblingPath)
 }
 
@@ -80,7 +80,7 @@ func (r *Reader) Detect(dir fs.FS) bool {
 	return false
 }
 
-// Read carries every unit file and marks the byte range of each Image= reference.
+// Read carries every unit file, marks the byte range of each Image= reference, and names the services and secrets the units declare.
 func (r *Reader) Read(dir fs.FS) (delivery.Manifest, error) {
 	names, err := unitNames(dir)
 	if err != nil {
@@ -106,6 +106,9 @@ func (r *Reader) Read(dir fs.FS) (delivery.Manifest, error) {
 		}
 		manifest.Relocs = append(manifest.Relocs, relocs...)
 	}
+	manifest.Services = services(manifest.Files)
+	manifest.Secrets = reads(manifest.Files)
+	manifest.Dirs = []string{systemdPath, siblingPath}
 	return manifest, nil
 }
 

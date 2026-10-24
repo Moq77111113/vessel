@@ -3,6 +3,8 @@ package site
 import (
 	"slices"
 
+	"github.com/Moq77111113/vessel/pkg/delivery"
+
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
@@ -40,4 +42,15 @@ func unionNames(previous, next []string) []string {
 	}
 	slices.Sort(all)
 	return all
+}
+
+// unionServices names every service the machine runs for this delivery and every service the new version declares.
+func unionServices(previous, next []delivery.Service) []delivery.Service {
+	services := slices.Clone(next)
+	for _, service := range previous {
+		if !slices.Contains(next, service) {
+			services = append(services, service)
+		}
+	}
+	return services
 }

@@ -10,15 +10,15 @@ import (
 // Errors Substitute returns.
 var (
 	ErrUnknownVariable = errors.New("no variable declares this marker, declare it or remove the marker")
-	ErrSecretInAFile   = errors.New("a secret cannot be written into a file, mount it with Secret=")
+	ErrSecretInAFile   = errors.New("a secret cannot be written into a file, a service reads it from the machine")
 )
 
 // marker is how a variable appears inside a carried file. Three hashes on each side collide with
-// neither systemd specifiers nor INI, JSON or TOML syntax.
+// neither unit specifiers nor INI, JSON or TOML syntax.
 var marker = regexp.MustCompile(`###([A-Z][A-Z0-9_]*)###`)
 
 // Substitute puts every value in place of its marker, and returns the files with new bytes.
-// A marker naming a secret is refused: a secret reaches a container through Secret=, never as
+// A marker naming a secret is refused: a secret reaches a service through the driver, never as
 // plain bytes on the disk.
 func Substitute(files []File, values map[string]string, secrets []string) ([]File, error) {
 	out := make([]File, len(files))

@@ -1,6 +1,8 @@
 package quadlet
 
 import (
+	"github.com/Moq77111113/vessel/pkg/driver"
+
 	"context"
 	"errors"
 	"os"
@@ -60,7 +62,7 @@ func TestReadVersionTakesTheNumberOutOfThePodmanBanner(t *testing.T) {
 
 func TestCheckNamesEveryProblemAtOnce(t *testing.T) {
 	engine := &recorder{output: "podman version 4.3.1\n"}
-	err := New(engine.run).Check(context.Background(), filepath.Join(t.TempDir(), "root"))
+	err := New(filepath.Join(t.TempDir(), "root"), engine.run).Check(context.Background())
 	if err == nil {
 		t.Fatal("Check: want an error, got nil")
 	}
@@ -70,14 +72,14 @@ func TestCheckNamesEveryProblemAtOnce(t *testing.T) {
 	if !strings.Contains(err.Error(), "5.0") {
 		t.Errorf("the version wanted is missing from %v", err)
 	}
-	if !errors.Is(err, ErrNotReady) {
+	if !errors.Is(err, driver.ErrNotReady) {
 		t.Errorf("got %v, want ErrNotReady", err)
 	}
 }
 
 func TestCheckPutsOneProblemPerLine(t *testing.T) {
 	engine := &recorder{output: "podman version 4.3.1\n"}
-	err := New(engine.run).Check(context.Background(), "/proc/nope")
+	err := New("/proc/nope", engine.run).Check(context.Background())
 	if err == nil {
 		t.Fatal("Check: want an error, got nil")
 	}
@@ -91,7 +93,7 @@ func TestCheckPassesOnAMachineThatHasEverything(t *testing.T) {
 		t.Skip("no systemd on this machine")
 	}
 	engine := &recorder{output: "podman version 5.4.2\n"}
-	if err := New(engine.run).Check(context.Background(), t.TempDir()); err != nil {
+	if err := New(t.TempDir(), engine.run).Check(context.Background()); err != nil {
 		t.Errorf("Check: %v", err)
 	}
 }
@@ -105,7 +107,7 @@ func TestCheckRefusesARootItCannotWriteTo(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes anywhere")
 	}
-	err := New(engine.run).Check(context.Background(), root)
+	err := New(root, engine.run).Check(context.Background())
 	if err == nil || !strings.Contains(err.Error(), ErrRootReadOnly.Error()) {
 		t.Errorf("got %v, want it to name the write failure", err)
 	}
@@ -119,7 +121,7 @@ func systemdIsHere() bool {
 func TestCheckRefusesAPodmanThatCannotRun(t *testing.T) {
 	engine := &recorder{output: "podman version 6.1.1\n"}
 	engine.failAfter = 1
-	err := New(engine.run).Check(context.Background(), t.TempDir())
+	err := New(t.TempDir(), engine.run).Check(context.Background())
 	if err == nil || !strings.Contains(err.Error(), ErrPodmanBroken.Error()) {
 		t.Errorf("got %v, want it to name the broken podman", err)
 	}

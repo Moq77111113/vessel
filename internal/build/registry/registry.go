@@ -26,7 +26,7 @@ var (
 type Client struct{}
 
 // New returns a client that reads public registries, and private ones through the credentials
-// podman and docker already keep.
+// the container engines on this machine already keep.
 func New() *Client { return &Client{} }
 
 // Resolve returns the digest of the manifest a reference points at right now: the platform's
