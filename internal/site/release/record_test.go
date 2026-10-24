@@ -2,13 +2,14 @@ package release_test
 
 import (
 	"errors"
-	"github.com/Moq77111113/vessel/internal/site/release"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Moq77111113/vessel/internal/site/release"
 )
 
 func TestARecordSurvivesAWriteAndARead(t *testing.T) {

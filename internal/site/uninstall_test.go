@@ -27,7 +27,7 @@ func TestUninstallRemovesExactlyTheFilesTheRecordNames(t *testing.T) {
 	writeFile(t, theirs, "somebody else put this")
 	writeRecord(t, root, release.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
-		Files: []release.Entry{{Path: "etc/containers/systemd/web.container", Digest: disk.DigestOf([]byte("vessel put this"))}},
+		Files: []release.Entry{{Path: "etc/containers/systemd/web.container", Digest: disk.Digest([]byte("vessel put this"))}},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),
 	})
 	var out bytes.Buffer
@@ -66,7 +66,7 @@ func TestUninstallCountsOnlyTheFilesItActuallyRemoved(t *testing.T) {
 	writeRecord(t, root, release.Record{
 		Name: "acme", Version: "1.4.0", Machine: "quadlet",
 		Files: []release.Entry{
-			{Path: "etc/containers/systemd/web.container", Digest: disk.DigestOf([]byte("vessel put this"))},
+			{Path: "etc/containers/systemd/web.container", Digest: disk.Digest([]byte("vessel put this"))},
 			{Path: "etc/containers/systemd/already-gone.container"},
 		},
 		Start: time.Unix(1, 0).UTC(), End: time.Unix(2, 0).UTC(),

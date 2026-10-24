@@ -145,7 +145,7 @@ func TestStatusPrintsWhatTheMachineIsRunning(t *testing.T) {
 
 func TestStatusFailsOnAKindThisBuildDoesNotKnow(t *testing.T) {
 	err := at(t, rootHoldingAComposeRecord(t), testKinds("/")).status(io.Discard, "acme")
-	if !errors.Is(err, driver.ErrUnknownDriver) {
+	if !errors.Is(err, ErrUnknownDriver) {
 		t.Errorf("got %v, want ErrUnknownMachine", err)
 	}
 }

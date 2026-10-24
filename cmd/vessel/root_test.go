@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
-	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
 func TestTheCompositionRootNamesOneMachineKind(t *testing.T) {
@@ -23,12 +22,8 @@ func TestTheCompositionRootNamesOneMachineKind(t *testing.T) {
 }
 
 func TestVesselReadsQuadlet(t *testing.T) {
-	kind, err := driver.Pick(machines, os.DirFS("../../internal/driver/quadlet/testdata/stack"))
-	if err != nil {
-		t.Fatalf("Pick: %v", err)
-	}
-	if got, want := kind.Name(), "quadlet"; got != want {
-		t.Errorf("got %q, want %q", got, want)
+	if !machines[0].Detect(os.DirFS("../../internal/driver/quadlet/testdata/stack")) {
+		t.Error("the quadlet driver does not recognize a quadlet stack")
 	}
 }
 

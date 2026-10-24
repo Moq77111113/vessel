@@ -49,11 +49,11 @@ func Write(dir string, contents Contents) error {
 
 func prune(dir string) error {
 	oci := layout.Path(dir)
-	stale, err := oci.GarbageCollect()
+	unused, err := oci.GarbageCollect()
 	if err != nil {
 		return fmt.Errorf("find the blobs no index reaches: %w", err)
 	}
-	for _, hash := range stale {
+	for _, hash := range unused {
 		if err := oci.RemoveBlob(hash); err != nil {
 			return fmt.Errorf("remove %s: %w", hash, err)
 		}

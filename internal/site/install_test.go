@@ -437,7 +437,7 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 func TestInstallRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T) {
 	root := t.TempDir()
 	err := at(t, root, nil).install(unknownKindBundle(t))
-	if !errors.Is(err, driver.ErrUnknownDriver) {
+	if !errors.Is(err, ErrUnknownDriver) {
 		t.Fatalf("got %v, want ErrUnknownMachine", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/realm.json")); err == nil {

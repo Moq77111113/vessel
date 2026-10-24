@@ -90,7 +90,7 @@ func (s Status) files(lines report.Report, record release.Record) int {
 }
 
 func (s Status) services(ctx context.Context, out io.Writer, record release.Record) error {
-	kind, err := driver.ByName(s.Drivers, record.Machine)
+	kind, err := byName(s.Drivers, record.Machine)
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func reportFile(lines report.Report, root string, entry release.Entry) bool {
 		lines.Line("Absent", entry.Path)
 	case err != nil:
 		lines.Line("Unreadable", entry.Path)
-	case disk.DigestOf(body) != entry.Digest:
+	case disk.Digest(body) != entry.Digest:
 		lines.Line("Differs", entry.Path)
 	default:
 		return false

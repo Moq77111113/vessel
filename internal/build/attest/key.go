@@ -39,11 +39,11 @@ func ReadKey(path string) (*Key, error) {
 	if block == nil {
 		return nil, fmt.Errorf("%s %w", path, ErrKeyType)
 	}
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("%s %w: %w", path, ErrKeyType, err)
 	}
-	private, ok := parsed.(*ecdsa.PrivateKey)
+	private, ok := key.(*ecdsa.PrivateKey)
 	if !ok || private.Curve != elliptic.P256() {
 		return nil, fmt.Errorf("%s %w", path, ErrKeyType)
 	}

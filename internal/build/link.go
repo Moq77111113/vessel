@@ -100,7 +100,7 @@ func (l Link) pick(source fs.FS, definition delivery.Delivery) (driver.Driver, e
 	if err != nil {
 		return nil, err
 	}
-	return driver.Pick(l.Drivers, dir)
+	return pick(l.Drivers, dir)
 }
 
 func units(source fs.FS, definition delivery.Delivery) (fs.FS, error) {

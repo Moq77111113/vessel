@@ -48,7 +48,7 @@ func fileChange(path string, file delivery.File, unknown map[string]string) chan
 		return change{verb: "Depends", line: file.Path + " on " + strings.Join(names, ", ")}
 	case absent:
 		return change{verb: "Add", line: file.Path}
-	case disk.Same(path, disk.DigestOf(file.Data)):
+	case disk.Same(path, disk.Digest(file.Data)):
 		return change{verb: "Keep", line: file.Path}
 	}
 	return change{verb: "Replace", line: file.Path}

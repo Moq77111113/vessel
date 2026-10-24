@@ -10,6 +10,8 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
+var ErrUnknownDriver = errors.New("this build does not know that machine kind")
+
 var ErrRecordOpen = errors.New("the last install on this machine never finished")
 
 var ErrRecordNamesNoService = errors.New("an older vessel wrote this record and named no service, uninstall with the executable that installed it, then install")
@@ -44,7 +46,7 @@ func (i Install) prepare(ctx context.Context, config bundle.Config) (state, erro
 }
 
 func (i Install) checkMachine(ctx context.Context, name string) (driver.Machine, error) {
-	host, err := driver.ByName(i.Drivers, name)
+	host, err := byName(i.Drivers, name)
 	if err != nil {
 		return nil, err
 	}
@@ -105,4 +107,13 @@ func position(r release.Record) string {
 		return "stopped before its first step"
 	}
 	return "stopped after " + string(r.Steps[len(r.Steps)-1])
+}
+
+func byName(drivers []driver.Driver, name string) (driver.Driver, error) {
+	for _, candidate := range drivers {
+		if candidate.Name() == name {
+			return candidate, nil
+		}
+	}
+	return nil, fmt.Errorf("%w: %q", ErrUnknownDriver, name)
 }

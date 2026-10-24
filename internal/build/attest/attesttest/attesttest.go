@@ -37,7 +37,7 @@ func Verifies(t *testing.T, key, path string) bool {
 		t.Fatalf("read the key: %v", err)
 	}
 	block, _ := pem.Decode(body)
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	private, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		t.Fatalf("decode the key: %v", err)
 	}
@@ -54,5 +54,5 @@ func Verifies(t *testing.T, key, path string) bool {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	digest := sha256.Sum256(data)
-	return ecdsa.VerifyASN1(&parsed.(*ecdsa.PrivateKey).PublicKey, digest[:], signature)
+	return ecdsa.VerifyASN1(&private.(*ecdsa.PrivateKey).PublicKey, digest[:], signature)
 }

@@ -28,7 +28,7 @@ func (p pull) resolve(ctx context.Context, relocs []delivery.Relocation) (map[st
 	digests := make(map[string]string, len(relocs))
 	for _, reloc := range relocs {
 		tag := reloc.Ref.String()
-		if _, seen := digests[tag]; seen {
+		if _, ok := digests[tag]; ok {
 			continue
 		}
 		p.work.Line("Resolving", tag)

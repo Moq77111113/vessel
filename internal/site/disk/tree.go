@@ -35,7 +35,7 @@ func (t *Tree) Write(file delivery.File) (bool, error) {
 		return false, err
 	}
 	mode := modeFor(path, file.Mode)
-	if Same(path, DigestOf(file.Data)) && permOf(path) == mode {
+	if Same(path, Digest(file.Data)) && perm(path) == mode {
 		return false, nil
 	}
 	dir := filepath.Dir(path)
@@ -69,13 +69,13 @@ func modeFor(path string, declared fs.FileMode) fs.FileMode {
 	if declared != 0 {
 		return declared
 	}
-	if perm := permOf(path); perm != 0 {
-		return perm
+	if current := perm(path); current != 0 {
+		return current
 	}
 	return 0o644
 }
 
-func permOf(path string) fs.FileMode {
+func perm(path string) fs.FileMode {
 	info, err := os.Stat(path)
 	if err != nil {
 		return 0
@@ -110,7 +110,7 @@ func (t *Tree) Differs(name, digest string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
-	return DigestOf(body) != digest, nil
+	return Digest(body) != digest, nil
 }
 
 func (t *Tree) resolve(name string) (string, error) {
@@ -174,10 +174,10 @@ func Same(path, digest string) bool {
 	if err != nil {
 		return false
 	}
-	return DigestOf(body) == digest
+	return Digest(body) == digest
 }
 
-func DigestOf(data []byte) string {
+func Digest(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(sum[:])
 }

@@ -12,7 +12,7 @@ func Entries(files []delivery.File) []Entry {
 	for _, file := range files {
 		entries = append(entries, Entry{
 			Path:   file.Path,
-			Digest: disk.DigestOf(file.Data),
+			Digest: disk.Digest(file.Data),
 		})
 	}
 	return entries

@@ -37,7 +37,7 @@ func (u Uninstall) Run(ctx context.Context, req UninstallRequest) (UninstallResu
 	if err != nil {
 		return UninstallResult{}, err
 	}
-	kind, err := driver.ByName(u.Drivers, record.Machine)
+	kind, err := byName(u.Drivers, record.Machine)
 	if err != nil {
 		return UninstallResult{}, err
 	}
