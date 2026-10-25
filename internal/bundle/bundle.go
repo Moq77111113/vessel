@@ -66,6 +66,8 @@ type Config struct {
 	Machine   string              `json:"machine"`
 	Platform  string              `json:"platform"`
 	Images    []Image             `json:"images"`
+	Services  []delivery.Service  `json:"services,omitempty"`
+	Secrets   []string            `json:"secrets,omitempty"`
 	Variables []delivery.Variable `json:"variables,omitempty"`
 	Actions   []string            `json:"actions,omitempty"`
 	Insecure  bool                `json:"insecure,omitempty"`

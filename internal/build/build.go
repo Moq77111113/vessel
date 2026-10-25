@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/Moq77111113/vessel/internal/atomicfile"
 	"github.com/Moq77111113/vessel/internal/build/attest"
 	"github.com/Moq77111113/vessel/internal/bundle"
 	"github.com/Moq77111113/vessel/internal/report"
+	"github.com/Moq77111113/vessel/pkg/delivery"
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
@@ -28,7 +32,7 @@ type Job struct {
 	Key              string
 }
 
-func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []driver.Machine, job Job) error {
+func Build(ctx context.Context, work report.Report, stdout io.Writer, kinds []driver.Driver, job Job) error {
 	fromBundle, err := bundleSource(job)
 	if err != nil {
 		return err
@@ -132,7 +136,7 @@ func bundleLayouts(job Job) (pack, sign string, cleanup func(), err error) {
 }
 
 // linkLayouts links the descriptor the job names into a layout, kept when the job asks for one.
-func linkLayouts(ctx context.Context, work report.Report, kinds []driver.Machine, job Job) (pack, sign string, cleanup func(), err error) {
+func linkLayouts(ctx context.Context, work report.Report, kinds []driver.Driver, job Job) (pack, sign string, cleanup func(), err error) {
 	dir, cleanup, err := layoutDir(job.Layout)
 	if err != nil {
 		return "", "", nil, err
@@ -239,5 +243,34 @@ func (e executable) move(stdout io.Writer) error {
 		return fmt.Errorf("read %s: %w", e.out, err)
 	}
 	report.New(stdout).Line("Finished", fmt.Sprintf("%s, %d MB, run it on the target machine", e.out, info.Size()/(1<<20)))
+	return nil
+}
+
+// ErrSecretNotRead says a delivery declares a secret no service reads.
+var ErrSecretNotRead = errors.New("no service reads this secret")
+
+// ErrTargetInDriverDirectory says a delivery file lands where the driver writes what it reads. A file
+// carried there is never read, so its image is never pinned to a digest.
+var ErrTargetInDriverDirectory = errors.New("a file target lands in a directory the driver fills")
+
+// checkOutsideTheDriverDirectories refuses a plain file that lands where the driver writes what it reads.
+func checkOutsideTheDriverDirectories(dirs []string, files []delivery.File) error {
+	for _, file := range files {
+		for _, dir := range dirs {
+			if strings.HasPrefix(path.Clean(file.Path), dir+"/") {
+				return fmt.Errorf("%s: %w", file.Path, ErrTargetInDriverDirectory)
+			}
+		}
+	}
+	return nil
+}
+
+// checkEverySecretIsRead refuses a secret variable no service reads under that same name.
+func checkEverySecretIsRead(read []string, variables []delivery.Variable) error {
+	for _, name := range delivery.SecretNames(variables) {
+		if !slices.Contains(read, name) {
+			return fmt.Errorf("%s: %w", name, ErrSecretNotRead)
+		}
+	}
 	return nil
 }

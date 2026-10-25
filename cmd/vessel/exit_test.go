@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/driver/quadlet"
 	"github.com/Moq77111113/vessel/internal/site"
+	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
 func TestAMachineThatIsNotReadyExitsWithThree(t *testing.T) {
-	err := fmt.Errorf("podman is too old: %w", quadlet.ErrNotReady)
+	err := fmt.Errorf("podman is too old: %w", driver.ErrNotReady)
 	if got := Code(err); got != 3 {
 		t.Errorf("got %d, want 3", got)
 	}

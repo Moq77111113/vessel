@@ -10,14 +10,11 @@ import (
 
 const secretKey = "Secret"
 
-// Requires names the podman secrets these units expect to find on the machine.
-//
-// A missing secret does not fail the install, it fails the start, minutes later and far
-// from its cause. Naming them here turns that into a prerequisite the operator can read.
-func (r *Reader) Requires(files []delivery.File) []string {
+// reads names the podman secrets these units expect to find on the machine.
+func reads(files []delivery.File) []string {
 	seen := map[string]bool{}
 	for _, file := range files {
-		if !r.Owns(file.Path) {
+		if !owns(file.Path) {
 			continue
 		}
 		for line := range bytes.SplitSeq(file.Data, []byte("\n")) {

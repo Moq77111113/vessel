@@ -13,62 +13,60 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-var ErrNoMachine = errors.New("no descriptor found")
+// ErrNoDriver says no driver recognizes a source directory.
+var ErrNoDriver = errors.New("no descriptor found")
 
-var ErrUnknownMachine = errors.New("this build does not know that machine kind")
+// ErrUnknownDriver says a bundle names a driver this build does not carry.
+var ErrUnknownDriver = errors.New("this build does not know that machine kind")
 
-// Service is one unit of a delivery and whether the machine runs it.
-type Service struct {
-	Name    string
-	Running bool
+// ErrNotReady says the machine lacks what the driver needs, before anything changes.
+var ErrNotReady = errors.New("this machine is not ready")
+
+// Reader reads a source directory at build time.
+type Reader interface {
+	Detect(fsys fs.FS) bool
+	Read(fsys fs.FS) (delivery.Manifest, error)
 }
 
-// Descriptor is the build side: it reads a delivery directory.
-type Descriptor interface {
-	Detect(fs.FS) bool
-	Read(fs.FS) (delivery.Manifest, error)
-	Owns(path string) bool
-	Requires(files []delivery.File) []string
-}
-
-// Host is the machine side: it applies a delivery and reads back what is there.
-type Host interface {
-	Check(ctx context.Context, root string) error
-	Secrets(ctx context.Context) ([]string, error)
-	AddSecret(ctx context.Context, name, value string) error
-	AddImages(ctx context.Context, work report.Report, layout *oci.Layout) ([]string, error)
-	Start(ctx context.Context, files []delivery.File) error
-	Services(ctx context.Context, files []delivery.File) ([]Service, error)
-	Stop(ctx context.Context, files []delivery.File) error
-}
-
-// Machine is one deployment kind: quadlet on podman, compose on docker.
+// Machine applies a delivery on the site and reads back what runs.
 type Machine interface {
-	Name() string
-	Descriptor
-	Host
+	Check(ctx context.Context) error
+	Secrets(ctx context.Context) ([]string, error)
+	AddSecret(ctx context.Context, secret delivery.Secret) error
+	RemoveHint(secret string) string
+	AddImages(ctx context.Context, work report.Report, images *oci.Images) ([]string, error)
+	Start(ctx context.Context, services []delivery.Service) error
+	Stop(ctx context.Context, services []delivery.Service) error
+	Running(ctx context.Context, services []delivery.Service) ([]delivery.Service, error)
 }
 
-// ByName returns the machine that built a bundle, so install can apply it.
-func ByName(machines []Machine, name string) (Machine, error) {
-	for _, candidate := range machines {
+// Driver is one install kind: what reads a delivery at build time and applies it on the machine.
+type Driver interface {
+	Reader
+	Machine
+	Name() string
+}
+
+// ByName returns the driver that built a bundle, so install can apply it.
+func ByName(drivers []Driver, name string) (Driver, error) {
+	for _, candidate := range drivers {
 		if candidate.Name() == name {
 			return candidate, nil
 		}
 	}
-	return nil, fmt.Errorf("%w: %q", ErrUnknownMachine, name)
+	return nil, fmt.Errorf("%w: %q", ErrUnknownDriver, name)
 }
 
-// Pick returns the first machine that recognizes the directory, trying them in order.
-func Pick(machines []Machine, dir fs.FS) (Machine, error) {
-	for _, candidate := range machines {
+// Pick returns the first driver that recognizes the directory, trying them in order.
+func Pick(drivers []Driver, dir fs.FS) (Driver, error) {
+	for _, candidate := range drivers {
 		if candidate.Detect(dir) {
 			return candidate, nil
 		}
 	}
-	names := make([]string, len(machines))
-	for i, candidate := range machines {
+	names := make([]string, len(drivers))
+	for i, candidate := range drivers {
 		names[i] = candidate.Name()
 	}
-	return nil, fmt.Errorf("%w, kinds tried: %s", ErrNoMachine, strings.Join(names, ", "))
+	return nil, fmt.Errorf("%w, kinds tried: %s", ErrNoDriver, strings.Join(names, ", "))
 }

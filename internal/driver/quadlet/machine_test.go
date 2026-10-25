@@ -10,7 +10,6 @@ import (
 
 	"github.com/Moq77111113/vessel/internal/driver/quadlet"
 	"github.com/Moq77111113/vessel/pkg/delivery"
-	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
 // calls records what a machine asked the system to run.
@@ -26,16 +25,17 @@ func (c *calls) run(_ context.Context, _ io.Reader, name string, args ...string)
 	return []byte(c.answer[line]), c.err
 }
 
-func units() []delivery.File {
-	return []delivery.File{
-		{Path: "etc/containers/systemd/web.container"},
-		{Path: "etc/containers/systemd/db.container"},
-	}
-}
+var (
+	db     = delivery.Service{Name: "db.service", Path: "etc/containers/systemd/db.container"}
+	web    = delivery.Service{Name: "web.service", Path: "etc/containers/systemd/web.container"}
+	backup = delivery.Service{Name: "backup.timer", Path: "etc/systemd/system/backup.timer"}
+)
+
+func units() []delivery.Service { return []delivery.Service{db, web} }
 
 func TestStartBringsUpEveryServiceTheUnitsGenerate(t *testing.T) {
 	system := &calls{}
-	if err := quadlet.New(system.run).Start(context.Background(), units()); err != nil {
+	if err := quadlet.New("/", system.run).Start(context.Background(), units()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	want := []string{"systemctl daemon-reload", "systemctl start db.service web.service"}
@@ -46,49 +46,44 @@ func TestStartBringsUpEveryServiceTheUnitsGenerate(t *testing.T) {
 
 func TestStartReportsACommandThatFailed(t *testing.T) {
 	system := &calls{err: errors.New("exit status 1")}
-	err := quadlet.New(system.run).Start(context.Background(), units())
+	err := quadlet.New("/", system.run).Start(context.Background(), units())
 	if !errors.Is(err, quadlet.ErrCommand) {
 		t.Errorf("got %v, want quadlet.ErrCommand", err)
 	}
 }
 
-func TestServicesReportsAServiceTheMachineDoesNotRun(t *testing.T) {
+func TestRunningLeavesOutAServiceTheMachineDoesNotRun(t *testing.T) {
 	system := &calls{answer: map[string]string{
 		"systemctl is-active web.service": "active\n",
 		"systemctl is-active db.service":  "failed\n",
 	}}
-	services, err := quadlet.New(system.run).Services(context.Background(), units())
+	services, err := quadlet.New("/", system.run).Running(context.Background(), units())
 	if err != nil {
-		t.Fatalf("Services: %v", err)
+		t.Fatalf("Running: %v", err)
 	}
-	want := []driver.Service{
-		{Name: "db.service", Running: false},
-		{Name: "web.service", Running: true},
-	}
+	want := []delivery.Service{web}
 	if !slices.Equal(services, want) {
 		t.Errorf("got %v, want %v", services, want)
 	}
 }
 
-func TestServicesReadsTheAnswerOfAServiceThatIsDown(t *testing.T) {
+func TestRunningReadsTheAnswerOfAServiceThatIsDown(t *testing.T) {
 	system := &calls{
 		answer: map[string]string{"systemctl is-active web.service": "inactive\n"},
 		err:    errors.New("exit status 3"),
 	}
-	services, err := quadlet.New(system.run).Services(context.Background(),
-		[]delivery.File{{Path: "etc/containers/systemd/web.container"}})
+	services, err := quadlet.New("/", system.run).Running(context.Background(), []delivery.Service{web})
 	if err != nil {
-		t.Fatalf("Services: %v", err)
+		t.Fatalf("Running: %v", err)
 	}
-	want := []driver.Service{{Name: "web.service", Running: false}}
-	if !slices.Equal(services, want) {
-		t.Errorf("got %v, want %v", services, want)
+	if len(services) != 0 {
+		t.Errorf("got %v, want nothing running", services)
 	}
 }
 
-func TestServicesFailsWhenItCannotAskSystemd(t *testing.T) {
+func TestRunningFailsWhenItCannotAskSystemd(t *testing.T) {
 	system := &calls{err: errors.New("exec: \"systemctl\": executable file not found in $PATH")}
-	services, err := quadlet.New(system.run).Services(context.Background(), units())
+	services, err := quadlet.New("/", system.run).Running(context.Background(), units())
 	if !errors.Is(err, quadlet.ErrCommand) {
 		t.Fatalf("got %v and %v, want quadlet.ErrCommand", services, err)
 	}
@@ -96,7 +91,7 @@ func TestServicesFailsWhenItCannotAskSystemd(t *testing.T) {
 
 func TestStopBringsDownEveryServiceTheUnitsGenerate(t *testing.T) {
 	system := &calls{}
-	if err := quadlet.New(system.run).Stop(context.Background(), units()); err != nil {
+	if err := quadlet.New("/", system.run).Stop(context.Background(), units()); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	want := []string{"systemctl stop db.service web.service"}
@@ -105,10 +100,9 @@ func TestStopBringsDownEveryServiceTheUnitsGenerate(t *testing.T) {
 	}
 }
 
-func TestStopAsksNothingWhenNoUnitStartsAService(t *testing.T) {
+func TestStopAsksNothingWhenThereIsNoService(t *testing.T) {
 	system := &calls{}
-	if err := quadlet.New(system.run).Stop(context.Background(),
-		[]delivery.File{{Path: "etc/containers/systemd/app.network"}}); err != nil {
+	if err := quadlet.New("/", system.run).Stop(context.Background(), nil); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	if len(system.lines) != 0 {
@@ -118,11 +112,7 @@ func TestStopAsksNothingWhenNoUnitStartsAService(t *testing.T) {
 
 func TestStopDisablesATimerTheDeliveryCarries(t *testing.T) {
 	system := &calls{}
-	files := []delivery.File{
-		{Path: "etc/containers/systemd/web.container"},
-		{Path: "etc/systemd/system/backup.timer"},
-	}
-	if err := quadlet.New(system.run).Stop(context.Background(), files); err != nil {
+	if err := quadlet.New("/", system.run).Stop(context.Background(), []delivery.Service{web, backup}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	want := []string{"systemctl stop web.service", "systemctl disable --now backup.timer"}
@@ -131,14 +121,13 @@ func TestStopDisablesATimerTheDeliveryCarries(t *testing.T) {
 	}
 }
 
-func TestServicesNamesATimerTheDeliveryCarries(t *testing.T) {
+func TestRunningAsksAboutATimerTheDeliveryCarries(t *testing.T) {
 	system := &calls{answer: map[string]string{"systemctl is-active backup.timer": "active\n"}}
-	services, err := quadlet.New(system.run).Services(context.Background(),
-		[]delivery.File{{Path: "etc/systemd/system/backup.timer"}})
+	services, err := quadlet.New("/", system.run).Running(context.Background(), []delivery.Service{backup})
 	if err != nil {
-		t.Fatalf("Services: %v", err)
+		t.Fatalf("Running: %v", err)
 	}
-	want := []driver.Service{{Name: "backup.timer", Running: true}}
+	want := []delivery.Service{backup}
 	if !slices.Equal(services, want) {
 		t.Errorf("got %v, want %v", services, want)
 	}

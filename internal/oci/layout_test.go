@@ -60,14 +60,14 @@ func TestArchiveIndexNamesOnlyTheImageItCarries(t *testing.T) {
 	}
 }
 
-func TestOpenLayoutReadsTheIndexTheRootPins(t *testing.T) {
+func TestOpenReadsTheIndexTheRootPins(t *testing.T) {
 	dir, root := layouttest.TwoImages(t)
 	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte(`{"schemaVersion":2,"manifests":[]}`), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	layout, err := oci.OpenLayout(dir, root)
+	layout, err := oci.Open(dir, root)
 	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	names, err := layout.Names()
 	if err != nil || len(names) != 2 {
@@ -75,7 +75,7 @@ func TestOpenLayoutReadsTheIndexTheRootPins(t *testing.T) {
 	}
 }
 
-func TestOpenLayoutRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
+func TestOpenRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
 	dir, root := layouttest.TwoImages(t)
 	entries, err := os.ReadDir(filepath.Join(dir, "blobs", "sha256"))
 	if err != nil {
@@ -89,9 +89,9 @@ func TestOpenLayoutRefusesABlobThatDoesNotMatchItsDigest(t *testing.T) {
 			t.Fatalf("WriteFile: %v", err)
 		}
 	}
-	layout, err := oci.OpenLayout(dir, root)
+	layout, err := oci.Open(dir, root)
 	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	var out strings.Builder
 	err = errors.Join(layout.Archive(0, &out), layout.Archive(1, &out))
@@ -150,9 +150,9 @@ func countBlobs(names map[string]bool) int {
 func TestArchiveStreamsALayerInsteadOfHoldingIt(t *testing.T) {
 	const size = 32 << 20
 	dir, root := layouttest.OneImage(t, size)
-	layout, err := oci.OpenLayout(dir, root)
+	layout, err := oci.Open(dir, root)
 	if err != nil {
-		t.Fatalf("OpenLayout: %v", err)
+		t.Fatalf("Open: %v", err)
 	}
 	var before, after runtime.MemStats
 	runtime.GC()

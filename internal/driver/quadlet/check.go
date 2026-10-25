@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
 const (
@@ -23,11 +25,10 @@ var (
 	ErrPodmanBroken  = errors.New("podman cannot run on this machine")
 	ErrNoSystemd     = errors.New("systemd not found")
 	ErrRootReadOnly  = errors.New("cannot write")
-	ErrNotReady      = errors.New("this machine is not ready")
 )
 
 // Check reports everything wrong with the machine at once, so one run names every fix.
-func (m *Machine) Check(ctx context.Context, root string) error {
+func (m *Machine) Check(ctx context.Context) error {
 	var problems []error
 	version, err := m.podman.Version(ctx)
 	if err != nil {
@@ -40,7 +41,7 @@ func (m *Machine) Check(ctx context.Context, root string) error {
 	if err := checkSystemd(); err != nil {
 		problems = append(problems, err)
 	}
-	if err := checkWritable(root); err != nil {
+	if err := checkWritable(m.root); err != nil {
 		problems = append(problems, err)
 	}
 	if len(problems) == 0 {
@@ -50,7 +51,7 @@ func (m *Machine) Check(ctx context.Context, root string) error {
 	for i, problem := range problems {
 		lines[i] = "  " + problem.Error()
 	}
-	return fmt.Errorf("%w:\n%s", ErrNotReady, strings.Join(lines, "\n"))
+	return fmt.Errorf("%w:\n%s", driver.ErrNotReady, strings.Join(lines, "\n"))
 }
 
 // CheckPodman reports whether a podman version carries quadlet and the Secret key.

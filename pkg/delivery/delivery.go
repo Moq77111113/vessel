@@ -1,8 +1,10 @@
 package delivery
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"path"
 	"regexp"
@@ -69,7 +71,7 @@ type Variable struct {
 type Delivery struct {
 	Name      string     `yaml:"name"`
 	Version   string     `yaml:"version"`
-	Units     string     `yaml:"units"`
+	Source    string     `yaml:"source"`
 	Files     []Mapping  `yaml:"files"`
 	Variables []Variable `yaml:"variables"`
 	Actions   []string   `yaml:"actions"`
@@ -117,17 +119,19 @@ func Read(dir fs.FS) (Delivery, error) {
 		return Delivery{}, fmt.Errorf("read %s: %w", DeliveryFile, err)
 	}
 	var declaration Delivery
-	if err := yaml.Unmarshal(data, &declaration); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&declaration); err != nil && !errors.Is(err, io.EOF) {
 		return Delivery{}, fmt.Errorf("read %s: %w", DeliveryFile, err)
 	}
 	if err := CheckName(declaration.Name); err != nil {
 		return Delivery{}, err
 	}
-	units, err := local(declaration.Units)
+	source, err := local(declaration.Source)
 	if err != nil {
 		return Delivery{}, err
 	}
-	declaration.Units = units
+	declaration.Source = source
 	for _, variable := range declaration.Variables {
 		if !variableName.MatchString(variable.Name) {
 			return Delivery{}, fmt.Errorf("%q: %w", variable.Name, ErrVariableName)

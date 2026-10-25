@@ -193,8 +193,8 @@ files:
 `,
 		"extra.unit": "[Container]\nImage=registry.test/acme/web:1.0\n",
 	})
-	if !errors.Is(err, build.ErrTargetInUnitDirectory) {
-		t.Errorf("got %v, want ErrTargetInUnitDirectory", err)
+	if !errors.Is(err, build.ErrTargetInDriverDirectory) {
+		t.Errorf("got %v, want ErrTargetInDriverDirectory", err)
 	}
 }
 
@@ -225,8 +225,8 @@ variables:
     from: openssl rand -hex 32
 `,
 	})
-	if !errors.Is(err, build.ErrSecretNoUnitReads) {
-		t.Errorf("got %v, want ErrSecretNoUnitReads", err)
+	if !errors.Is(err, build.ErrSecretNotRead) {
+		t.Errorf("got %v, want ErrSecretNotRead", err)
 	}
 }
 

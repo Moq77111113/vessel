@@ -23,25 +23,24 @@ type stub struct {
 func (s stub) Name() string          { return s.name }
 func (s stub) Detect(dir fs.FS) bool { _, err := fs.Stat(dir, s.mark); return err == nil }
 
-func (s stub) Read(fs.FS) (delivery.Manifest, error)           { return delivery.Manifest{}, nil }
-func (s stub) Owns(string) bool                                { return false }
-func (s stub) Requires([]delivery.File) []string               { return nil }
-func (s stub) Check(context.Context, string) error             { return nil }
-func (s stub) Secrets(context.Context) ([]string, error)       { return nil, nil }
-func (s stub) AddSecret(context.Context, string, string) error { return nil }
+func (s stub) Read(fs.FS) (delivery.Manifest, error)            { return delivery.Manifest{}, nil }
+func (s stub) Check(context.Context) error                      { return nil }
+func (s stub) Secrets(context.Context) ([]string, error)        { return nil, nil }
+func (s stub) AddSecret(context.Context, delivery.Secret) error { return nil }
+func (s stub) RemoveHint(string) string                         { return "" }
+func (s stub) Start(context.Context, []delivery.Service) error  { return nil }
+func (s stub) Stop(context.Context, []delivery.Service) error   { return nil }
 
-func (s stub) AddImages(context.Context, report.Report, *oci.Layout) ([]string, error) {
+func (s stub) AddImages(context.Context, report.Report, *oci.Images) ([]string, error) {
 	return nil, nil
 }
-func (s stub) Start(context.Context, []delivery.File) error { return nil }
 
-func (s stub) Services(context.Context, []delivery.File) ([]driver.Service, error) {
+func (s stub) Running(context.Context, []delivery.Service) ([]delivery.Service, error) {
 	return nil, nil
 }
-func (s stub) Stop(context.Context, []delivery.File) error { return nil }
 
 func TestPickReturnsTheFirstMachineThatRecognizesTheSource(t *testing.T) {
-	machines := []driver.Machine{
+	machines := []driver.Driver{
 		stub{name: "compose", mark: "compose.yaml"},
 		stub{name: "quadlet", mark: "web.container"},
 	}
@@ -57,7 +56,7 @@ func TestPickReturnsTheFirstMachineThatRecognizesTheSource(t *testing.T) {
 }
 
 func TestPickKeepsTheOrderItWasGiven(t *testing.T) {
-	machines := []driver.Machine{
+	machines := []driver.Driver{
 		stub{name: "compose", mark: "web.container"},
 		stub{name: "quadlet", mark: "web.container"},
 	}
@@ -72,19 +71,19 @@ func TestPickKeepsTheOrderItWasGiven(t *testing.T) {
 }
 
 func TestPickWithoutAnyMachineFails(t *testing.T) {
-	if _, err := driver.Pick(nil, fstest.MapFS{"web.container": &fstest.MapFile{}}); !errors.Is(err, driver.ErrNoMachine) {
+	if _, err := driver.Pick(nil, fstest.MapFS{"web.container": &fstest.MapFile{}}); !errors.Is(err, driver.ErrNoDriver) {
 		t.Fatalf("got %v, want ErrNoMachine", err)
 	}
 }
 
 func TestPickNamesEveryKindItTriedWhenNothingMatches(t *testing.T) {
-	machines := []driver.Machine{
+	machines := []driver.Driver{
 		stub{name: "compose", mark: "compose.yaml"},
 		stub{name: "quadlet", mark: "web.container"},
 	}
 
 	_, err := driver.Pick(machines, fstest.MapFS{"README.md": &fstest.MapFile{}})
-	if !errors.Is(err, driver.ErrNoMachine) {
+	if !errors.Is(err, driver.ErrNoDriver) {
 		t.Fatalf("got %v, want ErrNoMachine", err)
 	}
 	for _, name := range []string{"compose", "quadlet"} {
@@ -95,7 +94,7 @@ func TestPickNamesEveryKindItTriedWhenNothingMatches(t *testing.T) {
 }
 
 func TestByNameFindsTheMachineThatBuiltABundle(t *testing.T) {
-	machines := []driver.Machine{
+	machines := []driver.Driver{
 		stub{name: "compose"},
 		stub{name: "quadlet"},
 	}
@@ -109,8 +108,8 @@ func TestByNameFindsTheMachineThatBuiltABundle(t *testing.T) {
 }
 
 func TestByNameRefusesABundleThisBuildCannotRead(t *testing.T) {
-	_, err := driver.ByName([]driver.Machine{stub{name: "quadlet"}}, "compose")
-	if !errors.Is(err, driver.ErrUnknownMachine) {
+	_, err := driver.ByName([]driver.Driver{stub{name: "quadlet"}}, "compose")
+	if !errors.Is(err, driver.ErrUnknownDriver) {
 		t.Fatalf("got %v, want ErrUnknownMachine", err)
 	}
 	if !strings.Contains(err.Error(), "compose") {

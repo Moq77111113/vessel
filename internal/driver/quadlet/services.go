@@ -3,7 +3,6 @@ package quadlet
 import (
 	"path"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/Moq77111113/vessel/pkg/delivery"
@@ -17,70 +16,69 @@ var serviceSuffixes = map[string]string{
 	".pod":       "-pod.service",
 }
 
-// Start returns the systemctl lines that bring these units up.
+// services names what these units start: the services systemd generates, in order, then the plain units beside them.
+func services(files []delivery.File) []delivery.Service {
+	var generated, plain []delivery.Service
+	for _, file := range files {
+		base := path.Base(file.Path)
+		extension := path.Ext(base)
+		if under(file.Path, siblingPath) && slices.Contains(siblingSuffixes, extension) {
+			plain = append(plain, delivery.Service{Name: base, Path: file.Path})
+			continue
+		}
+		suffix, ok := serviceSuffixes[extension]
+		if !under(file.Path, systemdPath) || !ok {
+			continue
+		}
+		generated = append(generated, delivery.Service{Name: strings.TrimSuffix(base, extension) + suffix, Path: file.Path})
+	}
+	byName := func(a, b delivery.Service) int { return strings.Compare(a.Name, b.Name) }
+	slices.SortFunc(generated, byName)
+	slices.SortFunc(plain, byName)
+	return append(generated, plain...)
+}
+
+// startLines returns the systemctl lines that bring these services up.
 //
 // systemctl start on a quadlet unit, never enable: it is generated, so enable fails on it. Starting
 // at boot comes from the [Install] section the unit already carries. A .timer is not generated, so
 // it takes enable --now like any hand-written unit.
-func (r *Reader) Start(files []delivery.File) []string {
-	services := serviceNames(files)
-	timers := siblings(files)
-	if len(services) == 0 && len(timers) == 0 {
+func startLines(services []delivery.Service) []string {
+	generated, plain := split(services)
+	if len(generated) == 0 && len(plain) == 0 {
 		return nil
 	}
 	lines := []string{"systemctl daemon-reload"}
-	if len(services) > 0 {
-		lines = append(lines, "systemctl start "+strings.Join(services, " "))
+	if len(generated) > 0 {
+		lines = append(lines, "systemctl start "+strings.Join(generated, " "))
 	}
-	for _, name := range timers {
+	for _, name := range plain {
 		lines = append(lines, "systemctl enable --now "+name)
 	}
 	return lines
 }
 
-// Stop returns the systemctl lines that bring these units down, sibling units included.
-func (r *Reader) Stop(files []delivery.File) []string {
+// stopLines returns the systemctl lines that bring these services down, plain units included.
+func stopLines(services []delivery.Service) []string {
+	generated, plain := split(services)
 	var lines []string
-	if services := serviceNames(files); len(services) > 0 {
-		lines = append(lines, "systemctl stop "+strings.Join(services, " "))
+	if len(generated) > 0 {
+		lines = append(lines, "systemctl stop "+strings.Join(generated, " "))
 	}
-	for _, name := range siblings(files) {
+	for _, name := range plain {
 		lines = append(lines, "systemctl disable --now "+name)
 	}
 	return lines
 }
 
-// siblings names the plain systemd units these files carry, in a stable order.
-func siblings(files []delivery.File) []string {
-	var names []string
-	for _, file := range files {
-		if !under(file.Path, siblingPath) {
+// split names the services systemd generates from a unit apart from the plain units beside them.
+func split(services []delivery.Service) (generated, plain []string) {
+	for _, service := range services {
+		if under(service.Path, siblingPath) {
+			plain = append(plain, service.Name)
 			continue
 		}
-		base := path.Base(file.Path)
-		if slices.Contains(siblingSuffixes, path.Ext(base)) {
-			names = append(names, base)
-		}
+		generated = append(generated, service.Name)
 	}
-	sort.Strings(names)
-	return names
-}
-
-// serviceNames names the systemd services these units generate, in start order.
-func serviceNames(files []delivery.File) []string {
-	var names []string
-	for _, file := range files {
-		if !under(file.Path, systemdPath) {
-			continue
-		}
-		base := path.Base(file.Path)
-		extension := path.Ext(base)
-		suffix, ok := serviceSuffixes[extension]
-		if !ok {
-			continue
-		}
-		names = append(names, strings.TrimSuffix(base, extension)+suffix)
-	}
-	sort.Strings(names)
-	return names
+	return generated, plain
 }

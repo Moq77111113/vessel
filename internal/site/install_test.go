@@ -62,7 +62,7 @@ func TestInstallWritesNothingWhenAValueIsMissing(t *testing.T) {
 	dir := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nvariables:\n  - name: PUBLIC_HOST\n"})
 	root := t.TempDir()
 	stub := &podmanStub{}
-	if err := runInstall(t, root, dir, []driver.Machine{quadlet.New(stub.run)}); err == nil {
+	if err := runInstall(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)}); err == nil {
 		t.Fatal("the install succeeded with no value for PUBLIC_HOST")
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd")); err == nil {
@@ -88,7 +88,7 @@ files:
 	})
 	root := t.TempDir()
 	stub := &podmanStub{watchFile: filepath.Join(root, "etc/acme/realm.json")}
-	if err := runInstall(t, root, dir, []driver.Machine{quadlet.New(stub.run)}); err != nil {
+	if err := runInstall(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if !stub.sawFileAtLoad {
@@ -109,7 +109,7 @@ variables:
 		})
 	root := t.TempDir()
 	stub := &podmanStub{}
-	job := jobFor(t, root, dir, []driver.Machine{quadlet.New(stub.run)}, nil)
+	job := jobFor(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)}, nil)
 	job.SetFile = dbPassword
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("install: %v", err)
@@ -135,7 +135,8 @@ variables:
 
 func TestInstallStartsEveryServiceTheUnitsGenerate(t *testing.T) {
 	stub := &podmanStub{}
-	if err := runInstall(t, t.TempDir(), twoUnitBundle(t), []driver.Machine{quadlet.New(stub.run)}); err != nil {
+	root := t.TempDir()
+	if err := runInstall(t, root, twoUnitBundle(t), []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl start db.service web.service") {
@@ -145,7 +146,8 @@ func TestInstallStartsEveryServiceTheUnitsGenerate(t *testing.T) {
 
 func TestInstallAsksSystemdWhetherEveryServiceCameUp(t *testing.T) {
 	stub := &podmanStub{}
-	if err := runInstall(t, t.TempDir(), twoUnitBundle(t), []driver.Machine{quadlet.New(stub.run)}); err != nil {
+	root := t.TempDir()
+	if err := runInstall(t, root, twoUnitBundle(t), []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	for _, call := range []string{"systemctl is-active db.service", "systemctl is-active web.service"} {
@@ -189,7 +191,7 @@ func twoUnitBundle(t *testing.T) string {
 func TestInstallFailsWhenAServiceDidNotStart(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
-	err := runInstall(t, root, dir, []driver.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}})
+	err := runInstall(t, root, dir, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}})
 	if err == nil {
 		t.Fatal("install succeeded with a service that is down")
 	}
@@ -203,9 +205,9 @@ func TestInstallFailsWhenAServiceDidNotStart(t *testing.T) {
 
 func TestInstallNamesEveryServiceThatDidNotStart(t *testing.T) {
 	root := t.TempDir()
-	dir := writeBundle(t, "acme", "1.4.0")
+	dir := twoUnitBundle(t)
 	down := []string{"db.service", "web.service"}
-	err := runInstall(t, root, dir, []driver.Machine{downServices{quadlet.New((&podmanStub{}).run), down}})
+	err := runInstall(t, root, dir, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), down}})
 	if err == nil {
 		t.Fatal("install succeeded with two services down")
 	}
@@ -219,7 +221,7 @@ func TestInstallNamesEveryServiceThatDidNotStart(t *testing.T) {
 func TestInstallLeavesTheRecordOpenWhenAServiceDidNotStart(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
-	if err := runInstall(t, root, dir, []driver.Machine{downServices{quadlet.New((&podmanStub{}).run), []string{"web.service"}}}); err == nil {
+	if err := runInstall(t, root, dir, []driver.Driver{downServices{quadlet.New(root, (&podmanStub{}).run), []string{"web.service"}}}); err == nil {
 		t.Fatal("install succeeded with a service that is down")
 	}
 	record, found, err := recordsFor(t, root, "acme").Read()
@@ -236,16 +238,18 @@ func TestInstallLeavesTheRecordOpenWhenAServiceDidNotStart(t *testing.T) {
 
 // downServices reports the named services as not running, whatever the machine did.
 type downServices struct {
-	driver.Machine
+	driver.Driver
 	names []string
 }
 
-func (d downServices) Services(context.Context, []delivery.File) ([]driver.Service, error) {
-	services := make([]driver.Service, 0, len(d.names))
-	for _, name := range d.names {
-		services = append(services, driver.Service{Name: name, Running: false})
+func (d downServices) Running(ctx context.Context, services []delivery.Service) ([]delivery.Service, error) {
+	var running []delivery.Service
+	for _, service := range services {
+		if !slices.Contains(d.names, service.Name) {
+			running = append(running, service)
+		}
 	}
-	return services, nil
+	return running, nil
 }
 
 func TestInstallWritesARecordNamingTheVersionItPut(t *testing.T) {
@@ -335,10 +339,10 @@ func writeBundle(t *testing.T, delivery, version string) string {
 }
 
 // jobFor builds the install a test drives, through kinds or a working podman stub when nil.
-func jobFor(t *testing.T, root, dir string, kinds []driver.Machine, set map[string]string) Install {
+func jobFor(t *testing.T, root, dir string, kinds []driver.Driver, set map[string]string) Install {
 	t.Helper()
 	if kinds == nil {
-		kinds = []driver.Machine{quadlet.New((&podmanStub{}).run)}
+		kinds = []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}
 	}
 	artifact, err := bundle.OpenNamed(dir)
 	if err != nil {
@@ -348,13 +352,13 @@ func jobFor(t *testing.T, root, dir string, kinds []driver.Machine, set map[stri
 }
 
 // runInstall installs the bundle in dir under root, printing nothing.
-func runInstall(t *testing.T, root, dir string, kinds []driver.Machine) error {
+func runInstall(t *testing.T, root, dir string, kinds []driver.Driver) error {
 	t.Helper()
 	return jobFor(t, root, dir, kinds, nil).Run(context.Background(), io.Discard, report.New(io.Discard))
 }
 
 // runUpgrade upgrades the bundle in dir under root, printing nothing.
-func runUpgrade(t *testing.T, root, dir string, kinds []driver.Machine) error {
+func runUpgrade(t *testing.T, root, dir string, kinds []driver.Driver) error {
 	t.Helper()
 	return jobFor(t, root, dir, kinds, nil).Upgrade(context.Background(), io.Discard, report.New(io.Discard))
 }
@@ -362,18 +366,18 @@ func runUpgrade(t *testing.T, root, dir string, kinds []driver.Machine) error {
 // installWithABrokenImageLoad installs through a machine whose AddImages fails.
 func installWithABrokenImageLoad(t *testing.T, root, dir string) error {
 	t.Helper()
-	return runInstall(t, root, dir, []driver.Machine{brokenImages{quadlet.New((&podmanStub{}).run)}})
+	return runInstall(t, root, dir, []driver.Driver{brokenImages{quadlet.New(root, (&podmanStub{}).run)}})
 }
 
 // brokenImages fails AddImages, after the files and before the images.
 type brokenImages struct {
-	driver.Machine
+	driver.Driver
 }
 
 // errBrokenImageLoad is the failure brokenImages.AddImages reports.
 var errBrokenImageLoad = errors.New("broken image load")
 
-func (brokenImages) AddImages(context.Context, report.Report, *oci.Layout) ([]string, error) {
+func (brokenImages) AddImages(context.Context, report.Report, *oci.Images) ([]string, error) {
 	return nil, errBrokenImageLoad
 }
 
@@ -468,7 +472,7 @@ func linkTestDelivery(t *testing.T, unitExtra string, files map[string]string) s
 	}
 	out := filepath.Join(t.TempDir(), "bundle")
 	job := build.Job{Source: source, Platform: "linux/amd64"}
-	if err := build.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), job, out); err != nil {
+	if err := build.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds("/"), job, out); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
@@ -483,7 +487,7 @@ func TestSetRefusesAnEmptyValue(t *testing.T) {
 func TestInstallRefusesABundleNoMachineCanInstallBeforeWritingAnything(t *testing.T) {
 	root := t.TempDir()
 	err := runInstall(t, root, unknownKindBundle(t), nil)
-	if !errors.Is(err, driver.ErrUnknownMachine) {
+	if !errors.Is(err, driver.ErrUnknownDriver) {
 		t.Fatalf("got %v, want ErrUnknownMachine", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/realm.json")); err == nil {
@@ -591,7 +595,7 @@ variables:
 `,
 		})
 	root := t.TempDir()
-	kinds := []driver.Machine{heldSecrets{quadlet.New((&podmanStub{}).run), []string{"OLD_PASSWORD"}}}
+	kinds := []driver.Driver{heldSecrets{quadlet.New(root, (&podmanStub{}).run), []string{"OLD_PASSWORD"}}}
 	job := jobFor(t, root, dir, kinds, nil)
 	job.SetFile = map[string]string{"NEW_PASSWORD": "hunter2"}
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
@@ -618,12 +622,12 @@ variables:
 `,
 		})
 	root := t.TempDir()
-	first := jobFor(t, root, dir, []driver.Machine{quadlet.New((&podmanStub{}).run)}, nil)
+	first := jobFor(t, root, dir, []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}, nil)
 	first.SetFile = map[string]string{"NEW_PASSWORD": "hunter2"}
 	if err := first.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
-	second := []driver.Machine{heldSecrets{quadlet.New((&podmanStub{}).run), []string{"NEW_PASSWORD"}}}
+	second := []driver.Driver{heldSecrets{quadlet.New(root, (&podmanStub{}).run), []string{"NEW_PASSWORD"}}}
 	if err := runUpgrade(t, root, dir, second); err != nil {
 		t.Fatalf("second install: %v", err)
 	}
@@ -654,7 +658,7 @@ func TestAnInstallThatDiesWritingAFileStoresTheSiteValues(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/acme"), "an ordinary file where the delivery wants a directory")
 	set := map[string]string{"PUBLIC_HOST": "dmas.acme.local"}
-	job := jobFor(t, root, blockedFileBundle(t), testKinds(), set)
+	job := jobFor(t, root, blockedFileBundle(t), testKinds(root), set)
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
 		t.Fatal("the install succeeded even though no file could be written")
 	}
@@ -670,7 +674,7 @@ func TestAnInstallThatDiesWritingAFileStoresTheSiteValues(t *testing.T) {
 func TestAnInstallThatDiesWritingAFileSaysTheMachineIsPartwayThrough(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "etc/acme"), "an ordinary file where the delivery wants a directory")
-	job := jobFor(t, root, blockedFileBundle(t), testKinds(), map[string]string{"PUBLIC_HOST": "dmas.acme.local"})
+	job := jobFor(t, root, blockedFileBundle(t), testKinds(root), map[string]string{"PUBLIC_HOST": "dmas.acme.local"})
 	err := job.Run(context.Background(), io.Discard, report.New(io.Discard))
 	if err == nil {
 		t.Fatal("the install succeeded even though no file could be written")
@@ -721,23 +725,23 @@ func TestInstallReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testin
 			t.Errorf("chmod: %v", err)
 		}
 	})
-	kinds := []driver.Machine{unreadyMachine{quadlet.New((&podmanStub{}).run)}}
+	kinds := []driver.Driver{unreadyMachine{quadlet.New(root, (&podmanStub{}).run)}}
 	err := runInstall(t, root, dir, kinds)
-	if !errors.Is(err, quadlet.ErrNotReady) {
+	if !errors.Is(err, driver.ErrNotReady) {
 		t.Fatalf("got %v, want the machine-not-ready error", err)
 	}
 }
 
 // unreadyMachine wraps a driver.Machine and fails Check, as an operator's own machine would.
 type unreadyMachine struct {
-	driver.Machine
+	driver.Driver
 }
 
-func (unreadyMachine) Check(context.Context, string) error { return quadlet.ErrNotReady }
+func (unreadyMachine) Check(context.Context) error { return driver.ErrNotReady }
 
 // heldSecrets wraps a driver.Machine and reports secrets the machine already holds.
 type heldSecrets struct {
-	driver.Machine
+	driver.Driver
 	names []string
 }
 
@@ -769,7 +773,7 @@ func linkInsecureBundle(t *testing.T) string {
 	writeFile(t, filepath.Join(source, "vessel.yaml"), string(body))
 	out := filepath.Join(t.TempDir(), "bundle")
 	job := build.Job{Source: source, Platform: "linux/amd64", InsecureUnsigned: true}
-	if err := build.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds(), job, out); err != nil {
+	if err := build.Link(context.Background(), report.New(io.Discard), report.New(io.Discard), testKinds("/"), job, out); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	return out
@@ -890,7 +894,7 @@ func TestInstallRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
 		t.Fatal("install succeeded with a broken image load")
 	}
 	stub := &podmanStub{}
-	err := runInstall(t, root, dir, []driver.Machine{quadlet.New(stub.run)})
+	err := runInstall(t, root, dir, []driver.Driver{quadlet.New(root, stub.run)})
 	if !errors.Is(err, ErrRecordOpen) {
 		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
@@ -996,5 +1000,23 @@ func TestInstallWritesTheModeTheDescriptorDeclares(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("got %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestInstallRecordsTheServicesItStarts(t *testing.T) {
+	root := t.TempDir()
+	if err := runInstall(t, root, twoUnitBundle(t), []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	record, _, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	var names []string
+	for _, service := range record.Services {
+		names = append(names, service.Name)
+	}
+	if got, want := strings.Join(names, " "), "db.service web.service"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

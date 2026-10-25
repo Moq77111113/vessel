@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -42,6 +43,35 @@ func TestImportsKeepTheTwoSidesApart(t *testing.T) {
 	}
 }
 
+var driverWords = []string{"podman", "systemd", "systemctl", "quadlet"}
+
+func TestOnlyTheRootNamesADriver(t *testing.T) {
+	for file, imports := range sources(t) {
+		for _, path := range imports {
+			if strings.HasPrefix(path, "internal/driver/") && file != "cmd/vessel/root.go" && !strings.HasPrefix(file, "internal/driver/") {
+				t.Errorf("%s imports %s: only cmd/vessel/root.go names a driver", file, path)
+			}
+		}
+	}
+}
+
+func TestNoDriverWordOutsideItsDriver(t *testing.T) {
+	for file := range sources(t) {
+		if strings.HasPrefix(file, "internal/driver/quadlet/") || file == "cmd/vessel/root.go" {
+			continue
+		}
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
+		for _, word := range driverWords {
+			if strings.Contains(strings.ToLower(string(body)), word) {
+				t.Errorf("%s says %s: only its driver does", file, word)
+			}
+		}
+	}
+}
+
 func sources(t *testing.T) map[string][]string {
 	t.Helper()
 	files := map[string][]string{}
@@ -67,6 +97,9 @@ func sources(t *testing.T) map[string][]string {
 			if local, ok := strings.CutPrefix(name, module); ok {
 				files[filepath.ToSlash(path)] = append(files[filepath.ToSlash(path)], local)
 			}
+		}
+		if _, ok := files[filepath.ToSlash(path)]; !ok {
+			files[filepath.ToSlash(path)] = nil
 		}
 		return nil
 	})

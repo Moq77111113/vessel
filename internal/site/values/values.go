@@ -27,21 +27,28 @@ type Shell interface {
 	Value(ctx context.Context, command string) (string, error)
 }
 
+// Secrets is what the machine already holds: the names, and the command that takes one off.
+type Secrets struct {
+	Names  []string
+	Remove func(secret string) string
+}
+
 // Values answers the variables a delivery declares, from this machine and this operator.
 type Values struct {
 	site    *Store
 	shell   Shell
 	set     map[string]string
 	secrets map[string]bool
+	remove  func(secret string) string
 }
 
 // NewValues returns the values of one run: --set, what a previous install stored, then from:.
-func NewValues(site *Store, shell Shell, set map[string]string, secrets []string) *Values {
-	machineSecrets := make(map[string]bool, len(secrets))
-	for _, name := range secrets {
+func NewValues(site *Store, shell Shell, set map[string]string, secrets Secrets) *Values {
+	machineSecrets := make(map[string]bool, len(secrets.Names))
+	for _, name := range secrets.Names {
 		machineSecrets[name] = true
 	}
-	return &Values{site: site, shell: shell, set: set, secrets: machineSecrets}
+	return &Values{site: site, shell: shell, set: set, secrets: machineSecrets, remove: secrets.Remove}
 }
 
 // Resolve answers every variable, or names the first one it cannot.
@@ -91,8 +98,8 @@ func (v *Values) checkSet(variables []delivery.Variable) error {
 			return fmt.Errorf("--set %s: %w", name, ErrSetIsUnknown)
 		}
 		if variable.Secret && v.secrets[name] {
-			return fmt.Errorf("--set %s: remove it with sudo podman secret rm %s, then install again: %w",
-				name, name, ErrSecretHeld)
+			return fmt.Errorf("--set %s: remove it with sudo %s, then install again: %w",
+				name, v.remove(name), ErrSecretHeld)
 		}
 	}
 	return nil

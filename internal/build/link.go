@@ -30,7 +30,7 @@ type puller interface {
 const defaultPlatform = "linux/amd64"
 
 // Link resolves the delivery the job names to digests and writes its bundle in out.
-func Link(ctx context.Context, work, summary report.Report, kinds []driver.Machine, job Job, out string) error {
+func Link(ctx context.Context, work, summary report.Report, kinds []driver.Driver, job Job, out string) error {
 	source, err := os.OpenRoot(job.Source)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", job.Source, err)
@@ -56,8 +56,8 @@ func Link(ctx context.Context, work, summary report.Report, kinds []driver.Machi
 		platform = defaultPlatform
 	}
 	dir := source.FS()
-	if definition.Units != "" {
-		if dir, err = fs.Sub(dir, definition.Units); err != nil {
+	if definition.Source != "" {
+		if dir, err = fs.Sub(dir, definition.Source); err != nil {
 			return err
 		}
 	}
@@ -76,10 +76,10 @@ func Link(ctx context.Context, work, summary report.Report, kinds []driver.Machi
 	if err := delivery.CheckCollisions(manifest.Files, plain); err != nil {
 		return err
 	}
-	if err := checkOutsideTheUnitDirectories(kind, plain); err != nil {
+	if err := checkOutsideTheDriverDirectories(manifest.Dirs, plain); err != nil {
 		return err
 	}
-	if err := checkEverySecretIsRead(kind.Requires(manifest.Files), definition.Variables); err != nil {
+	if err := checkEverySecretIsRead(manifest.Secrets, definition.Variables); err != nil {
 		return err
 	}
 	manifest.Files = append(manifest.Files, plain...)
@@ -110,6 +110,8 @@ func Link(ctx context.Context, work, summary report.Report, kinds []driver.Machi
 			Machine:   kind.Name(),
 			Platform:  platform,
 			Images:    imagesOf(digests),
+			Services:  manifest.Services,
+			Secrets:   manifest.Secrets,
 			Variables: definition.Variables,
 			Actions:   definition.Actions,
 			Insecure:  job.InsecureUnsigned,

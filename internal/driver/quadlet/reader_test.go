@@ -145,3 +145,16 @@ func TestReadRefusesAUnitNameSystemdWouldNotTake(t *testing.T) {
 		}
 	}
 }
+
+func TestReaderNamesOneServicePerContainerAndTheSecretsTheyRead(t *testing.T) {
+	manifest, err := NewReader().Read(os.DirFS("testdata/stack"))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got, want := strings.Join(names(manifest.Services), " "), "db.service web.service"; got != want {
+		t.Errorf("services %q, want %q", got, want)
+	}
+	if got, want := strings.Join(manifest.Secrets, " "), "db-password"; got != want {
+		t.Errorf("secrets %q, want %q", got, want)
+	}
+}

@@ -124,8 +124,8 @@ func writeUnits(t *testing.T, source string) {
 	}
 }
 
-func buildKinds() []driver.Machine {
-	return []driver.Machine{quadlet.New(quadlet.Exec)}
+func buildKinds() []driver.Driver {
+	return []driver.Driver{quadlet.New("/", quadlet.Exec)}
 }
 
 func registryHost(t *testing.T) string {

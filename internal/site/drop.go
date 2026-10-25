@@ -2,6 +2,7 @@ package site
 
 import (
 	"context"
+	"slices"
 
 	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/site/disk"
@@ -11,9 +12,9 @@ import (
 )
 
 // removeGone stops the services of the files the new version drops, then removes them, keeping one edited on this machine.
-func removeGone(ctx context.Context, work report.Report, host driver.Host, tree *disk.Tree,
-	previous, next []release.Entry) error {
-	remove, keep, err := release.Drops(tree, previous, next)
+func removeGone(ctx context.Context, work report.Report, host driver.Machine, tree *disk.Tree,
+	current, next release.Record) error {
+	remove, keep, err := release.Drops(tree, current.Files, next.Files)
 	if err != nil {
 		return err
 	}
@@ -23,7 +24,7 @@ func removeGone(ctx context.Context, work report.Report, host driver.Host, tree 
 	if len(remove) == 0 {
 		return nil
 	}
-	if err := host.Stop(ctx, units(remove)); err != nil {
+	if err := host.Stop(ctx, servicesIn(current.Services, remove)); err != nil {
 		return err
 	}
 	for _, path := range remove {
@@ -38,11 +39,13 @@ func removeGone(ctx context.Context, work report.Report, host driver.Host, tree 
 	return nil
 }
 
-// units turns paths into the files a machine stops the services of.
-func units(paths []string) []delivery.File {
-	files := make([]delivery.File, 0, len(paths))
-	for _, path := range paths {
-		files = append(files, delivery.File{Path: path})
+// servicesIn names the services declared by one of these files.
+func servicesIn(services []delivery.Service, paths []string) []delivery.Service {
+	var declared []delivery.Service
+	for _, service := range services {
+		if slices.Contains(paths, service.Path) {
+			declared = append(declared, service)
+		}
 	}
-	return files
+	return declared
 }
