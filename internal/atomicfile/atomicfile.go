@@ -1,4 +1,3 @@
-// Package atomicfile puts a file down in one shot, so a power cut leaves no half-written file.
 package atomicfile
 
 import (
@@ -8,8 +7,6 @@ import (
 	"path/filepath"
 )
 
-// Write puts body at path through a temporary file, so a power cut leaves the old file or the
-// new one, never a half-written one. The parent directory must already exist.
 func Write(path string, body []byte, mode fs.FileMode) error {
 	dir := filepath.Dir(path)
 	temp, err := os.CreateTemp(dir, ".vessel-*")
@@ -38,7 +35,6 @@ func Write(path string, body []byte, mode fs.FileMode) error {
 	return syncDir(dir)
 }
 
-// MkdirAll creates dir and every missing parent, flushing each new entry so a power cut keeps it.
 func MkdirAll(dir string, mode fs.FileMode) error {
 	_, err := os.Stat(dir)
 	if err == nil {
@@ -57,7 +53,6 @@ func MkdirAll(dir string, mode fs.FileMode) error {
 	return syncDir(parent)
 }
 
-// Rename moves from to to and flushes the directory, so a power cut keeps the move.
 func Rename(from, to string) error {
 	if err := os.Rename(from, to); err != nil {
 		return fmt.Errorf("move into %s: %w", to, err)
@@ -65,7 +60,6 @@ func Rename(from, to string) error {
 	return syncDir(filepath.Dir(to))
 }
 
-// syncDir forces the rename itself to disk: without it a power cut can lose the directory entry.
 func syncDir(dir string) error {
 	handle, err := os.Open(dir)
 	if err != nil {

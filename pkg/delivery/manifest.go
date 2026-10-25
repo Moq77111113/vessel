@@ -7,7 +7,6 @@ import "io/fs"
 type File struct {
 	Path string
 	Data []byte
-	// Mode is the permission bits the descriptor declares, or 0 to keep those of the file in place.
 	Mode fs.FileMode
 }
 
@@ -31,8 +30,7 @@ type Secret struct {
 	Value string
 }
 
-// Manifest is what a driver reads: the files to carry, where their image references sit, the
-// services they declare, the secrets those services read, and the directories the driver fills.
+// Manifest is what a driver reads: files, image references, services, the secrets they read, the directories it fills.
 type Manifest struct {
 	Files    []File
 	Relocs   []Relocation

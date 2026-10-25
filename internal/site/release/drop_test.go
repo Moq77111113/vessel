@@ -14,7 +14,8 @@ func TestDropsRemovesAFileThePreviousVersionCarriedThatTheNewOneDoesNot(t *testi
 	next := []Entry{
 		{Path: "etc/containers/systemd/web.container", Digest: "sha256:cccc"},
 	}
-	got, _, err := Drops(disk.NewTree(t.TempDir()), previous, next)
+	drop, err := Drops(disk.NewTree(t.TempDir()), previous, next)
+	got := drop.Remove
 	if err != nil {
 		t.Fatalf("drops: %v", err)
 	}
@@ -26,7 +27,7 @@ func TestDropsRemovesAFileThePreviousVersionCarriedThatTheNewOneDoesNot(t *testi
 
 func TestDropsSkipsAFileBothVersionsCarry(t *testing.T) {
 	entries := []Entry{{Path: "etc/acme/realm.json", Digest: "sha256:aaaa"}}
-	if got, _, _ := Drops(disk.NewTree(t.TempDir()), entries, entries); len(got) != 0 {
-		t.Errorf("got %v, want nothing", got)
+	if drop, _ := Drops(disk.NewTree(t.TempDir()), entries, entries); len(drop.Remove) != 0 {
+		t.Errorf("got %v, want nothing", drop.Remove)
 	}
 }

@@ -32,7 +32,7 @@ files:
 		"a.txt": "old-a",
 		"b.txt": "old-b",
 	})
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 
@@ -46,7 +46,7 @@ files:
 `,
 		"b.txt": "new-b",
 	})
-	if err := runUpgrade(t, root, second, nil); err != nil {
+	if err := at(t, root, nil).upgrade(second); err != nil {
 		t.Fatalf("upgrade 1.4.0: %v", err)
 	}
 
@@ -77,7 +77,7 @@ files:
 		"a.txt": "A",
 		"b.txt": "B",
 	})
-	if err := runInstall(t, root, dir, nil); err != nil {
+	if err := at(t, root, nil).install(dir); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	for _, path := range []string{
@@ -92,8 +92,8 @@ files:
 func TestUpgradeRefusesAMachineWithNoRecord(t *testing.T) {
 	root := t.TempDir()
 	dir := writeBundle(t, "acme", "1.4.0")
-	err := runUpgrade(t, root, dir, nil)
-	if !errors.Is(err, ErrNoRecord) {
+	err := at(t, root, nil).upgrade(dir)
+	if !errors.Is(err, release.ErrNoRecord) {
 		t.Errorf("got %v, want ErrNoRecord", err)
 	}
 }
@@ -121,7 +121,7 @@ func TestUpgradeReportsTheMachineNotReadyEvenWhenTheRecordCannotBeRead(t *testin
 		}
 	})
 	kinds := []driver.Driver{unreadyMachine{quadlet.New(root, (&podmanStub{}).run)}}
-	err := runUpgrade(t, root, dir, kinds)
+	err := at(t, root, kinds).upgrade(dir)
 	if !errors.Is(err, driver.ErrNotReady) {
 		t.Fatalf("got %v, want the machine-not-ready error", err)
 	}
@@ -133,13 +133,13 @@ func TestUpgradeStopsTheServiceOfAUnitItDrops(t *testing.T) {
 		"vessel.yaml":     "name: acme\nversion: 1.3.0\n",
 		"cache.container": "[Container]\nContainerName=cache\n",
 	})
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 
 	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	stub := &podmanStub{}
-	if err := runUpgrade(t, root, second, []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).upgrade(second); err != nil {
 		t.Fatalf("upgrade 1.4.0: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl stop cache.service") {
@@ -159,7 +159,7 @@ files:
 `,
 		"a.txt": "old-a",
 	})
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 	if err := os.Remove(filepath.Join(root, "etc/acme/a.txt")); err != nil {
@@ -168,7 +168,7 @@ files:
 
 	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	var out bytes.Buffer
-	job := jobFor(t, root, second, nil, nil)
+	job := at(t, root, nil).job(second, nil)
 	if err := job.Upgrade(context.Background(), io.Discard, report.New(&out)); err != nil {
 		t.Fatalf("upgrade 1.4.0: %v", err)
 	}
@@ -189,14 +189,14 @@ files:
 `,
 		"a.txt": "old-a",
 	})
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 
 	second := linkTestBundle(t, map[string]string{
 		"vessel.yaml": "name: acme\nversion: 1.4.0\nactions:\n  - echo hi\n",
 	})
-	if err := runUpgrade(t, root, second, nil); err == nil {
+	if err := at(t, root, nil).upgrade(second); err == nil {
 		t.Fatal("upgrade succeeded despite a shell that refuses every action")
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); err != nil {
@@ -210,13 +210,13 @@ func TestUpgradeDisablesATimerItDrops(t *testing.T) {
 		"vessel.yaml":  "name: acme\nversion: 1.3.0\n",
 		"backup.timer": "[Timer]\nOnCalendar=daily\n",
 	})
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 
 	second := linkTestBundle(t, map[string]string{"vessel.yaml": "name: acme\nversion: 1.4.0\n"})
 	stub := &podmanStub{}
-	if err := runUpgrade(t, root, second, []driver.Driver{quadlet.New(root, stub.run)}); err != nil {
+	if err := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).upgrade(second); err != nil {
 		t.Fatalf("upgrade 1.4.0: %v", err)
 	}
 	if !slices.Contains(stub.calls, "systemctl disable --now backup.timer") {
@@ -236,18 +236,18 @@ files:
 `,
 		"a.txt": "old-a",
 	})
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 
 	dying := linkTestBundle(t, map[string]string{
 		"vessel.yaml": "name: acme\nversion: 1.4.0\nactions:\n  - echo hi\n",
 	})
-	if err := runUpgrade(t, root, dying, nil); err == nil {
+	if err := at(t, root, nil).upgrade(dying); err == nil {
 		t.Fatal("upgrade succeeded despite a shell that refuses every action")
 	}
 
-	entry, _, err := recordsFor(t, root, "acme").Read()
+	entry, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -259,13 +259,13 @@ files:
 func TestUninstallAfterAFailedUpgradeRemovesTheStaleFile(t *testing.T) {
 	root := t.TempDir()
 	first := linkTestBundle(t, fixture(t, "stale-1.3"))
-	if err := runInstall(t, root, first, nil); err != nil {
+	if err := at(t, root, nil).install(first); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
-	if err := runUpgrade(t, root, linkTestBundle(t, fixture(t, "stale-1.4")), nil); err == nil {
+	if err := at(t, root, nil).upgrade(linkTestBundle(t, fixture(t, "stale-1.4"))); err == nil {
 		t.Fatal("upgrade succeeded despite a shell that refuses every action")
 	}
-	if err := Uninstall(context.Background(), io.Discard, testKinds(root), root, "acme"); err != nil {
+	if err := at(t, root, testKinds(root)).uninstall(io.Discard, "acme"); err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); !os.IsNotExist(err) {
@@ -279,18 +279,18 @@ func TestUpgradeRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
 	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
-	if err := runUpgrade(t, root, writeBundle(t, "acme", "1.5.0"), nil); !errors.Is(err, ErrRecordOpen) {
+	if err := at(t, root, nil).upgrade(writeBundle(t, "acme", "1.5.0")); !errors.Is(err, ErrRecordOpen) {
 		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
 }
 
 func TestAnUpgradeKeepsAFileItDropsWhenEditedOnSite(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "acme-1.3"))); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "edited on site\n")
-	if err := runUpgrade(t, root, linkTestBundle(t, fixture(t, "acme-1.4")), nil); err != nil {
+	if err := at(t, root, nil).upgrade(linkTestBundle(t, fixture(t, "acme-1.4"))); err != nil {
 		t.Fatalf("upgrade: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/acme/a.txt")); err != nil {
@@ -305,7 +305,7 @@ func TestUpgradeRefusesARecordThatNamesNoService(t *testing.T) {
 		t.Fatalf("read the fixture: %v", err)
 	}
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
-	err = runUpgrade(t, root, writeBundle(t, "acme", "1.4.0"), nil)
+	err = at(t, root, nil).upgrade(writeBundle(t, "acme", "1.4.0"))
 	if !errors.Is(err, ErrRecordNamesNoService) {
 		t.Fatalf("got %v, want ErrRecordNamesNoService", err)
 	}

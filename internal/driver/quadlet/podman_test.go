@@ -13,13 +13,10 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// orderRecorder stands in for a report.Report and remembers, in order, when a line was
-// written relative to the calls a test also logs into it.
 type orderRecorder struct{ log *[]string }
 
 func (o *orderRecorder) Line(_, _ string) { *o.log = append(*o.log, "line") }
 
-// recorder stands in for podman and remembers what it was handed.
 type recorder struct {
 	args      []string
 	stdin     [][]byte
@@ -29,7 +26,8 @@ type recorder struct {
 	calls     int
 }
 
-func (r *recorder) run(_ context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
+func (r *recorder) run(_ context.Context, command Command) ([]byte, error) {
+	stdin, name, args := command.Stdin, command.Line[0], command.Line[1:]
 	r.args = append([]string{name}, args...)
 	if stdin != nil {
 		body, _ := io.ReadAll(stdin)
@@ -90,11 +88,9 @@ func TestLoadNamesTheImageInItsAnnouncement(t *testing.T) {
 	}
 }
 
-// install runs on a client site with no network for minutes at a time; if nothing prints
-// until podman load returns, the operator cannot tell it apart from a dead process.
 func TestLoadAnnouncesEachImageBeforePodmanLoadRuns(t *testing.T) {
 	var log []string
-	run := func(_ context.Context, _ io.Reader, _ string, _ ...string) ([]byte, error) {
+	run := func(context.Context, Command) ([]byte, error) {
 		log = append(log, "run")
 		return []byte("Loaded image: registry.example.com/acme/web:1.0\n"), nil
 	}
@@ -129,9 +125,9 @@ func TestVersionReportsPodmanMissing(t *testing.T) {
 func TestCreateSecretHandsTheValueOnStandardInput(t *testing.T) {
 	var got []string
 	var body []byte
-	engine := &podman{run: func(ctx context.Context, stdin io.Reader, name string, args ...string) ([]byte, error) {
-		got = append([]string{name}, args...)
-		body, _ = io.ReadAll(stdin)
+	engine := &podman{run: func(_ context.Context, command Command) ([]byte, error) {
+		got = command.Line
+		body, _ = io.ReadAll(command.Stdin)
 		return nil, nil
 	}}
 	if err := engine.CreateSecret(context.Background(), "db-password", "a3f9"); err != nil {
@@ -148,8 +144,8 @@ func TestCreateSecretHandsTheValueOnStandardInput(t *testing.T) {
 
 func TestLoadHandsPodmanTheArchiveAsAFileOnDisk(t *testing.T) {
 	var stdin io.Reader
-	run := func(_ context.Context, in io.Reader, _ string, _ ...string) ([]byte, error) {
-		stdin = in
+	run := func(_ context.Context, command Command) ([]byte, error) {
+		stdin = command.Stdin
 		return []byte("Loaded image: registry.example.com/acme/web:1.0\n"), nil
 	}
 	if _, err := (&podman{run: run}).Load(context.Background(), report.New(io.Discard), layouttest.Open(t)); err != nil {

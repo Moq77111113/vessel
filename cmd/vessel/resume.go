@@ -2,16 +2,14 @@ package main
 
 import (
 	"context"
-	"io"
 
 	"github.com/spf13/cobra"
 
-	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/site"
 )
 
 func newResumeCommand() *cobra.Command {
-	var values answers
+	var flags answers
 	var skip bool
 	var dry bool
 
@@ -22,28 +20,31 @@ func newResumeCommand() *cobra.Command {
 			"Refuses when an action may have stopped halfway: check it, then --skip-action.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			job, err := jobOnDisk(args[0], values)
+			req, err := requestOnDisk(args[0], flags, command)
 			if err != nil {
 				return err
 			}
-			return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), preview(job, dry), skip)
+			_, err = resumer(preview(machine(), dry), skip).Run(command.Context(), req)
+			return err
 		},
 	}
-	values.bind(command)
+	flags.bind(command)
 	bindSkipFlag(command, &skip)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
-// resume picks the one call the --skip-action flag names.
-func resume(ctx context.Context, out io.Writer, work report.Report, job site.Install, skip bool) error {
-	if skip {
-		return job.SkipAction(ctx, out, work)
-	}
-	return job.Resume(ctx, out, work)
+type installer interface {
+	Run(ctx context.Context, req site.InstallRequest) (site.InstallResult, error)
 }
 
-// bindSkipFlag gives command the --skip-action flag an operator answers an open action with.
+func resumer(install site.Install, skip bool) installer {
+	if skip {
+		return site.SkipAction(install)
+	}
+	return site.Resume(install)
+}
+
 func bindSkipFlag(command *cobra.Command, skip *bool) {
 	command.Flags().BoolVar(skip, "skip-action", false,
 		"treat the action the last install left halfway as finished, without running it")

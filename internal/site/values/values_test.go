@@ -10,12 +10,12 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-func newValues(t *testing.T, set map[string]string, secrets []string) *Values {
+func newValues(t *testing.T, set map[string]string, secrets []string) Values {
 	t.Helper()
 	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) {
 		return []byte("from-command"), nil
 	})
-	return NewValues(siteFor(t, t.TempDir()), shell, set, Secrets{Names: secrets, Remove: func(name string) string { return "remove-secret " + name }})
+	return Values{Store: siteFor(t, t.TempDir()), Shell: shell, Set: set, Secrets: Secrets{Names: secrets, Remove: func(name string) string { return "remove-secret " + name }}}
 }
 
 func TestResolvePrefersWhatTheOperatorPassed(t *testing.T) {
@@ -65,7 +65,7 @@ func TestResolveNeverAnswersASecretFromTheStore(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
-	r := NewValues(values, shell, nil, Secrets{})
+	r := Values{Store: values, Shell: shell, Set: nil, Secrets: Secrets{}}
 
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", Secret: true}}
 	_, err := r.Resolve(context.Background(), variables)
@@ -80,7 +80,7 @@ func TestResolveSetOutranksAStoredValue(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
-	r := NewValues(values, shell, map[string]string{"PUBLIC_HOST": "given"}, Secrets{})
+	r := Values{Store: values, Shell: shell, Set: map[string]string{"PUBLIC_HOST": "given"}, Secrets: Secrets{}}
 
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST"}}
 	got, err := r.Resolve(context.Background(), variables)
@@ -122,7 +122,7 @@ func TestResolveReusesTheValueTheFirstInstallStored(t *testing.T) {
 	values := siteFor(t, t.TempDir())
 	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
 
-	first := NewValues(values, shell, map[string]string{"PUBLIC_HOST": "dmas.acme.local"}, Secrets{})
+	first := Values{Store: values, Shell: shell, Set: map[string]string{"PUBLIC_HOST": "dmas.acme.local"}, Secrets: Secrets{}}
 	got, err := first.Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -131,7 +131,7 @@ func TestResolveReusesTheValueTheFirstInstallStored(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	second := NewValues(values, shell, nil, Secrets{})
+	second := Values{Store: values, Shell: shell, Set: nil, Secrets: Secrets{}}
 	again, err := second.Resolve(context.Background(), variables)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -153,7 +153,6 @@ func TestResolveRefusesASetTheDeliveryNeverDeclared(t *testing.T) {
 	}
 }
 
-// An install runs as root, so the command the error names has to carry sudo to reach the store.
 func TestResolveRefusesToReplaceASecretTheMachineHolds(t *testing.T) {
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", From: "printf x", Secret: true}}
 	_, err := newValues(t, map[string]string{"DB_PASSWORD": "new"}, []string{"DB_PASSWORD"}).
@@ -174,7 +173,7 @@ func TestResolveNamesAFailedFromCommandAsNoValueNotAnAction(t *testing.T) {
 	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) {
 		return []byte("boom"), errors.New("exit status 1")
 	})
-	values := NewValues(siteFor(t, t.TempDir()), shell, nil, Secrets{})
+	values := Values{Store: siteFor(t, t.TempDir()), Shell: shell, Set: nil, Secrets: Secrets{}}
 	_, err := values.Resolve(context.Background(), variables)
 	if !errors.Is(err, ErrNoValue) {
 		t.Fatalf("got %v, want ErrNoValue: a failed from: runs before anything is written", err)
@@ -196,7 +195,7 @@ func TestResolveRefusesAPlainValueHoldingAControlCharacter(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			shell := disk.NewShell(func(context.Context, string) ([]byte, error) { return []byte(c.output), nil })
-			values := NewValues(siteFor(t, t.TempDir()), shell, c.set, Secrets{})
+			values := Values{Store: siteFor(t, t.TempDir()), Shell: shell, Set: c.set, Secrets: Secrets{}}
 			variables := []delivery.Variable{{Name: "PUBLIC_HOST", From: "hostname -f"}}
 			if _, err := values.Resolve(context.Background(), variables); !errors.Is(err, ErrValueHasAControl) {
 				t.Fatalf("got %v, want ErrValueHasAControl", err)

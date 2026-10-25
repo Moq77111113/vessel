@@ -1,4 +1,3 @@
-// Command vessel builds a delivery in CI, and installs it on the machine once packed.
 package main
 
 import (
@@ -9,19 +8,14 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// machines is the one place that names a concrete deployment kind. Pick tries them in order.
 var machines = []driver.Driver{
 	quadlet.New(machineRoot, quadlet.Exec),
 }
 
-// binary reads the running binary, even after the path it was started from names another file.
 const binary = "/proc/self/exe"
 
-// machineRoot is where a verb reads and writes: this machine, never a directory beside it.
 const machineRoot = "/"
 
-// New returns the command tree this binary offers. A binary packed with a bundle
-// installs that bundle and cannot build another one.
 func New() *cobra.Command {
 	if site.CarriesABundle(binary) {
 		return newPacked(binary)

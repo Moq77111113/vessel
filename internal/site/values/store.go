@@ -1,4 +1,3 @@
-// Package values is what this machine answers for a delivery: the values it holds, and how a run resolves them.
 package values
 
 import (
@@ -15,20 +14,16 @@ import (
 
 var ErrValueHasAControl = errors.New("a value cannot hold a control character")
 
-// Store is the site values one delivery already holds on this machine.
 type Store struct {
 	path string
 }
 
-// NewStore returns the value store of a delivery under its directory.
 func NewStore(dir string) *Store {
 	return &Store{path: filepath.Join(dir, "values")}
 }
 
-// Path is where this store keeps the values.
 func (v *Store) Path() string { return v.path }
 
-// Read returns the values this machine holds, empty on a machine that holds none.
 func (v *Store) Read() (map[string]string, error) {
 	data, err := os.ReadFile(v.path)
 	if err != nil {
@@ -38,7 +33,6 @@ func (v *Store) Read() (map[string]string, error) {
 		return nil, fmt.Errorf("read %s: %w", v.path, err)
 	}
 	values := map[string]string{}
-	// A name never carries "=": descriptor.Read imposes ^[A-Z][A-Z0-9_]*$.
 	for _, line := range strings.Split(string(data), "\n") {
 		name, value, ok := strings.Cut(line, "=")
 		if ok {
@@ -48,7 +42,6 @@ func (v *Store) Read() (map[string]string, error) {
 	return values, nil
 }
 
-// Write replaces the store with these values.
 func (v *Store) Write(values map[string]string) error {
 	names := make([]string, 0, len(values))
 	for name := range values {
@@ -73,7 +66,6 @@ func (v *Store) Write(values map[string]string) error {
 	return atomicfile.Write(v.path, []byte(body.String()), 0o600)
 }
 
-// checkLine refuses a value that would not stay on its one line of a text file.
 func checkLine(name, value string) error {
 	if strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) && r != '\t' }) {
 		return fmt.Errorf("%s: %w", name, ErrValueHasAControl)

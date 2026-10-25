@@ -25,7 +25,6 @@ func TestAnInstallUnpacksUnderVarTmpWhenNothingSaysWhere(t *testing.T) {
 	}
 }
 
-// interruptInstall runs a packed install until it asks for podman, lists the bundles unpacked in dir meanwhile, then interrupts it.
 func interruptInstall(t *testing.T, dir, env string) []string {
 	t.Helper()
 	marker := filepath.Join(t.TempDir(), "podman-called")
@@ -59,7 +58,6 @@ func interruptInstall(t *testing.T, dir, env string) []string {
 	return unpacked
 }
 
-// bundles names the unpacked bundles sitting in dir.
 func bundles(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

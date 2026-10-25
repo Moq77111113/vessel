@@ -3,7 +3,6 @@ package quadlet_test
 import (
 	"context"
 	"errors"
-	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -12,15 +11,14 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// calls records what a machine asked the system to run.
 type calls struct {
 	lines  []string
 	answer map[string]string
 	err    error
 }
 
-func (c *calls) run(_ context.Context, _ io.Reader, name string, args ...string) ([]byte, error) {
-	line := strings.TrimSpace(name + " " + strings.Join(args, " "))
+func (c *calls) run(_ context.Context, command quadlet.Command) ([]byte, error) {
+	line := strings.Join(command.Line, " ")
 	c.lines = append(c.lines, line)
 	return []byte(c.answer[line]), c.err
 }

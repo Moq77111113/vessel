@@ -13,9 +13,6 @@ import (
 	"github.com/Moq77111113/vessel/internal/oci"
 )
 
-// The invariant the whole design rests on: the digest a unit pins is the digest of
-// the manifest blob the bundle carries, byte for byte. A docker-archive round trip
-// breaks it, which is why the bundle holds an OCI layout.
 func TestEveryPinnedDigestNamesAManifestTheBundleCarries(t *testing.T) {
 	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
@@ -37,8 +34,6 @@ func TestEveryPinnedDigestNamesAManifestTheBundleCarries(t *testing.T) {
 	}
 }
 
-// The two fixture images share one layer. A layout stores it once; that is the whole
-// reason a bundle carries a layout rather than one archive per image.
 func TestTwoImagesSharingALayerStoreItOnce(t *testing.T) {
 	artifact, err := bundle.Open(buildStack(t))
 	if err != nil {
@@ -48,16 +43,12 @@ func TestTwoImagesSharingALayerStoreItOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
-	// Per image: a manifest, a config, its own layer. Plus the shared layer, once.
-	// Plus vessel's four: the bundle index, the files manifest, its config, the file archive.
 	want := 3*len(images) + 1 + 4
 	if len(entries) != want {
 		t.Errorf("blobs: got %d, want %d; the shared layer is stored more than once", len(entries), want)
 	}
 }
 
-// A unit written Image = ref, with spaces around the equals, still resolves: the
-// spaced key is legal systemd syntax and must not slip an image through unpinned.
 func TestLinkOverAUnitWrittenWithSpacesProducesADigest(t *testing.T) {
 	host := serveRegistry(t)
 	source := t.TempDir()

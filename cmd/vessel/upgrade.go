@@ -3,11 +3,11 @@ package main
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/Moq77111113/vessel/internal/report"
+	"github.com/Moq77111113/vessel/internal/site"
 )
 
 func newUpgradeCommand() *cobra.Command {
-	var values answers
+	var flags answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -17,14 +17,15 @@ func newUpgradeCommand() *cobra.Command {
 			"delivery: run install there instead.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			job, err := jobOnDisk(args[0], values)
+			req, err := requestOnDisk(args[0], flags, command)
 			if err != nil {
 				return err
 			}
-			return preview(job, dry).Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			_, err = site.Upgrade(preview(machine(), dry)).Run(command.Context(), req)
+			return err
 		},
 	}
-	values.bind(command)
+	flags.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }

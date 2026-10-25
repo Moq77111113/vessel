@@ -17,27 +17,47 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-var ErrNoRecord = errors.New("this machine holds no record of that delivery")
-
 var ErrRecordDoesNotMatch = errors.New("this machine no longer matches the record")
 
-// ErrRecordNamesNoService says an older vessel wrote the record, before it named the services it starts.
-var ErrRecordNamesNoService = errors.New("an older vessel wrote this record and named no service, uninstall with the executable that installed it, then install")
+type Status struct {
+	Root    string
+	Drivers []driver.Driver
+}
 
-// Status prints what this machine holds for a delivery, and fails when disk no longer matches it.
-func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, name string) error {
-	dir, err := release.Dir(root, name)
+type StatusRequest struct {
+	Name string
+	Out  io.Writer
+}
+
+type StatusResult struct {
+	Record  release.Record
+	Changes int
+}
+
+func (s Status) Run(ctx context.Context, req StatusRequest) (StatusResult, error) {
+	records, err := openRecords(s.Root, req.Name)
 	if err != nil {
-		return err
+		return StatusResult{}, err
 	}
-	records := release.NewRecords(dir)
-	record, found, err := records.Read()
+	record, err := lastRecord(records, req.Name)
 	if err != nil {
-		return err
+		return StatusResult{}, err
 	}
-	if !found {
-		return fmt.Errorf("%s: %w", name, ErrNoRecord)
+	if err := header(req.Out, records, record); err != nil {
+		return StatusResult{}, err
 	}
+	lines := report.New(req.Out)
+	changes := s.files(lines, record)
+	if err := s.services(ctx, req.Out, record); err != nil {
+		return StatusResult{}, err
+	}
+	if changes > 0 {
+		return StatusResult{Record: record, Changes: changes}, fmt.Errorf("%d of %d files: %w", changes, len(record.Files), ErrRecordDoesNotMatch)
+	}
+	return StatusResult{Record: record}, nil
+}
+
+func header(out io.Writer, records *release.Records, record release.Record) error {
 	fmt.Fprintf(out, "%s %s, installed %s\n", record.Name, record.Version, record.Start.Format(time.RFC3339))
 	if record.Insecure {
 		fmt.Fprintln(out, bundle.InsecureWarning)
@@ -48,23 +68,29 @@ func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, nam
 	if action, open := record.OpenAction(); open {
 		fmt.Fprintf(out, "this action may have stopped halfway, check it by hand: %s\n", action.Command)
 	}
-	previous, found, err := records.Previous()
+	previous, err := records.Previous()
+	if errors.Is(err, release.ErrNoRecord) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	if found {
-		fmt.Fprintf(out, "previous %s, installed %s\n", previous.Version, previous.Start.Format(time.RFC3339))
-	}
+	fmt.Fprintf(out, "previous %s, installed %s\n", previous.Version, previous.Start.Format(time.RFC3339))
+	return nil
+}
 
-	lines := report.New(out)
+func (s Status) files(lines report.Report, record release.Record) int {
 	changes := 0
 	for _, entry := range record.Files {
-		if reportFile(lines, root, entry) {
+		if reportFile(lines, s.Root, entry) {
 			changes++
 		}
 	}
+	return changes
+}
 
-	kind, err := driver.ByName(kinds, record.Machine)
+func (s Status) services(ctx context.Context, out io.Writer, record release.Record) error {
+	kind, err := byName(s.Drivers, record.Machine)
 	if err != nil {
 		return err
 	}
@@ -75,6 +101,7 @@ func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, nam
 	if err != nil {
 		return err
 	}
+	lines := report.New(out)
 	for _, service := range record.Services {
 		state := "down"
 		if slices.Contains(running, service) {
@@ -82,37 +109,9 @@ func Status(ctx context.Context, out io.Writer, kinds []driver.Driver, root, nam
 		}
 		lines.Line("Service", fmt.Sprintf("%s %s", service.Name, state))
 	}
-	if changes > 0 {
-		return fmt.Errorf("%d of %d files: %w", changes, len(record.Files), ErrRecordDoesNotMatch)
-	}
 	return nil
 }
 
-// List names every delivery this machine holds a record of, with the version it holds.
-func List(out io.Writer, root string) error {
-	names, err := release.Deliveries(root)
-	if err != nil {
-		return err
-	}
-	if len(names) == 0 {
-		fmt.Fprintln(out, "this machine holds no delivery")
-		return nil
-	}
-	for _, name := range names {
-		dir, err := release.Dir(root, name)
-		if err != nil {
-			return err
-		}
-		record, _, err := release.NewRecords(dir).Read()
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(out, "%s %s\n", record.Name, record.Version)
-	}
-	return nil
-}
-
-// reportFile names entry as Absent, Unreadable or Differs, and reports whether disk still matches it.
 func reportFile(lines report.Report, root string, entry release.Entry) bool {
 	path := filepath.Join(root, entry.Path)
 	body, err := os.ReadFile(path)
@@ -121,7 +120,7 @@ func reportFile(lines report.Report, root string, entry release.Entry) bool {
 		lines.Line("Absent", entry.Path)
 	case err != nil:
 		lines.Line("Unreadable", entry.Path)
-	case disk.DigestOf(body) != entry.Digest:
+	case disk.Digest(body) != entry.Digest:
 		lines.Line("Differs", entry.Path)
 	default:
 		return false

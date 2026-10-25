@@ -12,17 +12,18 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// ErrNotAFile says a bundle holds something other than a regular file.
 var ErrNotAFile = errors.New("is not a regular file")
 
-// Pack writes stub followed by the bundle and a trailer into out, as one executable. It announces
-// every file to work before archiving it, so a large bundle shows it is moving.
-func Pack(stub io.Reader, dir string, out io.Writer, work report.Report) error {
+type packer struct {
+	work report.Report
+}
+
+func (p packer) pack(stub io.Reader, dir string, out io.Writer) error {
 	if _, err := io.Copy(out, stub); err != nil {
 		return fmt.Errorf("copy the stub: %w", err)
 	}
 	counter := &counting{writer: out}
-	if err := writeTar(counter, dir, work); err != nil {
+	if err := writeTar(counter, dir, p.work); err != nil {
 		return err
 	}
 	if _, err := out.Write(bundle.Trailer(counter.bytes)); err != nil {
@@ -31,11 +32,10 @@ func Pack(stub io.Reader, dir string, out io.Writer, work report.Report) error {
 	return nil
 }
 
-// writeTar archives every regular file of bundle, reading through a root so no link leaves it.
-func writeTar(out io.Writer, bundle string, work report.Report) error {
-	root, err := os.OpenRoot(bundle)
+func writeTar(out io.Writer, dir string, work report.Report) error {
+	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", bundle, err)
+		return fmt.Errorf("open %s: %w", dir, err)
 	}
 	defer root.Close()
 	archive := tar.NewWriter(out)
@@ -50,12 +50,11 @@ func writeTar(out io.Writer, bundle string, work report.Report) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("pack %s: %w", bundle, err)
+		return fmt.Errorf("pack %s: %w", dir, err)
 	}
 	return archive.Close()
 }
 
-// writePart streams one regular file of root into the archive.
 func writePart(archive *tar.Writer, root *os.Root, name string) error {
 	info, err := root.Lstat(name)
 	if err != nil {
@@ -77,7 +76,6 @@ func writePart(archive *tar.Writer, root *os.Root, name string) error {
 	return err
 }
 
-// counting counts what goes through it, so the trailer can say how long the payload is.
 type counting struct {
 	writer io.Writer
 	bytes  int64

@@ -27,7 +27,6 @@ func newInspect() *cobra.Command {
 	return command
 }
 
-// bindEvidenceFlag gives command the --evidence flag that writes the carried evidence into a directory.
 func bindEvidenceFlag(command *cobra.Command, into *string) {
 	command.Flags().StringVar(into, "evidence", "", "write every SBOM and report the bundle carries into this directory")
 }
@@ -58,7 +57,6 @@ func inspectBundle(out io.Writer, dir, into string) error {
 	return extractEvidence(into, artifact.Evidence)
 }
 
-// extractEvidence writes every piece of evidence into dir, or none when one target is already taken.
 func extractEvidence(dir string, evidence []bundle.Evidence) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
@@ -77,7 +75,6 @@ func extractEvidence(dir string, evidence []bundle.Evidence) error {
 	return nil
 }
 
-// writeEvidence creates path with data, and removes it again when the write does not finish.
 func writeEvidence(path string, data []byte) error {
 	handle, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {

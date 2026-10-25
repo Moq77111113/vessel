@@ -22,19 +22,12 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// fixtureHost is the registry the units in testdata point at, swapped for the live one.
 const fixtureHost = "registry.test"
 
-// images is what the fixture units ask for, and what the registry is filled with.
-// Both are built on one layer layer, so the bundle has something to deduplicate.
 var images = []string{"acme/web:1.0", "library/postgres:17.2"}
 
-// multiPlatform is served behind a single-platform index rather than directly: real
-// multi-arch images ship that way, and a bundle once pinned the index digest instead
-// of the platform manifest the bundle actually carried, which podman refused to load.
 const multiPlatform = "library/postgres:17.2"
 
-// serveStack fills a registry with the images and lays the fixture units down pointing at it.
 func serveStack(t *testing.T) string {
 	t.Helper()
 	return unpackFixture(t, serveRegistry(t))
@@ -76,9 +69,6 @@ func serveRegistry(t *testing.T) string {
 	return address.Host
 }
 
-// randomOCIImage builds a pseudo-random image whose manifest, config and layers all
-// carry OCI media types. random.Image mixes docker media types into an OCI manifest,
-// which podman refuses to load: a bundle needs one coherent format, not a hybrid.
 func randomOCIImage(layer v1.Layer) (v1.Image, error) {
 	own, err := random.Layer(128, types.OCILayer)
 	if err != nil {
@@ -88,7 +78,6 @@ func randomOCIImage(layer v1.Layer) (v1.Image, error) {
 	return mutate.AppendLayers(base, own, layer)
 }
 
-// unpackFixture copies testdata/stack into a temporary directory, pointing it at host.
 func unpackFixture(t *testing.T, host string) string {
 	t.Helper()
 	source, fixture := t.TempDir(), os.DirFS("testdata/stack")
@@ -109,7 +98,6 @@ func unpackFixture(t *testing.T, host string) string {
 	return source
 }
 
-// buildStack builds the fixture stack and returns the bundle directory.
 func buildStack(t *testing.T) string {
 	t.Helper()
 	out, exe := filepath.Join(t.TempDir(), "bundle"), filepath.Join(t.TempDir(), "vessel-stack")
@@ -120,8 +108,6 @@ func buildStack(t *testing.T) string {
 	return out
 }
 
-// buildDelivery lays extra files into the fixture stack, builds it, and returns the bundle
-// directory. A test asserting on build's refusal calls buildDeliveryErr instead.
 func buildDelivery(t *testing.T, files map[string]string) string {
 	t.Helper()
 	out, err := buildFixture(t, files)
@@ -131,7 +117,6 @@ func buildDelivery(t *testing.T, files map[string]string) string {
 	return out
 }
 
-// buildDeliveryErr does the same and returns build's error instead of failing on it.
 func buildDeliveryErr(t *testing.T, files map[string]string) error {
 	t.Helper()
 	_, err := buildFixture(t, files)
@@ -150,7 +135,6 @@ func buildFixture(t *testing.T, files map[string]string) (string, error) {
 	return out, runVessel("build", "-o", exe, "--layout", out, "--insecure-unsigned", source)
 }
 
-// paths names the files a bundle carries, for a failure message.
 func paths(files []delivery.File) []string {
 	names := make([]string, len(files))
 	for i, file := range files {
@@ -159,7 +143,6 @@ func paths(files []delivery.File) []string {
 	return names
 }
 
-// runVessel runs the command line with its output thrown away.
 func runVessel(args ...string) error {
 	vessel := New()
 	vessel.SetArgs(args)
@@ -168,7 +151,6 @@ func runVessel(args ...string) error {
 	return vessel.Execute()
 }
 
-// runVesselCapture runs the command line and returns what it printed.
 func runVesselCapture(args ...string) (string, error) {
 	var out bytes.Buffer
 	vessel := New()

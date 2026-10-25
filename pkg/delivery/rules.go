@@ -11,8 +11,7 @@ var ErrTargetCollides = errors.New("a file target collides with a file the drive
 // ErrTargetDuplicate says two delivery files claim the same path.
 var ErrTargetDuplicate = errors.New("a file target is declared twice")
 
-// CheckCollisions refuses a plain file whose path a file the driver read already occupies, or that another
-// plain file already claims.
+// CheckCollisions refuses a plain file whose path a file the driver read occupies, or another plain file claims.
 func CheckCollisions(read, files []File) error {
 	readTargets := make(map[string]bool, len(read))
 	for _, file := range read {

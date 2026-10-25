@@ -22,7 +22,7 @@ import (
 func TestADryRunChangesNothingOnTheMachine(t *testing.T) {
 	root := t.TempDir()
 	stub := &podmanStub{}
-	job := jobFor(t, root, dryRunBundle(t), []driver.Driver{quadlet.New(root, stub.run)}, nil)
+	job := at(t, root, []driver.Driver{quadlet.New(root, stub.run)}).job(dryRunBundle(t), nil)
 	job.SetFile = dbPassword
 	if err := job.Preview().Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
@@ -68,11 +68,11 @@ func TestADryRunNeverPrintsASecretValue(t *testing.T) {
 
 func TestADryRunOfAnUpgradeNamesWhatItReplacesAndRemoves(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "acme-1.3"))); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 	var out bytes.Buffer
-	job := jobFor(t, root, linkTestBundle(t, fixture(t, "acme-1.4")), nil, nil)
+	job := at(t, root, nil).job(linkTestBundle(t, fixture(t, "acme-1.4")), nil)
 	if err := job.Preview().Upgrade(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestADryRunOfAnUpgradeNamesWhatItReplacesAndRemoves(t *testing.T) {
 			t.Errorf("got %q, want %q in it", output, want)
 		}
 	}
-	entry, _, err := recordsFor(t, root, "acme").Read()
+	entry, err := recordsFor(t, root, "acme").Read()
 	if err != nil {
 		t.Fatalf("read the record: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestADryRunOfAnUpgradeNamesWhatItReplacesAndRemoves(t *testing.T) {
 	if err != nil || string(body) != "b from 1.3\n" {
 		t.Errorf("got %q (%v), want b.txt from 1.3.0 untouched", body, err)
 	}
-	if _, found, _ := recordsFor(t, root, "acme").Previous(); found {
+	if _, err := recordsFor(t, root, "acme").Previous(); !errors.Is(err, release.ErrNoRecord) {
 		t.Error("the dry run rotated the record")
 	}
 }
@@ -105,7 +105,7 @@ func TestADryRunOfAResumeSkipsTheStepsTheRecordHas(t *testing.T) {
 		t.Fatal("install succeeded with a broken image load")
 	}
 	var out bytes.Buffer
-	if err := jobFor(t, root, dir, nil, nil).Preview().Resume(context.Background(), &out, report.New(io.Discard)); err != nil {
+	if err := at(t, root, nil).job(dir, nil).Preview().Resume(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	output := collapse(out.String())
@@ -123,20 +123,17 @@ func TestADryRunStillRefusesAnUnfinishedInstall(t *testing.T) {
 	if err := installWithABrokenImageLoad(t, root, dir); err == nil {
 		t.Fatal("install succeeded with a broken image load")
 	}
-	err := jobFor(t, root, writeBundle(t, "acme", "1.5.0"), nil, nil).Preview().Run(context.Background(), io.Discard, report.New(io.Discard))
+	err := at(t, root, nil).job(writeBundle(t, "acme", "1.5.0"), nil).Preview().Run(context.Background(), io.Discard, report.New(io.Discard))
 	if !errors.Is(err, ErrRecordOpen) {
 		t.Fatalf("got %v, want ErrRecordOpen", err)
 	}
 }
 
-// readOnly reports whether a podman or systemctl call only reads the machine.
 func readOnly(call string) bool {
 	return call == "podman --version" || call == "podman image ls" || call == "podman secret ls --format {{.Name}}" ||
 		strings.HasPrefix(call, "systemctl is-active ")
 }
 
-// dryRunBundle links testdata/dry-run with a unit that reads DB_PASSWORD.
-// dbPassword answers the secret the dry-run fixture declares, as --set-file would.
 var dbPassword = map[string]string{"DB_PASSWORD": "hunter2"}
 
 func dryRunBundle(t *testing.T) string {
@@ -144,11 +141,10 @@ func dryRunBundle(t *testing.T) string {
 	return linkTestDelivery(t, "Secret=DB_PASSWORD,type=env,target=DB\n", fixture(t, "dry-run"))
 }
 
-// dryRun previews an install of the dry-run fixture under root, and returns what it printed.
 func dryRun(t *testing.T, root, dir string) string {
 	t.Helper()
 	var out bytes.Buffer
-	job := jobFor(t, root, dir, nil, nil)
+	job := at(t, root, nil).job(dir, nil)
 	job.SetFile = dbPassword
 	if err := job.Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
@@ -156,18 +152,17 @@ func dryRun(t *testing.T, root, dir string) string {
 	return collapse(out.String())
 }
 
-// collapse turns every run of blanks into one space, so a test reads a line without the verb column.
 func collapse(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
 func TestADryRunOfAnUpgradeNamesTheServiceItStops(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "unit-1.3")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "unit-1.3"))); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 	var out bytes.Buffer
-	if err := jobFor(t, root, linkTestBundle(t, fixture(t, "unit-1.4")), nil, nil).Preview().Upgrade(context.Background(), &out, report.New(io.Discard)); err != nil {
+	if err := at(t, root, nil).job(linkTestBundle(t, fixture(t, "unit-1.4")), nil).Preview().Upgrade(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	if output := collapse(out.String()); !strings.Contains(output, "Stop cache.service") {
@@ -177,7 +172,7 @@ func TestADryRunOfAnUpgradeNamesTheServiceItStops(t *testing.T) {
 
 func TestADryRunNamesTheTimerItStarts(t *testing.T) {
 	var out bytes.Buffer
-	if err := jobFor(t, t.TempDir(), linkTestBundle(t, fixture(t, "timer")), nil, nil).Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
+	if err := at(t, t.TempDir(), nil).job(linkTestBundle(t, fixture(t, "timer")), nil).Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	if output := collapse(out.String()); !strings.Contains(output, "Start backup.timer") {
@@ -214,12 +209,12 @@ func TestADryRunNamesTheValueAFileOnDiskDependsOn(t *testing.T) {
 func TestADryRunRollbackOpensWithTheHeaderAndMarksTheOpenAction(t *testing.T) {
 	root := t.TempDir()
 	older := linkTestBundle(t, fixture(t, "acme-1.3"))
-	if err := runInstall(t, root, older, nil); err != nil {
+	if err := at(t, root, nil).install(older); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 	openAnAction(t, root, linkTestBundle(t, fixture(t, "one-action")))
 	var out bytes.Buffer
-	if err := jobFor(t, root, older, nil, nil).Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
+	if err := at(t, root, nil).job(older, nil).Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	if !strings.HasPrefix(out.String(), "acme 1.3.0, dry run") {
@@ -235,7 +230,7 @@ func TestADryRunOfSkipActionNamesTheActionItMarksFinished(t *testing.T) {
 	dir := linkTestBundle(t, fixture(t, "one-action"))
 	openAnAction(t, root, dir)
 	var out bytes.Buffer
-	if err := jobFor(t, root, dir, nil, nil).Preview().SkipAction(context.Background(), &out, report.New(io.Discard)); err != nil {
+	if err := at(t, root, nil).job(dir, nil).Preview().SkipAction(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	if output := collapse(out.String()); !strings.Contains(output, "Skip mkdir -p /srv/acme, marked finished without running it") {
@@ -250,7 +245,7 @@ func TestADryRunWithNoServiceSaysNothingAboutHealth(t *testing.T) {
 		t.Fatalf("write the bundle: %v", err)
 	}
 	var out bytes.Buffer
-	if err := jobFor(t, t.TempDir(), dir, nil, nil).Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
+	if err := at(t, t.TempDir(), nil).job(dir, nil).Preview().Run(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}
 	if strings.Contains(out.String(), "service health") {
@@ -259,7 +254,7 @@ func TestADryRunWithNoServiceSaysNothingAboutHealth(t *testing.T) {
 }
 
 func TestADryRunRunsNoFromEvenWithAShellSetAfterPreview(t *testing.T) {
-	job := jobFor(t, t.TempDir(), dryRunBundle(t), nil, nil).Preview()
+	job := at(t, t.TempDir(), nil).job(dryRunBundle(t), nil).Preview()
 	job.SetFile = dbPassword
 	job.Shell = disk.NewShell(noCapture)
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
@@ -269,12 +264,12 @@ func TestADryRunRunsNoFromEvenWithAShellSetAfterPreview(t *testing.T) {
 
 func TestADryRunUpgradeKeepsAFileEditedOnThisMachine(t *testing.T) {
 	root := t.TempDir()
-	if err := runInstall(t, root, linkTestBundle(t, fixture(t, "acme-1.3")), nil); err != nil {
+	if err := at(t, root, nil).install(linkTestBundle(t, fixture(t, "acme-1.3"))); err != nil {
 		t.Fatalf("install 1.3.0: %v", err)
 	}
 	writeFile(t, filepath.Join(root, "etc/acme/a.txt"), "edited on site\n")
 	var out bytes.Buffer
-	job := jobFor(t, root, linkTestBundle(t, fixture(t, "acme-1.4")), nil, nil)
+	job := at(t, root, nil).job(linkTestBundle(t, fixture(t, "acme-1.4")), nil)
 	if err := job.Preview().Upgrade(context.Background(), &out, report.New(io.Discard)); err != nil {
 		t.Fatalf("dry run: %v", err)
 	}

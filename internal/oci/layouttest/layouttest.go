@@ -1,4 +1,3 @@
-// Package layouttest writes the OCI layout every test that reads one starts from.
 package layouttest
 
 import (
@@ -12,7 +11,6 @@ import (
 	"github.com/Moq77111113/vessel/internal/oci"
 )
 
-// OneImage writes an OCI layout holding one image whose single layer is size bytes, and returns its directory and the digest of its index.
 func OneImage(t *testing.T, size int) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -39,7 +37,6 @@ func OneImage(t *testing.T, size int) (string, string) {
 	return dir, put(index)
 }
 
-// blobs returns a function that writes a blob under dir and returns its digest.
 func blobs(t *testing.T, dir string) func([]byte) string {
 	t.Helper()
 	path := filepath.Join(dir, "blobs", "sha256")
@@ -56,7 +53,6 @@ func blobs(t *testing.T, dir string) func([]byte) string {
 	}
 }
 
-// TwoImages writes an OCI layout holding two images that share one layer, and returns its directory and the digest of its index.
 func TwoImages(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -93,7 +89,6 @@ func TwoImages(t *testing.T) (string, string) {
 	return dir, root
 }
 
-// Open returns the layout TwoImages writes, already open.
 func Open(t *testing.T) *oci.Images {
 	t.Helper()
 	dir, root := TwoImages(t)

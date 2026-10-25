@@ -12,18 +12,15 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
-// ErrPathEscapes says a packed file names a path outside the directory it unpacks into.
 var ErrPathEscapes = errors.New("leaves the target directory")
 
-// CarriesABundle reports whether a file was produced by Pack.
 func CarriesABundle(path string) bool {
-	_, _, err := bundle.Payload(path)
+	_, err := bundle.ReadPayload(path)
 	return err == nil
 }
 
-// Unpack writes the bundle a packed file carries into dir.
 func Unpack(path, dir string) error {
-	offset, length, err := bundle.Payload(path)
+	payload, err := bundle.ReadPayload(path)
 	if err != nil {
 		return err
 	}
@@ -33,7 +30,7 @@ func Unpack(path, dir string) error {
 	}
 	defer file.Close()
 
-	archive := tar.NewReader(io.NewSectionReader(file, offset, length))
+	archive := tar.NewReader(io.NewSectionReader(file, payload.Offset, payload.Length))
 	for {
 		header, err := archive.Next()
 		if err == io.EOF {

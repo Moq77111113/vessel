@@ -24,7 +24,6 @@ func putBlob(dir string, body []byte) (blob, error) {
 	return blob{Digest: digest, Size: int64(len(body))}, nil
 }
 
-// readBlob reads a blob and refuses content that does not hash to the name it sits under.
 func readBlob(dir, digest string) ([]byte, error) {
 	pin, err := v1.NewHash(digest)
 	if err != nil {

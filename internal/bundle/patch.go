@@ -8,10 +8,8 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// ErrNoDigest says a relocation reached the patch with no digest to write.
 var ErrNoDigest = errors.New("no digest")
 
-// Patch rewrites every relocation into its digest form and returns the resulting files.
 func Patch(manifest delivery.Manifest, digests map[string]string) ([]delivery.File, error) {
 	files := make([]delivery.File, len(manifest.Files))
 	for i, file := range manifest.Files {

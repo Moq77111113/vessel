@@ -12,73 +12,77 @@ import (
 	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
-// Uninstall stops the services, removes exactly the files the record names, then retires the record.
-func Uninstall(ctx context.Context, out io.Writer, kinds []driver.Driver, root, name string) error {
-	dir, err := release.Dir(root, name)
+type Uninstall struct {
+	Root    string
+	Drivers []driver.Driver
+}
+
+type UninstallRequest struct {
+	Name string
+	Out  io.Writer
+}
+
+type UninstallResult struct {
+	Removed int
+	Kept    []string
+}
+
+func (u Uninstall) Run(ctx context.Context, req UninstallRequest) (UninstallResult, error) {
+	dir, err := release.Dir(u.Root, req.Name)
 	if err != nil {
-		return err
+		return UninstallResult{}, err
 	}
 	records := release.NewRecords(dir)
-	store := values.NewStore(dir)
-	record, found, err := records.Read()
+	record, err := lastRecord(records, req.Name)
 	if err != nil {
-		return err
+		return UninstallResult{}, err
 	}
-	if !found {
-		return fmt.Errorf("%s: %w", name, ErrNoRecord)
-	}
-
-	kind, err := driver.ByName(kinds, record.Machine)
+	kind, err := byName(u.Drivers, record.Machine)
 	if err != nil {
-		return err
+		return UninstallResult{}, err
 	}
-
 	if err := refuseOldRecord(record); err != nil {
-		return err
+		return UninstallResult{}, err
 	}
 	if err := kind.Stop(ctx, record.Services); err != nil {
-		return err
+		return UninstallResult{}, err
 	}
+	result, err := u.removeFiles(record)
+	if err != nil {
+		return UninstallResult{}, err
+	}
+	if err := records.Remove(); err != nil {
+		return UninstallResult{}, err
+	}
+	reportRemoved(req.Out, record, result)
+	reportWhatStays(req.Out, record, kind)
+	fmt.Fprintf(req.Out, "\nSite values stay at %s, a later install may read them.\n", values.NewStore(dir).Path())
+	return result, nil
+}
 
-	tree := disk.NewTree(root)
-	count := 0
-	var stays []string
+func (u Uninstall) removeFiles(record release.Record) (UninstallResult, error) {
+	tree := disk.NewTree(u.Root)
+	var result UninstallResult
 	for _, entry := range record.Files {
 		change, err := differs(tree, record, entry)
 		if err != nil {
-			return err
+			return UninstallResult{}, err
 		}
 		if change {
-			stays = append(stays, entry.Path)
+			result.Kept = append(result.Kept, entry.Path)
 			continue
 		}
 		ok, err := tree.Remove(entry.Path)
 		if err != nil {
-			return err
+			return UninstallResult{}, err
 		}
 		if ok {
-			count++
+			result.Removed++
 		}
 	}
-
-	if err := records.Remove(); err != nil {
-		return err
-	}
-
-	lines := report.New(out)
-	lines.Line("Finished", fmt.Sprintf("%s %s removed: %d files", record.Name, record.Version, count))
-	if len(stays) > 0 {
-		fmt.Fprintln(out, "\nThese files stay, edited on this machine since the install:")
-		for _, path := range stays {
-			fmt.Fprintf(out, "  /%s\n", path)
-		}
-	}
-	reportWhatStays(out, store.Path(), record, kind)
-	return nil
+	return result, nil
 }
 
-// differs reports whether a finished install's file changed on this machine since.
-// An open record holds the next version's digest for files it may not have written yet, so it proves no edit.
 func differs(tree *disk.Tree, entry release.Record, file release.Entry) (bool, error) {
 	if !entry.Done() {
 		return false, nil
@@ -86,8 +90,17 @@ func differs(tree *disk.Tree, entry release.Record, file release.Entry) (bool, e
 	return tree.Differs(file.Path, file.Digest)
 }
 
-// reportWhatStays names the secrets, the images, and the site values an uninstall leaves behind.
-func reportWhatStays(out io.Writer, values string, record release.Record, kind driver.Machine) {
+func reportRemoved(out io.Writer, record release.Record, result UninstallResult) {
+	report.New(out).Line("Finished", fmt.Sprintf("%s %s removed: %d files", record.Name, record.Version, result.Removed))
+	if len(result.Kept) > 0 {
+		fmt.Fprintln(out, "\nThese files stay, edited on this machine since the install:")
+		for _, path := range result.Kept {
+			fmt.Fprintf(out, "  /%s\n", path)
+		}
+	}
+}
+
+func reportWhatStays(out io.Writer, record release.Record, kind driver.Machine) {
 	if len(record.Secrets) > 0 {
 		fmt.Fprintln(out, "\nThese secrets stay on this machine, another delivery may read them:")
 		for _, secret := range record.Secrets {
@@ -100,5 +113,4 @@ func reportWhatStays(out io.Writer, values string, record release.Record, kind d
 			fmt.Fprintf(out, "  %s\n", image)
 		}
 	}
-	fmt.Fprintf(out, "\nSite values stay at %s, a later install may read them.\n", values)
 }

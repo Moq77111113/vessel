@@ -12,8 +12,8 @@ import (
 const sbom = "testdata/evidence/sbom.spdx.json"
 
 func TestInspectListsTheEvidenceALayoutCarries(t *testing.T) {
-	vessel, layout, _ := buildWithEvidence(t)
-	output, err := exec.Command(vessel, "inspect", layout).CombinedOutput()
+	build := buildWithEvidence(t)
+	output, err := exec.Command(build.vessel, "inspect", build.layout).CombinedOutput()
 	if err != nil {
 		t.Fatalf("inspect: %v: %s", err, output)
 	}
@@ -23,7 +23,7 @@ func TestInspectListsTheEvidenceALayoutCarries(t *testing.T) {
 }
 
 func TestAPackedFileExtractsTheEvidenceItCarries(t *testing.T) {
-	_, _, myapp := buildWithEvidence(t)
+	myapp := buildWithEvidence(t).myapp
 	into := t.TempDir()
 	if output, err := exec.Command(myapp, "inspect", "--evidence", into).CombinedOutput(); err != nil {
 		t.Fatalf("inspect --evidence: %v: %s", err, output)
@@ -41,8 +41,13 @@ func TestAPackedFileExtractsTheEvidenceItCarries(t *testing.T) {
 	}
 }
 
-// buildWithEvidence packs the fixture stack with the SBOM, returning vessel, the layout and the executable.
-func buildWithEvidence(t *testing.T) (string, string, string) {
+type evidenceBuild struct {
+	vessel string
+	layout string
+	myapp  string
+}
+
+func buildWithEvidence(t *testing.T) evidenceBuild {
 	t.Helper()
 	vessel, dir := buildVessel(t), t.TempDir()
 	layout, myapp := filepath.Join(dir, "bundle"), filepath.Join(dir, "myapp")
@@ -54,5 +59,5 @@ func buildWithEvidence(t *testing.T) (string, string, string) {
 			t.Fatalf("vessel %v: %v: %s", args, err, output)
 		}
 	}
-	return vessel, layout, myapp
+	return evidenceBuild{vessel: vessel, layout: layout, myapp: myapp}
 }

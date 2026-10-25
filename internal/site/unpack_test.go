@@ -14,7 +14,6 @@ import (
 
 func stub() []byte { return []byte("#!/bin/sh\necho a real binary would be here\n") }
 
-// writePacked writes a packed file: the stub, a tar of entries, and the trailer naming its length.
 func writePacked(t *testing.T, out string, entries map[string]string) {
 	t.Helper()
 	var payload bytes.Buffer

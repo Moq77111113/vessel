@@ -1,4 +1,3 @@
-// Package attesttest writes the signing key every test that signs starts from.
 package attesttest
 
 import (
@@ -14,7 +13,6 @@ import (
 	"testing"
 )
 
-// Key writes a fresh PKCS#8 PEM ECDSA P-256 private key and returns its path.
 func Key(t *testing.T) string {
 	t.Helper()
 	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -32,7 +30,6 @@ func Key(t *testing.T) string {
 	return path
 }
 
-// Verifies reports whether path+".sig" is the signature of the file at path under the key at key.
 func Verifies(t *testing.T, key, path string) bool {
 	t.Helper()
 	body, err := os.ReadFile(key)
@@ -40,7 +37,7 @@ func Verifies(t *testing.T, key, path string) bool {
 		t.Fatalf("read the key: %v", err)
 	}
 	block, _ := pem.Decode(body)
-	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	private, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		t.Fatalf("decode the key: %v", err)
 	}
@@ -57,5 +54,5 @@ func Verifies(t *testing.T, key, path string) bool {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	digest := sha256.Sum256(data)
-	return ecdsa.VerifyASN1(&parsed.(*ecdsa.PrivateKey).PublicKey, digest[:], signature)
+	return ecdsa.VerifyASN1(&private.(*ecdsa.PrivateKey).PublicKey, digest[:], signature)
 }

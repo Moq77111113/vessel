@@ -8,11 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Moq77111113/vessel/internal/bundle"
-	"github.com/Moq77111113/vessel/internal/report"
 	"github.com/Moq77111113/vessel/internal/site"
 )
 
-// newPacked is the command tree of an executable that carries its own bundle.
 func newPacked(self string) *cobra.Command {
 	name := filepath.Base(os.Args[0])
 	command := &cobra.Command{
@@ -44,7 +42,7 @@ func packedInspect(self string) *cobra.Command {
 }
 
 func packedInstall(self string) *cobra.Command {
-	var values answers
+	var flags answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -52,18 +50,23 @@ func packedInstall(self string) *cobra.Command {
 		Short: "Put the images and files on this machine",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return withJob(self, values, func(job site.Install) error {
-				return preview(job, dry).Run(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			return withArtifact(self, func(artifact *bundle.Bundle) error {
+				req, err := flags.request(artifact, command)
+				if err != nil {
+					return err
+				}
+				_, err = preview(machine(), dry).Run(command.Context(), req)
+				return err
 			})
 		},
 	}
-	values.bind(command)
+	flags.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
 func packedResume(self string) *cobra.Command {
-	var values answers
+	var flags answers
 	var skip bool
 	var dry bool
 
@@ -72,19 +75,24 @@ func packedResume(self string) *cobra.Command {
 		Short: "Finish an install this executable started and never finished",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return withJob(self, values, func(job site.Install) error {
-				return resume(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()), preview(job, dry), skip)
+			return withArtifact(self, func(artifact *bundle.Bundle) error {
+				req, err := flags.request(artifact, command)
+				if err != nil {
+					return err
+				}
+				_, err = resumer(preview(machine(), dry), skip).Run(command.Context(), req)
+				return err
 			})
 		},
 	}
-	values.bind(command)
+	flags.bind(command)
 	bindSkipFlag(command, &skip)
 	bindDryRunFlag(command, &dry)
 	return command
 }
 
 func packedUpgrade(self string) *cobra.Command {
-	var values answers
+	var flags answers
 	var dry bool
 
 	command := &cobra.Command{
@@ -92,12 +100,17 @@ func packedUpgrade(self string) *cobra.Command {
 		Short: "Install a newer version, refusing a machine that holds no record of this delivery",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return withJob(self, values, func(job site.Install) error {
-				return preview(job, dry).Upgrade(command.Context(), command.OutOrStdout(), report.New(command.ErrOrStderr()))
+			return withArtifact(self, func(artifact *bundle.Bundle) error {
+				req, err := flags.request(artifact, command)
+				if err != nil {
+					return err
+				}
+				_, err = site.Upgrade(preview(machine(), dry)).Run(command.Context(), req)
+				return err
 			})
 		},
 	}
-	values.bind(command)
+	flags.bind(command)
 	bindDryRunFlag(command, &dry)
 	return command
 }
@@ -113,7 +126,9 @@ func packedStatus(self string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return site.Status(command.Context(), command.OutOrStdout(), machines, machineRoot, artifact.Config.Name)
+				status := site.Status{Root: machineRoot, Drivers: machines}
+				_, err = status.Run(command.Context(), site.StatusRequest{Name: artifact.Config.Name, Out: command.OutOrStdout()})
+				return err
 			})
 		},
 	}
@@ -131,30 +146,25 @@ func packedUninstall(self string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return site.Uninstall(command.Context(), command.OutOrStdout(), machines, machineRoot, artifact.Config.Name)
+				uninstall := site.Uninstall{Root: machineRoot, Drivers: machines}
+				_, err = uninstall.Run(command.Context(), site.UninstallRequest{Name: artifact.Config.Name, Out: command.OutOrStdout()})
+				return err
 			})
 		},
 	}
 	return command
 }
 
-// withJob lays the carried bundle down and hands the install it describes to run. A binary
-// cannot vouch for the payload it carries, so the operator checks the file itself.
-func withJob(self string, values answers, run func(site.Install) error) error {
+func withArtifact(self string, run func(*bundle.Bundle) error) error {
 	return withPayload(self, func(dir string) error {
 		artifact, err := bundle.OpenNamed(dir)
 		if err != nil {
 			return err
 		}
-		job, err := values.job(artifact)
-		if err != nil {
-			return err
-		}
-		return run(job)
+		return run(artifact)
 	})
 }
 
-// withPayload lays the carried bundle down in a working directory and hands it to run.
 func withPayload(self string, run func(dir string) error) error {
 	dir, err := os.MkdirTemp("", "vessel-bundle-*")
 	if err != nil {

@@ -10,11 +10,8 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-// refNameAnnotation is the OCI key a container engine reads to name an image it loads.
 const refNameAnnotation = "org.opencontainers.image.ref.name"
 
-// WriteLayout adds an image to the OCI layout at dir, under its whole name, creating the
-// layout when dir holds none yet.
 func WriteLayout(dir string, ref delivery.Ref, image v1.Image) error {
 	path, err := layout.FromPath(dir)
 	if err != nil {

@@ -13,9 +13,12 @@ func newStatus() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			if len(args) == 0 {
-				return site.List(command.OutOrStdout(), machineRoot)
+				_, err := site.List{Root: machineRoot}.Run(command.Context(), site.ListRequest{Out: command.OutOrStdout()})
+				return err
 			}
-			return site.Status(command.Context(), command.OutOrStdout(), machines, machineRoot, args[0])
+			status := site.Status{Root: machineRoot, Drivers: machines}
+			_, err := status.Run(command.Context(), site.StatusRequest{Name: args[0], Out: command.OutOrStdout()})
+			return err
 		},
 	}
 	return command

@@ -1,8 +1,8 @@
-// Package release is what a delivery put on this machine, the history it keeps, and which files it owns.
 package release
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,10 +18,8 @@ const (
 	previousName = "record.previous.json"
 )
 
-// Format numbers the shape of the record this vessel writes; a record without it predates the steps.
 const Format = 2
 
-// Step is one part of an install, named in the order an install runs them.
 type Step string
 
 const (
@@ -33,25 +31,21 @@ const (
 	StepServices Step = "services"
 )
 
-// Action is one command the delivery declares, and when it finished.
 type Action struct {
 	Command string    `json:"command"`
 	End     time.Time `json:"end,omitzero"`
 }
 
-// Release is one version of a delivery and the bundle root that carried it.
 type Release struct {
 	Version string `json:"version"`
 	Root    string `json:"root"`
 }
 
-// Entry is one file a delivery put on this machine.
 type Entry struct {
 	Path   string `json:"path"`
 	Digest string `json:"digest"`
 }
 
-// Record is what one delivery put on this machine.
 type Record struct {
 	Format   int                `json:"format"`
 	Name     string             `json:"name"`
@@ -71,13 +65,10 @@ type Record struct {
 	End      time.Time          `json:"end,omitzero"`
 }
 
-// Done reports whether the install that opened this record ran to its end.
 func (r Record) Done() bool { return !r.End.IsZero() }
 
-// Has reports whether the install that opened this record finished step.
 func (r Record) Has(step Step) bool { return slices.Contains(r.Steps, step) }
 
-// OpenAction returns the action an install left without an end, and whether there is one.
 func (r Record) OpenAction() (Action, bool) {
 	if len(r.Actions) == 0 {
 		return Action{}, false
@@ -86,17 +77,14 @@ func (r Record) OpenAction() (Action, bool) {
 	return last, last.End.IsZero()
 }
 
-// Records is the install history one delivery keeps on this machine.
 type Records struct {
 	dir string
 }
 
-// NewRecords returns the record store of a delivery under its directory.
 func NewRecords(dir string) *Records {
 	return &Records{dir: dir}
 }
 
-// Deliveries names every delivery this machine holds a record of, in order.
 func Deliveries(root string) ([]string, error) {
 	dir := deliveriesDir(root)
 	entries, err := os.ReadDir(dir)
@@ -122,27 +110,24 @@ func Deliveries(root string) ([]string, error) {
 	return names, nil
 }
 
-// Read returns the record this machine holds, and whether it holds one.
-func (r *Records) Read() (Record, bool, error) { return read(filepath.Join(r.dir, recordName)) }
+func (r *Records) Read() (Record, error) { return read(filepath.Join(r.dir, recordName)) }
 
-// Previous returns the record the last write pushed aside.
-func (r *Records) Previous() (Record, bool, error) {
+func (r *Records) Previous() (Record, error) {
 	return read(filepath.Join(r.dir, previousName))
 }
 
-// Remove takes the record off this machine, keeping it as the previous one.
 func (r *Records) Remove() error {
 	return atomicfile.Rename(filepath.Join(r.dir, recordName), filepath.Join(r.dir, previousName))
 }
 
-// Write replaces the record through a temporary file, keeping a finished one of another version as the previous.
 func (r *Records) Write(record Record) error {
 	if err := atomicfile.MkdirAll(r.dir, 0o700); err != nil {
 		return err
 	}
 	path := filepath.Join(r.dir, recordName)
-	current, found, err := read(path)
-	if err != nil {
+	current, err := read(path)
+	exists := !errors.Is(err, ErrNoRecord)
+	if exists && err != nil {
 		return err
 	}
 	record.Format = Format
@@ -150,7 +135,7 @@ func (r *Records) Write(record Record) error {
 	if err != nil {
 		return fmt.Errorf("encode the record: %w", err)
 	}
-	if found && current.Done() && current.Version != record.Version {
+	if exists && current.Done() && current.Version != record.Version {
 		if err := keep(path, filepath.Join(r.dir, previousName)); err != nil {
 			return err
 		}
@@ -158,7 +143,6 @@ func (r *Records) Write(record Record) error {
 	return atomicfile.Write(path, body, 0o600)
 }
 
-// keep copies the record at from to to, leaving from in place until a write replaces it.
 func keep(from, to string) error {
 	body, err := os.ReadFile(from)
 	if err != nil {
@@ -167,17 +151,19 @@ func keep(from, to string) error {
 	return atomicfile.Write(to, body, 0o600)
 }
 
-func read(path string) (Record, bool, error) {
+var ErrNoRecord = errors.New("this machine holds no record of that delivery")
+
+func read(path string) (Record, error) {
 	body, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return Record{}, false, nil
+		return Record{}, ErrNoRecord
 	}
 	if err != nil {
-		return Record{}, false, fmt.Errorf("read %s: %w", path, err)
+		return Record{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	var record Record
 	if err := json.Unmarshal(body, &record); err != nil {
-		return Record{}, false, fmt.Errorf("decode %s: %w", path, err)
+		return Record{}, fmt.Errorf("decode %s: %w", path, err)
 	}
-	return record, true, nil
+	return record, nil
 }

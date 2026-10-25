@@ -17,7 +17,6 @@ const (
 	minPodmanMinor = 0
 )
 
-// Errors Check returns before a bundle touches the disk.
 var (
 	ErrPodmanTooOld  = errors.New("podman is too old for quadlet")
 	ErrPodmanVersion = errors.New("unreadable podman version")
@@ -27,7 +26,6 @@ var (
 	ErrRootReadOnly  = errors.New("cannot write")
 )
 
-// Check reports everything wrong with the machine at once, so one run names every fix.
 func (m *Machine) Check(ctx context.Context) error {
 	var problems []error
 	version, err := m.podman.Version(ctx)
@@ -54,13 +52,12 @@ func (m *Machine) Check(ctx context.Context) error {
 	return fmt.Errorf("%w:\n%s", driver.ErrNotReady, strings.Join(lines, "\n"))
 }
 
-// CheckPodman reports whether a podman version carries quadlet and the Secret key.
 func CheckPodman(version string) error {
-	major, minor, err := majorMinor(version)
+	podman, err := parseRelease(version)
 	if err != nil {
 		return err
 	}
-	if major > minPodmanMajor || (major == minPodmanMajor && minor >= minPodmanMinor) {
+	if podman.atLeast(release{minPodmanMajor, minPodmanMinor}) {
 		return nil
 	}
 	return fmt.Errorf("%w: found %s, want %d.%d or newer",
@@ -74,8 +71,6 @@ func checkSystemd() error {
 	return nil
 }
 
-// checkWritable probes the deepest directory that already exists, so a failed
-// check leaves nothing behind.
 func checkWritable(root string) error {
 	target := filepath.Join(root, systemdPath)
 	dir := target
@@ -97,23 +92,34 @@ func checkWritable(root string) error {
 	return os.Remove(probe.Name())
 }
 
-func majorMinor(version string) (int, int, error) {
+type release struct {
+	major int
+	minor int
+}
+
+func (r release) atLeast(other release) bool {
+	if r.major != other.major {
+		return r.major > other.major
+	}
+	return r.minor >= other.minor
+}
+
+func parseRelease(version string) (release, error) {
 	fields := strings.SplitN(strings.TrimSpace(version), ".", 3)
 	if len(fields) < 2 {
-		return 0, 0, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
+		return release{}, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
 	}
 	major, err := strconv.Atoi(fields[0])
 	if err != nil {
-		return 0, 0, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
+		return release{}, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
 	}
 	minor, err := strconv.Atoi(fields[1])
 	if err != nil {
-		return 0, 0, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
+		return release{}, fmt.Errorf("%q: %w", version, ErrPodmanVersion)
 	}
-	return major, minor, nil
+	return release{major, minor}, nil
 }
 
-// readVersion takes the number out of the banner "podman version 5.4.2".
 func readVersion(banner string) string {
 	fields := strings.Fields(strings.TrimSpace(banner))
 	if len(fields) == 0 {

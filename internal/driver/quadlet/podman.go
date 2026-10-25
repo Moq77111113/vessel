@@ -11,19 +11,12 @@ import (
 	"github.com/Moq77111113/vessel/internal/report"
 )
 
-// loadedPrefix is what podman prints once per image it took in.
 const loadedPrefix = "Loaded image: "
 
-// podman is the container engine this machine drives.
 type podman struct {
 	run Run
 }
 
-// Load puts every image of the layout into local storage, one archive at a time, announcing
-// each before podman load runs so a load running for minutes shows it is moving.
-//
-// podman only takes one image per oci-archive, and only an oci-archive keeps a
-// manifest byte for byte, which is what keeps the registry digest alive.
 func (p *podman) Load(ctx context.Context, work report.Report, layout *oci.Images) ([]string, error) {
 	names, err := layout.Names()
 	if err != nil {
@@ -45,7 +38,6 @@ func (p *podman) Load(ctx context.Context, work report.Report, layout *oci.Image
 	return images, nil
 }
 
-// load cuts image i into an archive on disk and hands that file to podman load.
 func (p *podman) load(ctx context.Context, layout *oci.Images, i int) ([]byte, error) {
 	archive, err := os.CreateTemp("", "vessel-image-*.tar")
 	if err != nil {
@@ -59,22 +51,19 @@ func (p *podman) load(ctx context.Context, layout *oci.Images, i int) ([]byte, e
 	if _, err := archive.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("rewind the image archive: %w", err)
 	}
-	return p.run(ctx, archive, "podman", "load")
+	return p.run(ctx, Command{Line: []string{"podman", "load"}, Stdin: archive})
 }
 
-// Ready reports whether podman can actually run here, not just answer its version.
-// podman 6 dropped cgroup v1, so a machine can carry a new enough podman that still refuses to run.
 func (p *podman) Ready(ctx context.Context) error {
-	output, err := p.run(ctx, nil, "podman", "image", "ls")
+	output, err := p.run(ctx, line("podman", "image", "ls"))
 	if err != nil {
 		return fmt.Errorf("%w: %s", ErrPodmanBroken, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
 
-// Secrets names the podman secrets this machine already holds.
 func (p *podman) Secrets(ctx context.Context) ([]string, error) {
-	output, err := p.run(ctx, nil, "podman", "secret", "ls", "--format", "{{.Name}}")
+	output, err := p.run(ctx, line("podman", "secret", "ls", "--format", "{{.Name}}"))
 	if err != nil {
 		return nil, fmt.Errorf("podman secret ls: %w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -87,19 +76,16 @@ func (p *podman) Secrets(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// CreateSecret puts one secret into podman, reading its value from standard input so it never
-// appears in a command line another process can list.
 func (p *podman) CreateSecret(ctx context.Context, name, value string) error {
-	output, err := p.run(ctx, strings.NewReader(value), "podman", "secret", "create", name, "-")
+	output, err := p.run(ctx, Command{Line: []string{"podman", "secret", "create", name, "-"}, Stdin: strings.NewReader(value)})
 	if err != nil {
 		return fmt.Errorf("podman secret create %s: %w: %s", name, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
 
-// Version returns the podman version the machine carries.
 func (p *podman) Version(ctx context.Context) (string, error) {
-	output, err := p.run(ctx, nil, "podman", "--version")
+	output, err := p.run(ctx, line("podman", "--version"))
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrPodmanMissing, strings.TrimSpace(string(output)))
 	}
