@@ -8,39 +8,62 @@ import (
 	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-const secretKey = "Secret"
+const (
+	secretKey     = "Secret"
+	credentialKey = "LoadCredentialEncrypted"
+)
 
 func reads(files []delivery.File) []string {
-	seen := map[string]bool{}
+	return collect(files, func(line []byte) (string, bool) {
+		if name, ok := secretName(line); ok {
+			return name, true
+		}
+		return credentialName(line)
+	})
+}
+
+func credentials(files []delivery.File) []string {
+	return collect(files, credentialName)
+}
+
+func collect(files []delivery.File, read func(line []byte) (string, bool)) []string {
+	set := map[string]bool{}
 	for _, file := range files {
 		if !owns(file.Path) {
 			continue
 		}
 		for line := range bytes.SplitSeq(file.Data, []byte("\n")) {
-			name, ok := secretName(line)
-			if ok {
-				seen[name] = true
+			if secret, ok := read(line); ok {
+				set[secret] = true
 			}
 		}
 	}
-	names := make([]string, 0, len(seen))
-	for name := range seen {
-		names = append(names, name)
+	list := make([]string, 0, len(set))
+	for name := range set {
+		list = append(list, name)
 	}
-	sort.Strings(names)
-	return names
+	sort.Strings(list)
+	return list
 }
 
 func secretName(line []byte) (string, bool) {
+	return keyValue(line, secretKey, ",")
+}
+
+func credentialName(line []byte) (string, bool) {
+	return keyValue(line, credentialKey, ":")
+}
+
+func keyValue(line []byte, key, end string) (string, bool) {
 	rest := bytes.TrimLeft(line, " \t")
 	if len(rest) == 0 || rest[0] == '#' || rest[0] == ';' {
 		return "", false
 	}
-	value, ok := cutKey(rest, secretKey)
+	value, ok := cutKey(rest, key)
 	if !ok {
 		return "", false
 	}
-	name, _, _ := strings.Cut(string(bytes.TrimSpace(value)), ",")
+	name, _, _ := strings.Cut(string(bytes.TrimSpace(value)), end)
 	if name == "" {
 		return "", false
 	}

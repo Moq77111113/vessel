@@ -58,3 +58,17 @@ func TestReadsLeavesOutAFileThatIsNotInTheUnitDirectory(t *testing.T) {
 		t.Errorf("got %v, want nothing", got)
 	}
 }
+
+func TestReadsNamesASecretAUnitLoadsAsACredential(t *testing.T) {
+	got := reads(unit("[Service]\nLoadCredentialEncrypted=KC_DB_PASSWORD\n"))
+	if strings.Join(got, " ") != "KC_DB_PASSWORD" {
+		t.Errorf("got %v, want [KC_DB_PASSWORD]", got)
+	}
+}
+
+func TestReadsTakesTheCredentialNameBeforeItsPath(t *testing.T) {
+	got := reads(unit("[Service]\nLoadCredentialEncrypted=KC_DB_PASSWORD:/srv/kc.cred\n"))
+	if strings.Join(got, " ") != "KC_DB_PASSWORD" {
+		t.Errorf("got %v, want [KC_DB_PASSWORD]", got)
+	}
+}

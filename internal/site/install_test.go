@@ -365,6 +365,9 @@ func (p *podmanStub) run(_ context.Context, command quadlet.Command) ([]byte, er
 		return nil, nil
 	case len(args) >= 1 && args[0] == "is-active":
 		return []byte("active\n"), nil
+	case name == "systemd-creds" && len(args) == 4 && args[0] == "encrypt":
+		body, _ := io.ReadAll(stdin)
+		return nil, os.WriteFile(args[3], body, 0o600)
 	case len(args) >= 3 && args[0] == "secret" && args[1] == "create":
 		body, err := io.ReadAll(stdin)
 		if err != nil {
