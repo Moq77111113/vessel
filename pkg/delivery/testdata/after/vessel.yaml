@@ -1,0 +1,5 @@
+name: acme
+after:
+  - cmd: echo "open https://this-machine/"
+  - cmd: systemctl is-active web.service
+    mute: true

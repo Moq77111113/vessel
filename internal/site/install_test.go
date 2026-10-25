@@ -341,8 +341,8 @@ func (brokenImages) AddImages(context.Context, report.Report, *oci.Images) ([]st
 	return nil, errBrokenImageLoad
 }
 
-func noCapture(context.Context, string) ([]byte, error) {
-	return nil, errors.New("the shell should not run in this test")
+func noShell(context.Context, string, io.Writer, io.Writer) error {
+	return errors.New("the shell should not run in this test")
 }
 
 type podmanStub struct {
@@ -737,7 +737,7 @@ func TestInstallSaysTheBundleIsInsecure(t *testing.T) {
 func TestTheRecordNamesEveryStepAFinishedInstallRan(t *testing.T) {
 	entry := recordAfterAnInstall(t, t.TempDir())
 	want := []release.Step{release.StepValues, release.StepActions, release.StepFiles,
-		release.StepSecrets, release.StepImages, release.StepServices}
+		release.StepSecrets, release.StepImages, release.StepServices, release.StepAfter}
 	if !slices.Equal(entry.Steps, want) {
 		t.Errorf("got %v, want %v", entry.Steps, want)
 	}
@@ -794,8 +794,8 @@ func TestAnActionThatFailsLeavesNoOpenActionInTheRecord(t *testing.T) {
 func TestAnActionKilledBySignalStaysOpenInTheRecord(t *testing.T) {
 	root := t.TempDir()
 	job := at(t, root, nil).job(linkTestBundle(t, fixture(t, "one-action")), nil)
-	job.Shell = disk.NewShell(func(ctx context.Context, _ string) ([]byte, error) {
-		return disk.Sh(ctx, "kill -9 $$")
+	job.Shell = disk.NewShell(func(ctx context.Context, _ string, stdout, stderr io.Writer) error {
+		return disk.Sh(ctx, "kill -9 $$", stdout, stderr)
 	})
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
 		t.Fatal("the install succeeded with an action killed by a signal")
@@ -827,7 +827,7 @@ func fixture(t *testing.T, name string) map[string]string {
 	return files
 }
 
-func quietShell(context.Context, string) ([]byte, error) { return nil, nil }
+func quietShell(context.Context, string, io.Writer, io.Writer) error { return nil }
 
 func TestInstallRefusesAMachineAnInstallLeftHalfway(t *testing.T) {
 	root := t.TempDir()

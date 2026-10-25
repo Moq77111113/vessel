@@ -1,0 +1,4 @@
+name: acme
+actions:
+  - mkdir -p /srv/acme
+  - "  "

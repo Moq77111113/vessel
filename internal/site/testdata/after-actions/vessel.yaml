@@ -1,0 +1,9 @@
+name: acme
+version: 1.4.0
+actions:
+  - mkdir -p /srv/acme
+  - touch /srv/acme/ready
+after:
+  - cmd: echo ready
+  - cmd: echo quiet
+    mute: true

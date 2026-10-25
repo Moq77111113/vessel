@@ -254,7 +254,7 @@ func uninstallAfterAnEdit(t *testing.T) (string, string) {
 	return root, out.String()
 }
 
-func TestUninstallRefusesARecordThatNamesNoService(t *testing.T) {
+func TestUninstallRefusesARecordAnOlderVesselWrote(t *testing.T) {
 	root := t.TempDir()
 	body, err := os.ReadFile("testdata/older-vessel/acme/record.json")
 	if err != nil {
@@ -263,8 +263,8 @@ func TestUninstallRefusesARecordThatNamesNoService(t *testing.T) {
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
 	writeFile(t, filepath.Join(root, "etc/containers/systemd/web.container"), "[Container]\n")
 	err = at(t, root, testKinds(root)).uninstall(io.Discard, "acme")
-	if !errors.Is(err, ErrRecordNamesNoService) {
-		t.Fatalf("got %v, want ErrRecordNamesNoService", err)
+	if !errors.Is(err, ErrRecordTooOld) {
+		t.Fatalf("got %v, want ErrRecordTooOld", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "etc/containers/systemd/web.container")); err != nil {
 		t.Errorf("the refusal removed a file: %v", err)

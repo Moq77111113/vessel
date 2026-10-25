@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -220,5 +221,42 @@ func TestReadRefusesAKeyItDoesNotKnow(t *testing.T) {
 	_, err := Read(os.DirFS("testdata/units-key"))
 	if err == nil || !strings.Contains(err.Error(), "units") {
 		t.Errorf("got %v, want a refusal naming units", err)
+	}
+}
+
+func TestReadTakesTheAfterActions(t *testing.T) {
+	delivery, err := Read(os.DirFS("testdata/after"))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	want := []AfterAction{
+		{Command: `echo "open https://this-machine/"`},
+		{Command: "systemctl is-active web.service", Mute: true},
+	}
+	if !slices.Equal(delivery.After, want) {
+		t.Errorf("got %+v, want %+v", delivery.After, want)
+	}
+}
+
+func TestReadRefusesAnAfterActionWithNoCommand(t *testing.T) {
+	if _, err := Read(os.DirFS("testdata/after-no-cmd")); !errors.Is(err, ErrEmptyCommand) {
+		t.Fatalf("got %v, want ErrEmptyCommand", err)
+	}
+}
+
+func TestReadRefusesAnActionWithNoCommand(t *testing.T) {
+	_, err := Read(os.DirFS("testdata/action-empty"))
+	if !errors.Is(err, ErrEmptyCommand) {
+		t.Fatalf("got %v, want ErrEmptyCommand", err)
+	}
+	if !strings.Contains(err.Error(), "action 2") {
+		t.Errorf("got %q, want it to name the second action", err.Error())
+	}
+}
+
+func TestReadRefusesAnAfterActionKeyItDoesNotKnow(t *testing.T) {
+	_, err := Read(os.DirFS("testdata/after-key"))
+	if err == nil || !strings.Contains(err.Error(), "command") {
+		t.Errorf("got %v, want a refusal naming command", err)
 	}
 }

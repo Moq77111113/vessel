@@ -41,7 +41,7 @@ func (i Install) apply(ctx context.Context, req InstallRequest, c *pass) (int, e
 		return 0, err
 	}
 	if err := c.steps.run(release.StepActions, func() error {
-		return i.runActions(ctx, config.Actions, c.steps)
+		return runActions(ctx, quiet(config.Actions, i.Shell), c.steps)
 	}); err != nil {
 		return 0, err
 	}
@@ -68,15 +68,52 @@ func (i Install) apply(ctx context.Context, req InstallRequest, c *pass) (int, e
 	}); err != nil {
 		return 0, err
 	}
+	if err := c.steps.run(release.StepAfter, func() error {
+		return runActions(ctx, after(config.After, i.Shell, req.Out), c.steps)
+	}); err != nil {
+		return 0, err
+	}
 	return changes, nil
 }
 
-func (i Install) runActions(ctx context.Context, actions []string, s *steps) error {
-	for index, command := range actions {
-		if index < len(s.opening.Actions) {
-			continue
-		}
-		if err := s.action(command, func() error { return i.Shell.Do(ctx, command) }); err != nil {
+type action struct {
+	command string
+	run     func(ctx context.Context) error
+}
+
+type actions struct {
+	step release.Step
+	list []action
+}
+
+func quiet(commands []string, shell *disk.Shell) actions {
+	todo := actions{step: release.StepActions}
+	for _, command := range commands {
+		todo.list = append(todo.list, action{command: command, run: func(ctx context.Context) error {
+			return shell.Stream(ctx, command, io.Discard)
+		}})
+	}
+	return todo
+}
+
+func after(entries []delivery.AfterAction, shell *disk.Shell, out io.Writer) actions {
+	todo := actions{step: release.StepAfter}
+	for _, entry := range entries {
+		todo.list = append(todo.list, action{command: entry.Command, run: afterRun(entry, shell, out)})
+	}
+	return todo
+}
+
+func afterRun(entry delivery.AfterAction, shell *disk.Shell, out io.Writer) func(ctx context.Context) error {
+	if entry.Mute {
+		return func(ctx context.Context) error { return shell.Mute(ctx, entry.Command) }
+	}
+	return func(ctx context.Context) error { return shell.Stream(ctx, entry.Command, out) }
+}
+
+func runActions(ctx context.Context, todo actions, s *steps) error {
+	for _, next := range todo.list[min(count(s.opening.Actions, todo.step), len(todo.list)):] {
+		if err := s.action(todo.step, next.command, func() error { return next.run(ctx) }); err != nil {
 			return err
 		}
 	}

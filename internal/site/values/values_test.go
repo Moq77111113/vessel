@@ -3,6 +3,7 @@ package values
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -12,8 +13,9 @@ import (
 
 func newValues(t *testing.T, set map[string]string, secrets []string) Values {
 	t.Helper()
-	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) {
-		return []byte("from-command"), nil
+	shell := disk.NewShell(func(_ context.Context, _ string, stdout, _ io.Writer) error {
+		_, err := io.WriteString(stdout, "from-command")
+		return err
 	})
 	return Values{Store: siteFor(t, t.TempDir()), Shell: shell, Set: set, Secrets: Secrets{Names: secrets, Remove: func(name string) string { return "remove-secret " + name }}}
 }
@@ -64,7 +66,7 @@ func TestResolveNeverAnswersASecretFromTheStore(t *testing.T) {
 	if err := values.Write(map[string]string{"DB_PASSWORD": "stored"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
+	shell := disk.NewShell(func(context.Context, string, io.Writer, io.Writer) error { return nil })
 	r := Values{Store: values, Shell: shell, Set: nil, Secrets: Secrets{}}
 
 	variables := []delivery.Variable{{Name: "DB_PASSWORD", Secret: true}}
@@ -79,7 +81,7 @@ func TestResolveSetOutranksAStoredValue(t *testing.T) {
 	if err := values.Write(map[string]string{"PUBLIC_HOST": "stored"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
+	shell := disk.NewShell(func(context.Context, string, io.Writer, io.Writer) error { return nil })
 	r := Values{Store: values, Shell: shell, Set: map[string]string{"PUBLIC_HOST": "given"}, Secrets: Secrets{}}
 
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST"}}
@@ -120,7 +122,7 @@ func TestResolveLeavesASecretTheMachineAlreadyHolds(t *testing.T) {
 func TestResolveReusesTheValueTheFirstInstallStored(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", Description: "public address"}}
 	values := siteFor(t, t.TempDir())
-	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) { return nil, nil })
+	shell := disk.NewShell(func(context.Context, string, io.Writer, io.Writer) error { return nil })
 
 	first := Values{Store: values, Shell: shell, Set: map[string]string{"PUBLIC_HOST": "dmas.acme.local"}, Secrets: Secrets{}}
 	got, err := first.Resolve(context.Background(), variables)
@@ -170,8 +172,9 @@ func TestResolveRefusesToReplaceASecretTheMachineHolds(t *testing.T) {
 
 func TestResolveNamesAFailedFromCommandAsNoValueNotAnAction(t *testing.T) {
 	variables := []delivery.Variable{{Name: "PUBLIC_HOST", From: "false"}}
-	shell := disk.NewShell(func(ctx context.Context, command string) ([]byte, error) {
-		return []byte("boom"), errors.New("exit status 1")
+	shell := disk.NewShell(func(_ context.Context, _ string, _, stderr io.Writer) error {
+		io.WriteString(stderr, "boom")
+		return errors.New("exit status 1")
 	})
 	values := Values{Store: siteFor(t, t.TempDir()), Shell: shell, Set: nil, Secrets: Secrets{}}
 	_, err := values.Resolve(context.Background(), variables)
@@ -194,7 +197,10 @@ func TestResolveRefusesAPlainValueHoldingAControlCharacter(t *testing.T) {
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			shell := disk.NewShell(func(context.Context, string) ([]byte, error) { return []byte(c.output), nil })
+			shell := disk.NewShell(func(_ context.Context, _ string, stdout, _ io.Writer) error {
+				_, err := io.WriteString(stdout, c.output)
+				return err
+			})
 			values := Values{Store: siteFor(t, t.TempDir()), Shell: shell, Set: c.set, Secrets: Secrets{}}
 			variables := []delivery.Variable{{Name: "PUBLIC_HOST", From: "hostname -f"}}
 			if _, err := values.Resolve(context.Background(), variables); !errors.Is(err, ErrValueHasAControl) {

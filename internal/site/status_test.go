@@ -393,7 +393,7 @@ func TestStatusNamesTheVersionToRollBackTo(t *testing.T) {
 	}
 }
 
-func TestStatusSaysARecordNamesNoService(t *testing.T) {
+func TestStatusSaysAnOlderVesselWroteTheRecord(t *testing.T) {
 	root := t.TempDir()
 	body, err := os.ReadFile("testdata/older-vessel/acme/record.json")
 	if err != nil {
@@ -402,7 +402,7 @@ func TestStatusSaysARecordNamesNoService(t *testing.T) {
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
 	var out bytes.Buffer
 	at(t, root, testKinds(root)).status(&out, "acme")
-	if !strings.Contains(out.String(), ErrRecordNamesNoService.Error()) {
-		t.Errorf("got %q, want it to say the record names no service", out.String())
+	if !strings.Contains(out.String(), ErrRecordTooOld.Error()) {
+		t.Errorf("got %q, want it to say an older vessel wrote the record", out.String())
 	}
 }

@@ -14,7 +14,6 @@ var (
 	ErrOtherBundle     = errors.New("this bundle is not the one the machine stopped installing")
 	ErrActionUnknown   = errors.New("an action may have stopped halfway, check it by hand")
 	ErrSetAfterValues  = errors.New("the unfinished install already stored its values, resume without --set")
-	ErrRecordTooOld    = errors.New("an older vessel left this install unfinished, it cannot say how far it ran")
 )
 
 type Resume Install
@@ -43,8 +42,8 @@ func checkResume(req InstallRequest, before state) error {
 		return fmt.Errorf("the machine stopped installing %s %s: %w",
 			before.current.Name, before.current.Version, ErrOtherBundle)
 	}
-	if before.current.Format < release.Format {
-		return fmt.Errorf("%s %s, run uninstall: %w", before.current.Name, before.current.Version, ErrRecordTooOld)
+	if err := refuseOldRecord(before.current); err != nil {
+		return err
 	}
 	if name := plainSet(req.Artifact.Config.Variables, req.Set); name != "" && before.current.Has(release.StepValues) {
 		return fmt.Errorf("--set %s: %w", name, ErrSetAfterValues)

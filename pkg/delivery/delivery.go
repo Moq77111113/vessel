@@ -30,6 +30,7 @@ var (
 	ErrFileSource        = errors.New("a file carries no source")
 	ErrSourceEscapes     = errors.New("a source leaves the delivery directory")
 	ErrFileMode          = errors.New("a file mode is not octal permission bits, write it as 0600")
+	ErrEmptyCommand      = errors.New("an action carries no command")
 )
 
 var variableName = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
@@ -64,14 +65,21 @@ type Variable struct {
 	Secret      bool   `yaml:"secret,omitempty" json:"secret,omitempty"`
 }
 
+// AfterAction is a command run once the services are up; its output is shown unless Mute.
+type AfterAction struct {
+	Command string `yaml:"cmd" json:"cmd"`
+	Mute    bool   `yaml:"mute,omitempty" json:"mute,omitempty"`
+}
+
 // Delivery is what vessel.yaml declares.
 type Delivery struct {
-	Name      string     `yaml:"name"`
-	Version   string     `yaml:"version"`
-	Source    string     `yaml:"source"`
-	Files     []Mapping  `yaml:"files"`
-	Variables []Variable `yaml:"variables"`
-	Actions   []string   `yaml:"actions"`
+	Name      string        `yaml:"name"`
+	Version   string        `yaml:"version"`
+	Source    string        `yaml:"source"`
+	Files     []Mapping     `yaml:"files"`
+	Variables []Variable    `yaml:"variables"`
+	Actions   []string      `yaml:"actions"`
+	After     []AfterAction `yaml:"after"`
 }
 
 // CheckName refuses a name that cannot stand for a directory under the target root.
@@ -131,6 +139,16 @@ func Read(dir fs.FS) (Delivery, error) {
 	for _, variable := range declaration.Variables {
 		if !variableName.MatchString(variable.Name) {
 			return Delivery{}, fmt.Errorf("%q: %w", variable.Name, ErrVariableName)
+		}
+	}
+	for index, command := range declaration.Actions {
+		if strings.TrimSpace(command) == "" {
+			return Delivery{}, fmt.Errorf("action %d: %w", index+1, ErrEmptyCommand)
+		}
+	}
+	for index, action := range declaration.After {
+		if strings.TrimSpace(action.Command) == "" {
+			return Delivery{}, fmt.Errorf("after %d: %w", index+1, ErrEmptyCommand)
 		}
 	}
 	for i, file := range declaration.Files {

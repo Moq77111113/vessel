@@ -17,6 +17,7 @@ type plan struct {
 	skip     []release.Step
 	marks    []string
 	actions  []string
+	after    []string
 	files    []change
 	secrets  []string
 	images   []string
@@ -48,7 +49,7 @@ func (i Install) plan(req InstallRequest, c *pass) (plan, error) {
 		p.marks = []string{before.skip}
 	}
 	if !progress.Has(release.StepActions) {
-		p.actions = config.Actions[min(len(progress.Actions), len(config.Actions)):]
+		p.actions = config.Actions[min(count(progress.Actions, release.StepActions), len(config.Actions)):]
 	}
 	unknown := dryValues(config.Variables, resolution)
 	if !progress.Has(release.StepFiles) {
@@ -74,8 +75,20 @@ func (i Install) plan(req InstallRequest, c *pass) (plan, error) {
 	for _, service := range config.Services {
 		p.starts = append(p.starts, service.Name)
 	}
+	if !progress.Has(release.StepAfter) {
+		for _, entry := range config.After[min(count(progress.Actions, release.StepAfter), len(config.After)):] {
+			p.after = append(p.after, afterLine(entry))
+		}
+	}
 	p.unknowns = p.unknownLines(config.Variables, unknown, before.bypass)
 	return p, nil
+}
+
+func afterLine(entry delivery.AfterAction) string {
+	if entry.Mute {
+		return entry.Command + " (mute)"
+	}
+	return entry.Command
 }
 
 func checks(before state) []string {
@@ -132,7 +145,7 @@ func (p plan) unknownLines(variables []delivery.Variable, unknown map[string]str
 	if bypass != "" {
 		lines = append(lines, bypass+" may have stopped halfway, this rollback passes over it")
 	}
-	if len(p.actions) > 0 {
+	if len(p.actions) > 0 || len(p.after) > 0 {
 		lines = append(lines, "the result of every action")
 	}
 	if len(p.starts) > 0 {
@@ -170,6 +183,9 @@ func (p plan) print(out io.Writer, name, version string) {
 	}
 	for _, service := range p.starts {
 		lines.Line("Start", service)
+	}
+	for _, action := range p.after {
+		lines.Line("Run", action)
 	}
 	for _, line := range p.unknowns {
 		lines.Line("Unverified", line)

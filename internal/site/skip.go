@@ -23,11 +23,12 @@ func (s SkipAction) Run(ctx context.Context, req InstallRequest) (InstallResult,
 	if err := checkResume(req, before); err != nil {
 		return InstallResult{}, err
 	}
-	if _, open := before.current.OpenAction(); !open {
+	action, open := before.current.OpenAction()
+	if !open {
 		return InstallResult{}, fmt.Errorf("%s: %w", req.Artifact.Config.Name, ErrNoOpenAction)
 	}
 	before.progress = markLastActionDone(before.current)
-	before.skip = before.progress.Actions[len(before.progress.Actions)-1].Command
+	before.skip = action.Command
 	return install.run(ctx, req, before)
 }
 

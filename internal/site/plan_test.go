@@ -256,7 +256,7 @@ func TestADryRunWithNoServiceSaysNothingAboutHealth(t *testing.T) {
 func TestADryRunRunsNoFromEvenWithAShellSetAfterPreview(t *testing.T) {
 	job := at(t, t.TempDir(), nil).job(dryRunBundle(t), nil).Preview()
 	job.SetFile = dbPassword
-	job.Shell = disk.NewShell(noCapture)
+	job.Shell = disk.NewShell(noShell)
 	if err := job.Run(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
 		t.Fatalf("the dry run ran a from: command: %v", err)
 	}

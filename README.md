@@ -30,6 +30,7 @@ Go 1.26+. Only the machine that builds needs vessel. The target needs podman 5.0
 ```yaml
 name: acme
 version: 1.4.0
+source: ./units                       # optional: where the units are; without it, beside vessel.yaml
 files:
   - source: realm.json
     target: /etc/acme/realm.json      # ###PUBLIC_HOST### inside is replaced at install
@@ -38,11 +39,19 @@ variables:
   - name: PUBLIC_HOST
     description: the public address of this machine
   - name: DB_PASSWORD
-    secret: true                      # becomes a podman secret
+    secret: true                      # becomes a podman secret, or a systemd credential (see below)
     from: openssl rand -hex 32
 actions:
-  - mkdir -p /etc/acme/certs          # runs on every install: keep it repeatable
+  - mkdir -p /etc/acme/certs          # runs before the files and services, on every install: keep it repeatable
+after:
+  - cmd: echo "open https://$(hostname -f)/"   # runs once every service is up; its output is shown
+  - cmd: systemctl is-active acme-web
+    mute: true                        # shows nothing, even when it fails: only the command and its exit code
 ```
+
+`actions:` print nothing when they succeed. An `after:` entry streams its output to the operator while it runs. A failing entry, in either list, stops the install and reports its exit code with the last lines of its output (at most 960 bytes), except a muted one. An empty command is refused at build.
+
+A secret that a unit reads with `LoadCredentialEncrypted=NAME` is sealed with `systemd-creds` in `/etc/credstore.encrypted/NAME` instead of becoming a podman secret. `systemd-creds` binds it to the machine's TPM2 when there is one; without a TPM, the key that seals it sits on the disk, readable by root.
 
 A value comes from `--set NAME=value`, from the previous install, or from `from:`. A secret never goes on a command line: `--set-file NAME=path` reads it from a file only its owner can read (`chmod 600`). vessel never prompts: a missing value, or a plain value holding a control character, stops the install before anything is written.
 
@@ -73,7 +82,7 @@ On the target, through the executable:
 | `./myapp status` | shows what is installed, and any file edited since |
 | `./myapp uninstall` | removes exactly what the install put down |
 
-`install`, `upgrade` and `resume` take `--dry-run`: same checks, then the plan, and nothing changes.
+`install`, `upgrade` and `resume` take `--dry-run`: same checks, then the plan, and nothing changes. The plan names each `after:` entry, with `(mute)` on muted ones.
 
 Exit codes: `0` done, `3` machine not ready, `4` refused and nothing touched, `5` failed partway.
 
@@ -97,7 +106,7 @@ this install never finished, it stopped after files: run resume, or install with
 - `./myapp-1.4.0 install` rolls back to the previous version.
 - `./myapp uninstall` takes it all off.
 
-An action cut or killed while it ran blocks `resume`: check it by hand, then `resume --skip-action`. Once the values are stored, `resume` refuses `--set`: it finishes with the values the install started with. A record left by an older vessel cannot be resumed: `uninstall`, then install again.
+An action or `after:` entry cut or killed while it ran blocks `resume`: check it by hand, then `resume --skip-action`. Once the values are stored, `resume` refuses `--set`: it finishes with the values the install started with. A record left by an older vessel is refused by `install`, `upgrade`, `resume` and `uninstall` (exit 4), and named by `status`: `uninstall` with the old executable, then install again.
 
 ## Signing
 

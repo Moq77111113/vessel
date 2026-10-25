@@ -239,9 +239,9 @@ type countingShell struct {
 	commands []string
 }
 
-func (c *countingShell) run(_ context.Context, command string) ([]byte, error) {
+func (c *countingShell) run(_ context.Context, command string, _, _ io.Writer) error {
 	c.commands = append(c.commands, command)
-	return nil, nil
+	return nil
 }
 
 func openAnAction(t *testing.T, root, dir string) {
@@ -255,7 +255,7 @@ func openAnAction(t *testing.T, root, dir string) {
 		t.Fatalf("read the record: %v", err)
 	}
 	entry.Steps = []release.Step{release.StepValues}
-	entry.Actions = []release.Action{{Command: "mkdir -p /srv/acme"}}
+	entry.Actions = []release.Action{{Command: "mkdir -p /srv/acme", Step: release.StepActions}}
 	if err := records.Write(entry); err != nil {
 		t.Fatalf("write the record: %v", err)
 	}
