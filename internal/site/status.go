@@ -95,7 +95,7 @@ func (s Status) services(ctx context.Context, out io.Writer, record release.Reco
 		return err
 	}
 	if record.Format < release.Format {
-		fmt.Fprintln(out, ErrRecordNamesNoService)
+		fmt.Fprintln(out, ErrRecordTooOld)
 	}
 	running, err := kind.Running(ctx, record.Services)
 	if err != nil {

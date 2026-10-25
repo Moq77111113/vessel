@@ -298,7 +298,7 @@ func TestAnUpgradeKeepsAFileItDropsWhenEditedOnSite(t *testing.T) {
 	}
 }
 
-func TestUpgradeRefusesARecordThatNamesNoService(t *testing.T) {
+func TestUpgradeRefusesARecordAnOlderVesselWrote(t *testing.T) {
 	root := t.TempDir()
 	body, err := os.ReadFile("testdata/older-vessel/acme/record.json")
 	if err != nil {
@@ -306,8 +306,8 @@ func TestUpgradeRefusesARecordThatNamesNoService(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(root, "var/lib/vessel/acme/record.json"), string(body))
 	err = at(t, root, nil).upgrade(writeBundle(t, "acme", "1.4.0"))
-	if !errors.Is(err, ErrRecordNamesNoService) {
-		t.Fatalf("got %v, want ErrRecordNamesNoService", err)
+	if !errors.Is(err, ErrRecordTooOld) {
+		t.Fatalf("got %v, want ErrRecordTooOld", err)
 	}
 	if errors.Is(err, ErrPartlyInstalled) {
 		t.Error("a refusal before any change says the machine changed")

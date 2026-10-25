@@ -31,7 +31,7 @@ func (b bench) job(dir string, set map[string]string) testJob {
 	if err != nil {
 		b.t.Fatalf("open the bundle: %v", err)
 	}
-	install := Install{Root: b.root, Drivers: b.kinds, Shell: disk.NewShell(noCapture)}
+	install := Install{Root: b.root, Drivers: b.kinds, Shell: disk.NewShell(noShell)}
 	return testJob{Install: install, Artifact: artifact, Set: set}
 }
 

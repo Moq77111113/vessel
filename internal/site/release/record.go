@@ -18,7 +18,7 @@ const (
 	previousName = "record.previous.json"
 )
 
-const Format = 2
+const Format = 3
 
 type Step string
 
@@ -29,10 +29,12 @@ const (
 	StepSecrets  Step = "secrets"
 	StepImages   Step = "images"
 	StepServices Step = "services"
+	StepAfter    Step = "after"
 )
 
 type Action struct {
 	Command string    `json:"command"`
+	Step    Step      `json:"step"`
 	End     time.Time `json:"end,omitzero"`
 }
 

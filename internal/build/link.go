@@ -81,6 +81,7 @@ func (r LinkRequest) config(definition delivery.Delivery) (bundle.Config, error)
 		Platform:  defaultPlatform,
 		Variables: definition.Variables,
 		Actions:   definition.Actions,
+		After:     definition.After,
 		Insecure:  r.InsecureUnsigned,
 	}
 	if r.Name != "" {

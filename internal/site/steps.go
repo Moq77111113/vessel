@@ -34,8 +34,8 @@ func (s *steps) run(step release.Step, do func() error) error {
 	return s.records.Write(s.opening)
 }
 
-func (s *steps) action(command string, do func() error) error {
-	s.opening.Actions = append(s.opening.Actions, release.Action{Command: command})
+func (s *steps) action(step release.Step, command string, do func() error) error {
+	s.opening.Actions = append(s.opening.Actions, release.Action{Command: command, Step: step})
 	if err := s.records.Write(s.opening); err != nil {
 		return err
 	}
@@ -44,12 +44,22 @@ func (s *steps) action(command string, do func() error) error {
 	if errors.Is(err, disk.ErrKilled) {
 		return err
 	}
-	if err != nil {
+	if err != nil && !errors.Is(err, disk.ErrOutput) {
 		s.opening.Actions = s.opening.Actions[:last]
 		return errors.Join(err, s.records.Write(s.opening))
 	}
 	s.opening.Actions[last].End = time.Now().UTC()
-	return s.records.Write(s.opening)
+	return errors.Join(err, s.records.Write(s.opening))
+}
+
+func count(actions []release.Action, step release.Step) int {
+	n := 0
+	for _, action := range actions {
+		if action.Step == step {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *steps) close() (release.Record, error) {

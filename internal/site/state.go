@@ -14,7 +14,7 @@ var ErrUnknownDriver = errors.New("this build does not know that machine kind")
 
 var ErrRecordOpen = errors.New("the last install on this machine never finished")
 
-var ErrRecordNamesNoService = errors.New("an older vessel wrote this record and named no service, uninstall with the executable that installed it, then install")
+var ErrRecordTooOld = errors.New("an older vessel wrote this record, uninstall with the executable that installed it, then install")
 
 type state struct {
 	dir      string
@@ -78,7 +78,7 @@ func refuseOldRecord(current release.Record) error {
 	if current.Format >= release.Format {
 		return nil
 	}
-	return fmt.Errorf("%s %s: %w", current.Name, current.Version, ErrRecordNamesNoService)
+	return fmt.Errorf("%s %s: %w", current.Name, current.Version, ErrRecordTooOld)
 }
 
 func (s state) prior() release.Release {
