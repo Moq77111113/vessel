@@ -5,21 +5,21 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
 // ErrNoDigest says a relocation reached the patch with no digest to write.
 var ErrNoDigest = errors.New("no digest")
 
 // Patch rewrites every relocation into its digest form and returns the resulting files.
-func Patch(manifest descriptor.Manifest, digests map[string]string) ([]descriptor.File, error) {
-	files := make([]descriptor.File, len(manifest.Files))
+func Patch(manifest delivery.Manifest, digests map[string]string) ([]delivery.File, error) {
+	files := make([]delivery.File, len(manifest.Files))
 	for i, file := range manifest.Files {
 		file.Data = append([]byte(nil), file.Data...)
 		files[i] = file
 	}
 
-	relocs := append([]descriptor.Relocation(nil), manifest.Relocs...)
+	relocs := append([]delivery.Relocation(nil), manifest.Relocs...)
 	sort.Slice(relocs, func(a, b int) bool {
 		if relocs[a].File != relocs[b].File {
 			return relocs[a].File > relocs[b].File

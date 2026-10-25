@@ -1,0 +1,98 @@
+package quadlet
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/Moq77111113/vessel/pkg/delivery"
+)
+
+func units(names ...string) []delivery.File {
+	files := make([]delivery.File, len(names))
+	for i, name := range names {
+		files[i] = delivery.File{Path: "etc/containers/systemd/" + name}
+	}
+	return files
+}
+
+func TestStartTellsSystemdToReloadThenStart(t *testing.T) {
+	got := NewReader().Start(units("web.container"))
+	want := []string{"systemctl daemon-reload", "systemctl start web.service"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestStartSaysNothingWhenNoUnitStartsAService(t *testing.T) {
+	if got := NewReader().Start(units("app.network")); len(got) != 0 {
+		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestServicesNamesOneServicePerContainerUnit(t *testing.T) {
+	got := serviceNames(units("web.container", "db.container"))
+	if want := "db.service web.service"; strings.Join(got, " ") != want {
+		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
+func TestServicesLeavesOutNetworksAndVolumes(t *testing.T) {
+	got := serviceNames(units("web.container", "app.network", "db.volume"))
+	if len(got) != 1 {
+		t.Errorf("got %v, want only the container unit", got)
+	}
+}
+
+func TestServicesSuffixesAPod(t *testing.T) {
+	got := serviceNames(units("app.pod"))
+	if want := "app-pod.service"; strings.Join(got, " ") != want {
+		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
+func TestServicesReturnsNothingWhenNoUnitStartsAService(t *testing.T) {
+	if got := serviceNames(units("app.network")); len(got) != 0 {
+		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestStartEnablesATimer(t *testing.T) {
+	files := []delivery.File{
+		{Path: "etc/containers/systemd/web.container"},
+		{Path: "etc/systemd/system/collect.timer"},
+	}
+	got := NewReader().Start(files)
+	want := []string{
+		"systemctl daemon-reload",
+		"systemctl start web.service",
+		"systemctl enable --now collect.timer",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestServicesLeavesOutAFileThatIsNotInTheUnitDirectory(t *testing.T) {
+	files := []delivery.File{{Path: "etc/acme/web.container"}}
+	if got := serviceNames(files); len(got) != 0 {
+		t.Errorf("got %v, want nothing", got)
+	}
+}
+
+func TestStartLeavesOutATimerThatIsNotInTheUnitDirectory(t *testing.T) {
+	files := []delivery.File{
+		{Path: "etc/containers/systemd/web.container"},
+		{Path: "etc/acme/backup.timer"},
+	}
+	got := NewReader().Start(files)
+	want := []string{"systemctl daemon-reload", "systemctl start web.service"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

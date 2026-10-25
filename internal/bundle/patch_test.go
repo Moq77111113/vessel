@@ -4,38 +4,38 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Moq77111113/vessel/internal/descriptor"
+	"github.com/Moq77111113/vessel/pkg/delivery"
 )
 
-func oneUnit(t *testing.T) descriptor.Manifest {
+func oneUnit(t *testing.T) delivery.Manifest {
 	t.Helper()
 	data := []byte("[Container]\nImage=reg.io/app:1.0\nNetwork=x\n")
-	ref, err := descriptor.ParseRef("reg.io/app:1.0")
+	ref, err := delivery.ParseRef("reg.io/app:1.0")
 	if err != nil {
 		t.Fatalf("ParseRef: %v", err)
 	}
-	return descriptor.Manifest{
-		Files: []descriptor.File{{Path: "etc/containers/systemd/app.container", Data: data}},
-		Relocs: []descriptor.Relocation{
+	return delivery.Manifest{
+		Files: []delivery.File{{Path: "etc/containers/systemd/app.container", Data: data}},
+		Relocs: []delivery.Relocation{
 			{File: 0, Offset: 18, Length: len("reg.io/app:1.0"), Ref: ref},
 		},
 	}
 }
 
-func twoUnitsInOneFile(t *testing.T) descriptor.Manifest {
+func twoUnitsInOneFile(t *testing.T) delivery.Manifest {
 	t.Helper()
 	data := []byte("Image=reg.io/a:1\nX=y\nImage=reg.io/b:2\n")
-	first, err := descriptor.ParseRef("reg.io/a:1")
+	first, err := delivery.ParseRef("reg.io/a:1")
 	if err != nil {
 		t.Fatalf("ParseRef: %v", err)
 	}
-	second, err := descriptor.ParseRef("reg.io/b:2")
+	second, err := delivery.ParseRef("reg.io/b:2")
 	if err != nil {
 		t.Fatalf("ParseRef: %v", err)
 	}
-	return descriptor.Manifest{
-		Files: []descriptor.File{{Path: "u.container", Data: data}},
-		Relocs: []descriptor.Relocation{
+	return delivery.Manifest{
+		Files: []delivery.File{{Path: "u.container", Data: data}},
+		Relocs: []delivery.Relocation{
 			{File: 0, Offset: 6, Length: len("reg.io/a:1"), Ref: first},
 			{File: 0, Offset: 27, Length: len("reg.io/b:2"), Ref: second},
 		},
