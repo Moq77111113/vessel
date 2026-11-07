@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"time"
 
 	"github.com/Moq77111113/vessel/internal/atomicfile"
@@ -80,11 +81,12 @@ func (r Record) OpenAction() (Action, bool) {
 }
 
 type Records struct {
-	dir string
+	dir   string
+	flush func()
 }
 
 func NewRecords(dir string) *Records {
-	return &Records{dir: dir}
+	return &Records{dir: dir, flush: syscall.Sync}
 }
 
 func Deliveries(root string) ([]string, error) {
@@ -119,10 +121,13 @@ func (r *Records) Previous() (Record, error) {
 }
 
 func (r *Records) Remove() error {
+	r.flush()
 	return atomicfile.Rename(filepath.Join(r.dir, recordName), filepath.Join(r.dir, previousName))
 }
 
+// Write flushes the machine first: the engines a step drives write without fsync, and the record never runs ahead of the disk.
 func (r *Records) Write(record Record) error {
+	r.flush()
 	if err := atomicfile.MkdirAll(r.dir, 0o700); err != nil {
 		return err
 	}
