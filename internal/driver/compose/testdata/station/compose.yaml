@@ -1,0 +1,45 @@
+# A weather station: one sensor, one store, one screen.
+name: station
+
+x-store-image: &store-image docker.io/victoriametrics/victoria-metrics:v1.110.0
+
+services:
+  sensor:
+    image: "docker.io/library/busybox:1.37"
+    env_file: ./sensor.env
+  store:
+    image: *store-image
+    volumes:
+      - measures:/storage
+  store-copy:
+    image: *store-image
+    profiles: [copy]
+  screen:
+    image: docker.io/grafana/grafana:11.5.0
+    user: "472"
+    env_file: [screen.env]
+    volumes:
+      - ./grafana:/etc/grafana/provisioning:ro
+      - type: bind
+        source: ./dashboards.json
+        target: /var/lib/grafana/dashboards/main.json
+      - /var/log/station:/var/log/grafana
+    secrets:
+      - source: SCREEN_PASSWORD
+        uid: "472"
+        gid: "472"
+        mode: 0400
+  sensor-check:
+    image: docker.io/library/busybox:1.37
+    secrets: [SCREEN_PASSWORD]
+
+configs:
+  station:
+    file: station.conf
+
+secrets:
+  SCREEN_PASSWORD:
+    file: ./secrets/SCREEN_PASSWORD
+
+volumes:
+  measures:

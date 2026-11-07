@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/Moq77111113/vessel/internal/driver/compose"
 	"github.com/Moq77111113/vessel/internal/driver/quadlet"
 	"github.com/Moq77111113/vessel/internal/site"
 	"github.com/Moq77111113/vessel/pkg/driver"
@@ -10,6 +11,7 @@ import (
 
 var machines = []driver.Driver{
 	quadlet.New(machineRoot, quadlet.Exec),
+	compose.New(machineRoot, compose.Exec),
 }
 
 const binary = "/proc/self/exe"

@@ -1,0 +1,15 @@
+name: owners
+services:
+  a:
+    image: docker.io/acme/a:1.0
+    secrets:
+      - source: TOKEN
+        uid: "472"
+  b:
+    image: docker.io/acme/b:1.0
+    secrets:
+      - source: TOKEN
+        uid: "1000"
+secrets:
+  TOKEN:
+    file: ./secrets/TOKEN

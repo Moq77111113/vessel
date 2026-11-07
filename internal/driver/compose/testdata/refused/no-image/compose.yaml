@@ -1,0 +1,4 @@
+name: noimage
+services:
+  web:
+    command: ["true"]

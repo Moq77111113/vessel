@@ -1,0 +1,6 @@
+name: leak
+services:
+  web:
+    image: docker.io/acme/web:1.0
+    volumes:
+      - ./secrets:/run/keys

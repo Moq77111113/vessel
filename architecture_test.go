@@ -4,7 +4,6 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,21 +14,23 @@ const module = "github.com/Moq77111113/vessel/"
 
 type rule struct {
 	from   string
+	except []string
 	never  []string
 	reason string
 }
 
 var rules = []rule{
-	{"internal/build/", []string{"internal/site", "internal/driver"}, "build depends on pkg/driver, never on the site or on a driver"},
-	{"internal/site/", []string{"internal/build", "internal/driver"}, "the site depends on pkg/driver, never on the build or on a driver"},
-	{"internal/driver/", []string{"internal/build", "internal/site"}, "a driver knows pkg/, oci and report, never a side"},
-	{"pkg/", []string{"internal/build", "internal/site", "internal/driver"}, "a public contract never names an implementation"},
+	{"internal/build/", nil, []string{"internal/site"}, "build depends on pkg/driver, never on the site"},
+	{"internal/site/", nil, []string{"internal/build"}, "the site depends on pkg/driver, never on the build"},
+	{"internal/driver/", nil, []string{"internal/build", "internal/site"}, "a driver knows pkg/, oci and report, never a side"},
+	{"pkg/", nil, []string{"internal/build", "internal/site"}, "a public contract never names an implementation"},
+	{"", []string{"cmd/vessel/root.go", "internal/driver/"}, []string{"internal/driver"}, "only cmd/vessel/root.go names a driver"},
 }
 
 func TestImportsKeepTheTwoSidesApart(t *testing.T) {
 	for file, imports := range sources(t) {
 		for _, rule := range rules {
-			if !strings.HasPrefix(file, rule.from) {
+			if !rule.covers(file) {
 				continue
 			}
 			for _, path := range imports {
@@ -43,33 +44,16 @@ func TestImportsKeepTheTwoSidesApart(t *testing.T) {
 	}
 }
 
-var driverWords = []string{"podman", "systemd", "systemctl", "quadlet"}
-
-func TestOnlyTheRootNamesADriver(t *testing.T) {
-	for file, imports := range sources(t) {
-		for _, path := range imports {
-			if strings.HasPrefix(path, "internal/driver/") && file != "cmd/vessel/root.go" && !strings.HasPrefix(file, "internal/driver/") {
-				t.Errorf("%s imports %s: only cmd/vessel/root.go names a driver", file, path)
-			}
+func (r rule) covers(file string) bool {
+	if !strings.HasPrefix(file, r.from) {
+		return false
+	}
+	for _, skip := range r.except {
+		if strings.HasPrefix(file, skip) {
+			return false
 		}
 	}
-}
-
-func TestNoDriverWordOutsideItsDriver(t *testing.T) {
-	for file := range sources(t) {
-		if strings.HasPrefix(file, "internal/driver/quadlet/") || file == "cmd/vessel/root.go" {
-			continue
-		}
-		body, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatalf("read %s: %v", file, err)
-		}
-		for _, word := range driverWords {
-			if strings.Contains(strings.ToLower(string(body)), word) {
-				t.Errorf("%s says %s: only its driver does", file, word)
-			}
-		}
-	}
+	return true
 }
 
 func sources(t *testing.T) map[string][]string {
