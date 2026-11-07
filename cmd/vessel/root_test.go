@@ -12,18 +12,25 @@ import (
 	"github.com/Moq77111113/vessel/internal/bundle"
 )
 
-func TestTheCompositionRootNamesOneMachineKind(t *testing.T) {
-	if len(machines) != 1 {
-		t.Fatalf("got %d machines, want 1", len(machines))
+func TestTheCompositionRootNamesTwoMachineKinds(t *testing.T) {
+	names := make([]string, len(machines))
+	for i, machine := range machines {
+		names[i] = machine.Name()
 	}
-	if got, want := machines[0].Name(), "quadlet"; got != want {
-		t.Errorf("got %q, want %q", got, want)
+	if want := []string{"quadlet", "compose"}; !slices.Equal(names, want) {
+		t.Errorf("got %v, want %v", names, want)
 	}
 }
 
 func TestVesselReadsQuadlet(t *testing.T) {
 	if !machines[0].Detect(os.DirFS("../../internal/driver/quadlet/testdata/stack")) {
 		t.Error("the quadlet driver does not recognize a quadlet stack")
+	}
+}
+
+func TestVesselReadsCompose(t *testing.T) {
+	if !machines[1].Detect(os.DirFS("../../internal/driver/compose/testdata/station")) {
+		t.Error("the compose driver does not recognize a compose stack")
 	}
 }
 
