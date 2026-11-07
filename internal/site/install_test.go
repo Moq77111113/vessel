@@ -97,6 +97,29 @@ files:
 	}
 }
 
+func TestInstallNamesNoSecretItJustAddedAsMissing(t *testing.T) {
+	dir := linkTestDelivery(t, "Secret=DB_PASSWORD,type=env,target=POSTGRES_PASSWORD\n",
+		map[string]string{
+			"vessel.yaml": `
+name: acme
+version: 1.4.0
+variables:
+  - name: DB_PASSWORD
+    secret: true
+`,
+		})
+	root := t.TempDir()
+	job := at(t, root, []driver.Driver{quadlet.New(root, (&podmanStub{}).run)}).job(dir, nil)
+	job.SetFile = dbPassword
+	var out strings.Builder
+	if err := job.Run(context.Background(), &out, report.New(io.Discard)); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if strings.Contains(out.String(), "DB_PASSWORD") {
+		t.Errorf("named a secret the install just added as missing:\n%s", out.String())
+	}
+}
+
 func TestInstallCreatesASecretWithoutStoringIt(t *testing.T) {
 	dir := linkTestDelivery(t, "Secret=DB_PASSWORD,type=env,target=POSTGRES_PASSWORD\n",
 		map[string]string{
