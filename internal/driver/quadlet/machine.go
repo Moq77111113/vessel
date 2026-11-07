@@ -67,6 +67,10 @@ func (m *Machine) Start(ctx context.Context, services []delivery.Service) error 
 	return m.do(ctx, startLines(services))
 }
 
+func (m *Machine) Restart(ctx context.Context, services []delivery.Service) error {
+	return m.do(ctx, restartLines(services))
+}
+
 func (m *Machine) Stop(ctx context.Context, services []delivery.Service) error {
 	return m.do(ctx, stopLines(services))
 }

@@ -50,6 +50,18 @@ func startLines(services []delivery.Service) []string {
 	return lines
 }
 
+func restartLines(services []delivery.Service) []string {
+	generated, plain := split(services)
+	if len(generated) == 0 && len(plain) == 0 {
+		return nil
+	}
+	lines := []string{"systemctl daemon-reload"}
+	if len(plain) > 0 {
+		lines = append(lines, "systemctl enable "+strings.Join(plain, " "))
+	}
+	return append(lines, "systemctl restart "+strings.Join(append(generated, plain...), " "))
+}
+
 func stopLines(services []delivery.Service) []string {
 	generated, plain := split(services)
 	var lines []string

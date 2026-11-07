@@ -22,7 +22,7 @@ type plan struct {
 	secrets  []string
 	images   []string
 	stops    []string
-	starts   []string
+	starts   []change
 	unknowns []string
 }
 
@@ -72,8 +72,12 @@ func (i Install) plan(req InstallRequest, c *pass) (plan, error) {
 			p.images = append(p.images, image.Ref+" "+image.Digest)
 		}
 	}
+	verb := "Start"
+	if before.replaces(req.Artifact.Root) {
+		verb = "Restart"
+	}
 	for _, service := range config.Services {
-		p.starts = append(p.starts, service.Name)
+		p.starts = append(p.starts, change{verb: verb, line: service.Name})
 	}
 	if !progress.Has(release.StepAfter) {
 		for _, entry := range config.After[min(count(progress.Actions, release.StepAfter), len(config.After)):] {
@@ -182,7 +186,7 @@ func (p plan) print(out io.Writer, name, version string) {
 		lines.Line("Load", image)
 	}
 	for _, service := range p.starts {
-		lines.Line("Start", service)
+		lines.Line(service.verb, service.line)
 	}
 	for _, action := range p.after {
 		lines.Line("Run", action)
