@@ -1,0 +1,10 @@
+name: acme
+services:
+  web:
+    image: registry.test/acme/web:1.0
+    secrets: [WEB_TOKEN]
+  db:
+    image: "registry.test/library/postgres:17.2"
+secrets:
+  WEB_TOKEN:
+    file: ./secrets/WEB_TOKEN

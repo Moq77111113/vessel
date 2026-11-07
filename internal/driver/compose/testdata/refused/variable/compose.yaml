@@ -1,0 +1,4 @@
+name: variable
+services:
+  web:
+    image: docker.io/acme/web:${TAG}
