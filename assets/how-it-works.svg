@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="Your stack becomes one signed file with vessel build, crosses the air gap, and ./my-stack install brings every service up">
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3.5" markerHeight="3.5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#8A6A52"/></marker>
+  </defs>
+  <rect x="2" y="2" width="1196" height="296" rx="20" fill="#FFF8EE" stroke="#E8D6BE" stroke-width="3"/>
+
+  <!-- your stack -->
+  <g transform="translate(120 70)">
+    <path d="M0 0 H70 L100 30 V130 H0 Z" fill="#FFFFFF" stroke="#3B2314" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M70 0 V30 H100" fill="none" stroke="#3B2314" stroke-width="6" stroke-linejoin="round"/>
+    <line x1="18" y1="58" x2="82" y2="58" stroke="#C9B49B" stroke-width="7" stroke-linecap="round"/>
+    <line x1="18" y1="80" x2="70" y2="80" stroke="#C9B49B" stroke-width="7" stroke-linecap="round"/>
+    <line x1="18" y1="102" x2="78" y2="102" stroke="#C9B49B" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <text x="170" y="244" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#3B2314">your stack</text>
+
+  <!-- build arrow -->
+  <line x1="260" y1="135" x2="440" y2="135" stroke="#8A6A52" stroke-width="6" stroke-linecap="round" marker-end="url(#head)"/>
+  <text x="350" y="115" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="22" fill="#8A6A52">vessel build</text>
+
+  <!-- one signed file -->
+  <g transform="translate(480 75)">
+    <rect x="0" y="0" width="140" height="110" rx="12" fill="#F2B33D" stroke="#3B2314" stroke-width="6"/>
+    <line x1="0" y1="38" x2="140" y2="38" stroke="#3B2314" stroke-width="6"/>
+    <line x1="0" y1="74" x2="140" y2="74" stroke="#3B2314" stroke-width="6"/>
+    <circle cx="70" cy="56" r="26" fill="#E63946" stroke="#3B2314" stroke-width="6"/>
+    <circle cx="70" cy="56" r="11" fill="none" stroke="#9E1B26" stroke-width="5"/>
+  </g>
+  <text x="550" y="244" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#3B2314">one signed file</text>
+
+  <!-- carry arrow -->
+  <line x1="660" y1="135" x2="840" y2="135" stroke="#8A6A52" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 16" marker-end="url(#head)"/>
+  <text x="750" y="115" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="22" fill="#8A6A52">USB stick, scp</text>
+
+  <!-- target -->
+  <g transform="translate(880 62)">
+    <rect x="0" y="0" width="150" height="130" rx="14" fill="#14213D" stroke="#3B2314" stroke-width="6"/>
+    <line x1="22" y1="34" x2="128" y2="34" stroke="#2E86C1" stroke-width="8" stroke-linecap="round"/>
+    <line x1="22" y1="64" x2="128" y2="64" stroke="#2E86C1" stroke-width="8" stroke-linecap="round"/>
+    <line x1="22" y1="94" x2="128" y2="94" stroke="#2E86C1" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="140" cy="122" r="26" fill="#2EA043" stroke="#3B2314" stroke-width="6"/>
+    <path d="M128 122 L137 131 L153 113" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="955" y="244" text-anchor="middle" font-family="ui-sans-serif,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#3B2314">air-gapped machine</text>
+  <text x="955" y="276" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="22" fill="#8A6A52">./my-stack install</text>
+</svg>
