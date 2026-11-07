@@ -311,3 +311,18 @@ func mode(t *testing.T, path string) os.FileMode {
 	}
 	return info.Mode().Perm()
 }
+
+func TestTreeRootedAtTheMachineRootFinishesAWrite(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skipf("writing under / needs root, running as uid %d", os.Getuid())
+	}
+	dir, err := os.MkdirTemp("/", "vessel-tree-*")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	file := delivery.File{Path: filepath.Join(filepath.Base(dir), "etc", "web.container"), Data: []byte("[Container]\n")}
+	if _, err := NewTree("/").Write(file); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+}

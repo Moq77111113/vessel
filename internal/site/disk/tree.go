@@ -133,6 +133,9 @@ func (t *Tree) checkParents(path string) error {
 		if err := t.checkChain(real); err != nil {
 			return fmt.Errorf("%s %w", path, err)
 		}
+		if dir == filepath.Dir(dir) {
+			return nil
+		}
 	}
 	return nil
 }
