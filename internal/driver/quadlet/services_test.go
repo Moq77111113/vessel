@@ -104,3 +104,14 @@ func TestStartLeavesOutATimerThatIsNotInTheUnitDirectory(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+func TestRestartEnablesATimerThenRestartsEveryService(t *testing.T) {
+	services := []delivery.Service{
+		{Name: "web.service", Path: "etc/containers/systemd/web.container"},
+		{Name: "backup.timer", Path: "etc/systemd/system/backup.timer"},
+	}
+	want := []string{"systemctl daemon-reload", "systemctl enable backup.timer", "systemctl restart web.service backup.timer"}
+	if got := restartLines(services); !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}

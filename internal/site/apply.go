@@ -63,8 +63,12 @@ func (i Install) apply(ctx context.Context, req InstallRequest, c *pass) (int, e
 		return 0, err
 	}
 	if err := c.steps.run(release.StepServices, func() error {
-		reportMissingSecrets(req.Out, c.secrets, config.Secrets)
-		return startServices(ctx, host, config.Services)
+		reportMissingSecrets(req.Out, c.secrets, c.resolution.Secrets, config.Secrets)
+		up := host.Start
+		if c.before.replaces(req.Artifact.Root) {
+			up = host.Restart
+		}
+		return startServices(ctx, host, up, config.Services)
 	}); err != nil {
 		return 0, err
 	}
@@ -155,8 +159,8 @@ func addImages(ctx context.Context, req InstallRequest, host driver.Machine) err
 	return err
 }
 
-func startServices(ctx context.Context, host driver.Machine, services []delivery.Service) error {
-	if err := host.Start(ctx, services); err != nil {
+func startServices(ctx context.Context, host driver.Machine, up func(context.Context, []delivery.Service) error, services []delivery.Service) error {
+	if err := up(ctx, services); err != nil {
 		return err
 	}
 	running, err := host.Running(ctx, services)
@@ -175,10 +179,11 @@ func startServices(ctx context.Context, host driver.Machine, services []delivery
 	return fmt.Errorf("%s: %w", strings.Join(down, ", "), ErrServiceIsDown)
 }
 
-func reportMissingSecrets(out io.Writer, secrets, read []string) {
+func reportMissingSecrets(out io.Writer, held []string, added map[string]string, read []string) {
 	var missing []string
 	for _, name := range read {
-		if !slices.Contains(secrets, name) {
+		_, given := added[name]
+		if !given && !slices.Contains(held, name) {
 			missing = append(missing, name)
 		}
 	}

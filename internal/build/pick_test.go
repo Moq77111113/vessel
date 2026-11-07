@@ -22,13 +22,14 @@ type kind struct {
 func (s kind) Name() string          { return s.name }
 func (s kind) Detect(dir fs.FS) bool { _, err := fs.Stat(dir, s.mark); return err == nil }
 
-func (s kind) Read(fs.FS) (delivery.Manifest, error)            { return delivery.Manifest{}, nil }
-func (s kind) Check(context.Context) error                      { return nil }
-func (s kind) Secrets(context.Context) ([]string, error)        { return nil, nil }
-func (s kind) AddSecret(context.Context, delivery.Secret) error { return nil }
-func (s kind) RemoveHint(string) string                         { return "" }
-func (s kind) Start(context.Context, []delivery.Service) error  { return nil }
-func (s kind) Stop(context.Context, []delivery.Service) error   { return nil }
+func (s kind) Read(fs.FS) (delivery.Manifest, error)             { return delivery.Manifest{}, nil }
+func (s kind) Check(context.Context) error                       { return nil }
+func (s kind) Secrets(context.Context) ([]string, error)         { return nil, nil }
+func (s kind) AddSecret(context.Context, delivery.Secret) error  { return nil }
+func (s kind) RemoveHint(string) string                          { return "" }
+func (s kind) Start(context.Context, []delivery.Service) error   { return nil }
+func (s kind) Restart(context.Context, []delivery.Service) error { return nil }
+func (s kind) Stop(context.Context, []delivery.Service) error    { return nil }
 
 func (s kind) AddImages(context.Context, report.Report, *oci.Images) ([]string, error) {
 	return nil, nil

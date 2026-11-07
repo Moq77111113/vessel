@@ -1,0 +1,6 @@
+name: outside
+services:
+  web:
+    image: docker.io/acme/web:1.0
+    volumes:
+      - ../shared:/shared

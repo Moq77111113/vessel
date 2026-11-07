@@ -30,7 +30,7 @@ const multiPlatform = "library/postgres:17.2"
 
 func serveStack(t *testing.T) string {
 	t.Helper()
-	return unpackFixture(t, serveRegistry(t))
+	return unpackFixture(t, serveRegistry(t), "testdata/stack")
 }
 
 func serveRegistry(t *testing.T) string {
@@ -78,9 +78,9 @@ func randomOCIImage(layer v1.Layer) (v1.Image, error) {
 	return mutate.AppendLayers(base, own, layer)
 }
 
-func unpackFixture(t *testing.T, host string) string {
+func unpackFixture(t *testing.T, host, dir string) string {
 	t.Helper()
-	source, fixture := t.TempDir(), os.DirFS("testdata/stack")
+	source, fixture := t.TempDir(), os.DirFS(dir)
 	entries, err := fs.ReadDir(fixture, ".")
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)

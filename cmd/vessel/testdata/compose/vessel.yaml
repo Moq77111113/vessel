@@ -1,0 +1,6 @@
+name: acme
+version: 1.0.0
+variables:
+  - name: WEB_TOKEN
+    description: the token web presents
+    secret: true

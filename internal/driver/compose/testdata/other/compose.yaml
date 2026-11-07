@@ -1,0 +1,10 @@
+name: other
+services:
+  web:
+    image: docker.io/acme/web:1.0
+    secrets:
+      - source: SCREEN_PASSWORD
+        uid: "1000"
+secrets:
+  SCREEN_PASSWORD:
+    file: ./secrets/SCREEN_PASSWORD

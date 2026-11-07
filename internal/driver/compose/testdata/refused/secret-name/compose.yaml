@@ -1,0 +1,8 @@
+name: escape
+services:
+  web:
+    image: docker.io/acme/web:1.0
+    secrets: ["../compose.yaml"]
+secrets:
+  "../compose.yaml":
+    file: compose.yaml

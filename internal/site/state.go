@@ -88,6 +88,11 @@ func (s state) prior() release.Release {
 	return s.current.Prior
 }
 
+func (s state) replaces(root string) bool {
+	prior := s.prior()
+	return prior.Root != "" && prior.Root != root
+}
+
 func bypass(current release.Record) string {
 	if action, open := current.OpenAction(); open {
 		return action.Command
