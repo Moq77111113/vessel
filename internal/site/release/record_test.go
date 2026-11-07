@@ -260,3 +260,46 @@ func TestAnOpenRecordNeverBecomesThePreviousOne(t *testing.T) {
 		t.Errorf("got %s done=%v, want 1.3.0 done", previous.Version, previous.Done())
 	}
 }
+
+func TestTheRecordNamesAStepOnlyOnceTheMachineIsFlushed(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "acme")
+	var disk [][]release.Step
+	records := release.NewRecordsFlushedBy(dir, func() {
+		entry, err := release.NewRecords(dir).Read()
+		if errors.Is(err, release.ErrNoRecord) {
+			disk = append(disk, nil)
+			return
+		}
+		disk = append(disk, entry.Steps)
+	})
+	record := release.Record{Name: "acme", Version: "1.4.0"}
+	for _, step := range []release.Step{release.StepValues, release.StepSecrets} {
+		record.Steps = append(record.Steps, step)
+		if err := records.Write(record); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	want := [][]release.Step{nil, {release.StepValues}}
+	if len(disk) != len(want) || disk[0] != nil || len(disk[1]) != 1 || disk[1][0] != release.StepValues {
+		t.Errorf("the disk held %v at each flush, want %v: the record moved before the machine was flushed", disk, want)
+	}
+}
+
+func TestTheRecordGoesOnlyOnceTheMachineIsFlushed(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "acme")
+	held := false
+	records := release.NewRecordsFlushedBy(dir, func() {
+		_, err := release.NewRecords(dir).Read()
+		held = err == nil
+	})
+	if err := records.Write(release.Record{Name: "acme", Version: "1.4.0"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	held = false
+	if err := records.Remove(); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if !held {
+		t.Error("the record was gone before the machine was flushed")
+	}
+}
