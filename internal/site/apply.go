@@ -63,7 +63,7 @@ func (i Install) apply(ctx context.Context, req InstallRequest, c *pass) (int, e
 		return 0, err
 	}
 	if err := c.steps.run(release.StepServices, func() error {
-		reportMissingSecrets(req.Out, c.secrets, config.Secrets)
+		reportMissingSecrets(req.Out, c.secrets, c.resolution.Secrets, config.Secrets)
 		return startServices(ctx, host, config.Services)
 	}); err != nil {
 		return 0, err
@@ -175,10 +175,11 @@ func startServices(ctx context.Context, host driver.Machine, services []delivery
 	return fmt.Errorf("%s: %w", strings.Join(down, ", "), ErrServiceIsDown)
 }
 
-func reportMissingSecrets(out io.Writer, secrets, read []string) {
+func reportMissingSecrets(out io.Writer, held []string, added map[string]string, read []string) {
 	var missing []string
 	for _, name := range read {
-		if !slices.Contains(secrets, name) {
+		_, given := added[name]
+		if !given && !slices.Contains(held, name) {
 			missing = append(missing, name)
 		}
 	}
