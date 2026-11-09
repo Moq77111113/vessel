@@ -23,7 +23,7 @@ import (
 
 const realImageRef = "vessel-quadlet-test.local/probe:1.0"
 
-func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
+func TestLoadLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
 	m := New("/", Exec)
 	skipUnlessPodmanReady(t, m)
 
@@ -35,8 +35,8 @@ func TestAddImagesLandsTheImagePodmanHoldsAtItsPinnedDigest(t *testing.T) {
 	}
 	t.Cleanup(func() { removePodmanImage(t, realImageRef) })
 
-	if _, err := m.AddImages(context.Background(), report.New(io.Discard), lay); err != nil {
-		t.Fatalf("AddImages: %v", err)
+	if _, err := m.podman.Load(context.Background(), report.New(io.Discard), lay); err != nil {
+		t.Fatalf("Load: %v", err)
 	}
 
 	if got := podmanImageDigest(t, realImageRef); got != digest {

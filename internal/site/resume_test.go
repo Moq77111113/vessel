@@ -333,9 +333,9 @@ func TestResumeAfterAPowerCutFindsEverythingTheRecordNames(t *testing.T) {
 		cut     func(root, text string) bool
 		secrets map[string]string
 	}{
-		"right after an action": {actionFinished, secrets},
-		"loading the images":    {starts("podman load"), nil},
-		"starting the services": {starts("systemctl daemon-reload"), nil},
+		"right after an action":          {actionFinished, secrets},
+		"in the middle of an image load": {starts("podman load"), nil},
+		"starting the services":          {starts("systemctl daemon-reload"), nil},
 	}
 	for name, cut := range cuts {
 		t.Run(name, func(t *testing.T) {
@@ -394,9 +394,12 @@ func actionFinished(root, _ string) bool {
 
 var errPowerCut = errors.New("power cut")
 
-const graphRoot = "/var/lib/containers/storage"
+const (
+	graphRoot    = "/var/lib/containers/storage"
+	damagedImage = "damaged image"
+)
 
-// powerStub keeps what podman, systemd-creds and the shell write in memory, each until a sync reaches its file system.
+// powerStub keeps what podman, systemd-creds and the shell write in memory, each until a sync reaches its file system; a cut during a load leaves a damaged image.
 type powerStub struct {
 	root        string
 	cut         func(root, text string) bool
@@ -407,7 +410,7 @@ type powerStub struct {
 
 func (p *powerStub) shell(_ context.Context, command string, _, _ io.Writer) error {
 	if p.cut != nil && p.cut(p.root, command) {
-		p.powerCut()
+		p.powerCut(command)
 		return errPowerCut
 	}
 	p.write(command, p.root)
@@ -417,7 +420,7 @@ func (p *powerStub) shell(_ context.Context, command string, _, _ io.Writer) err
 func (p *powerStub) run(_ context.Context, command quadlet.Command) ([]byte, error) {
 	text := strings.Join(command.Line, " ")
 	if p.cut != nil && p.cut(p.root, text) {
-		p.powerCut()
+		p.powerCut(text)
 		return nil, errPowerCut
 	}
 	switch {
@@ -431,6 +434,10 @@ func (p *powerStub) run(_ context.Context, command quadlet.Command) ([]byte, err
 		return []byte("active\n"), nil
 	case strings.HasPrefix(text, "podman secret create"):
 		p.write("secret "+command.Line[3], graphRoot)
+	case text == "podman system check --repair":
+		delete(p.disk, damagedImage)
+	case text == "podman load" && p.disk[damagedImage]:
+		return []byte("Error: layer unknown to storage\n"), errors.New("exit status 125")
 	case text == "podman load":
 		p.write("image", graphRoot)
 		return []byte("Loaded image: registry.test/acme/web:1.0\n"), nil
@@ -442,8 +449,15 @@ func (p *powerStub) run(_ context.Context, command quadlet.Command) ([]byte, err
 	return nil, nil
 }
 
-func (p *powerStub) powerCut() {
+func (p *powerStub) powerCut(text string) {
 	p.cut, p.memory, p.credentials = nil, nil, nil
+	if text != "podman load" {
+		return
+	}
+	if p.disk == nil {
+		p.disk = map[string]bool{}
+	}
+	p.disk[damagedImage] = true
 }
 
 func (p *powerStub) secrets() string {
