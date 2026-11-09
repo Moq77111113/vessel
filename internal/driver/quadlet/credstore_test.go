@@ -2,7 +2,6 @@ package quadlet_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -51,8 +50,8 @@ func TestAddSecretEncryptsASecretAUnitLoadsAsACredential(t *testing.T) {
 	if !slices.Equal(system.lines, []string{want}) {
 		t.Errorf("got %v, want %q", system.lines, want)
 	}
-	if !slices.Equal(system.stdin, []string{"KC_DB_PASSWORD=a3f9\n"}) {
-		t.Errorf("got %q on stdin, want one environment line", system.stdin)
+	if !slices.Equal(system.stdin, []string{"a3f9"}) {
+		t.Errorf("got %q on stdin, want the value alone", system.stdin)
 	}
 }
 
@@ -67,11 +66,15 @@ func TestAddSecretKeepsPodmanForASecretAUnitMounts(t *testing.T) {
 	}
 }
 
-func TestAddSecretRefusesALineBreakInACredential(t *testing.T) {
-	root := rootWithUnit(t, "[Service]\nLoadCredentialEncrypted=KC_DB_PASSWORD\n")
-	err := quadlet.New(root, (&creds{}).run).AddSecret(context.Background(), delivery.Secret{Name: "KC_DB_PASSWORD", Value: "a\nb"})
-	if !errors.Is(err, quadlet.ErrCredentialLine) {
-		t.Errorf("got %v, want ErrCredentialLine", err)
+func TestAddSecretSealsACertificateWithItsLineBreaks(t *testing.T) {
+	root := rootWithUnit(t, "[Service]\nLoadCredentialEncrypted=TLS_CERT\n")
+	system := &creds{}
+	certificate := "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+	if err := quadlet.New(root, system.run).AddSecret(context.Background(), delivery.Secret{Name: "TLS_CERT", Value: certificate}); err != nil {
+		t.Fatalf("AddSecret: %v", err)
+	}
+	if !slices.Equal(system.stdin, []string{certificate}) {
+		t.Errorf("got %q on stdin, want the certificate byte for byte", system.stdin)
 	}
 }
 

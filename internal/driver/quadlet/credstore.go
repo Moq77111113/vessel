@@ -16,8 +16,6 @@ import (
 
 const credstorePath = "etc/credstore.encrypted"
 
-var ErrCredentialLine = errors.New("a secret a unit loads as a credential holds a line break")
-
 type credstore struct {
 	root string
 	run  Run
@@ -48,16 +46,13 @@ func (c credstore) holds(name string) bool {
 }
 
 func (c credstore) add(ctx context.Context, secret delivery.Secret) error {
-	if strings.ContainsAny(secret.Value, "\r\n") {
-		return fmt.Errorf("%s: %w", secret.Name, ErrCredentialLine)
-	}
 	if err := os.MkdirAll(c.dir(), 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", c.dir(), err)
 	}
 	target := filepath.Join(c.dir(), secret.Name)
 	output, err := c.run(ctx, Command{
 		Line:  []string{"systemd-creds", "encrypt", "--name=" + secret.Name, "-", target},
-		Stdin: strings.NewReader(secret.Name + "=" + secret.Value + "\n"),
+		Stdin: strings.NewReader(secret.Value),
 	})
 	if err != nil {
 		return fmt.Errorf("systemd-creds encrypt %s: %w: %s", secret.Name, err, strings.TrimSpace(string(output)))
