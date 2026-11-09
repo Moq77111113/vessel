@@ -84,6 +84,14 @@ func (p *podman) CreateSecret(ctx context.Context, name, value string) error {
 	return nil
 }
 
+func (p *podman) Flush(ctx context.Context) error {
+	output, err := p.run(ctx, line("podman", "info", "--format", "{{.Store.GraphRoot}}"))
+	if err != nil {
+		return fmt.Errorf("podman info: %w: %s", ErrCommand, strings.TrimSpace(string(output)))
+	}
+	return syncFileSystem(ctx, p.run, strings.TrimSpace(string(output)))
+}
+
 func (p *podman) Version(ctx context.Context) (string, error) {
 	output, err := p.run(ctx, line("podman", "--version"))
 	if err != nil {

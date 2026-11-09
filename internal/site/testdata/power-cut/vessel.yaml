@@ -1,0 +1,9 @@
+name: acme
+version: 1.4.0
+variables:
+  - name: DB_PASSWORD
+    secret: true
+  - name: KC_DB_PASSWORD
+    secret: true
+actions:
+  - useradd acme

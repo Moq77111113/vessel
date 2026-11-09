@@ -961,3 +961,26 @@ func TestInstallRecordsTheServicesItStarts(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+func TestAStepTheMachineCannotFlushStaysOutOfTheRecord(t *testing.T) {
+	root := t.TempDir()
+	kinds := []driver.Driver{brokenFlush{quadlet.New(root, (&podmanStub{}).run)}}
+	if err := at(t, root, kinds).install(writeBundle(t, "acme", "1.4.0")); !errors.Is(err, errBrokenFlush) {
+		t.Fatalf("got %v, want errBrokenFlush", err)
+	}
+	entry, err := recordsFor(t, root, "acme").Read()
+	if err != nil {
+		t.Fatalf("read the record: %v", err)
+	}
+	if len(entry.Steps) != 0 {
+		t.Errorf("got %v, want no step the disk may have lost", entry.Steps)
+	}
+}
+
+type brokenFlush struct {
+	driver.Driver
+}
+
+var errBrokenFlush = errors.New("broken flush")
+
+func (brokenFlush) Flush(context.Context) error { return errBrokenFlush }

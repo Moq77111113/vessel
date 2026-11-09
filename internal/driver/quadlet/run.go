@@ -2,8 +2,10 @@ package quadlet
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 )
 
 type Command struct {
@@ -20,3 +22,11 @@ func Exec(ctx context.Context, command Command) ([]byte, error) {
 }
 
 func line(words ...string) Command { return Command{Line: words} }
+
+func syncFileSystem(ctx context.Context, run Run, dir string) error {
+	output, err := run(ctx, line("sync", "--file-system", dir))
+	if err != nil {
+		return fmt.Errorf("sync --file-system %s: %w: %s", dir, ErrCommand, strings.TrimSpace(string(output)))
+	}
+	return nil
+}

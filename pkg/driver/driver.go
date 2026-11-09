@@ -27,6 +27,7 @@ type Machine interface {
 	AddSecret(ctx context.Context, secret delivery.Secret) error
 	RemoveHint(secret string) string
 	AddImages(ctx context.Context, work report.Report, images *oci.Images) ([]string, error)
+	Flush(ctx context.Context) error
 	Start(ctx context.Context, services []delivery.Service) error
 	Restart(ctx context.Context, services []delivery.Service) error
 	Stop(ctx context.Context, services []delivery.Service) error

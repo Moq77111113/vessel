@@ -63,6 +63,13 @@ func (m *Machine) AddImages(ctx context.Context, work report.Report, images *oci
 	return m.podman.Load(ctx, work, images)
 }
 
+func (m *Machine) Flush(ctx context.Context) error {
+	if err := syncFileSystem(ctx, m.podman.run, m.root); err != nil {
+		return err
+	}
+	return m.podman.Flush(ctx)
+}
+
 func (m *Machine) Start(ctx context.Context, services []delivery.Service) error {
 	return m.do(ctx, startLines(services))
 }
