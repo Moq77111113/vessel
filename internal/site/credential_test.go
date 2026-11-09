@@ -34,8 +34,8 @@ func TestInstallSealsACredentialAUnitLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the credential: %v", err)
 	}
-	if string(body) != "KC_DB_PASSWORD=hunter2\n" {
-		t.Errorf("got %q, want the environment line systemd-creds sealed", body)
+	if string(body) != "hunter2" {
+		t.Errorf("got %q, want the value systemd-creds sealed", body)
 	}
 	if _, held := stub.secrets["KC_DB_PASSWORD"]; held {
 		t.Error("the credential also went to podman")
@@ -59,7 +59,7 @@ func TestUpgradeKeepsTheCredentialTheMachineHolds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the credential: %v", err)
 	}
-	if string(body) != "KC_DB_PASSWORD=hunter2\n" {
+	if string(body) != "hunter2" {
 		t.Errorf("got %q, want the value the install sealed", body)
 	}
 	if slices.ContainsFunc(stub.calls, func(call string) bool { return strings.HasPrefix(call, "systemd-creds") }) {
