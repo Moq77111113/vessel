@@ -328,3 +328,46 @@ func TestRestartRecreatesEveryContainerOfTheProject(t *testing.T) {
 		t.Errorf("got %v, want %v", docker.lines, want)
 	}
 }
+
+func TestAnImageDockerLoadedSurvivesAPowerCutOnceFlushed(t *testing.T) {
+	docker := &powerDocker{}
+	machine := compose.New("/", docker.run)
+	if _, err := machine.AddImages(context.Background(), report.New(io.Discard), layouttest.Open(t)); err != nil {
+		t.Fatalf("AddImages: %v", err)
+	}
+	if err := machine.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	docker.memory = 0
+	if docker.disk != 2 {
+		t.Errorf("got %d images on the disk after the power cut, want 2", docker.disk)
+	}
+}
+
+func TestFlushReportsASyncThatFailed(t *testing.T) {
+	docker := &calls{err: errors.New("exit status 1")}
+	if err := compose.New("/", docker.run).Flush(context.Background()); !errors.Is(err, compose.ErrCommand) {
+		t.Errorf("got %v, want compose.ErrCommand", err)
+	}
+}
+
+const dockerRoot = "/var/lib/docker"
+
+type powerDocker struct {
+	memory int
+	disk   int
+}
+
+func (d *powerDocker) run(_ context.Context, command compose.Command) ([]byte, error) {
+	switch strings.Join(command.Line, " ") {
+	case "docker load":
+		d.memory++
+		return []byte("Loaded image: registry.example.com/acme/web:1.0\n"), nil
+	case "docker info --format {{.DockerRootDir}}":
+		return []byte(dockerRoot + "\n"), nil
+	case "sync --file-system " + dockerRoot:
+		d.disk += d.memory
+		d.memory = 0
+	}
+	return nil, nil
+}

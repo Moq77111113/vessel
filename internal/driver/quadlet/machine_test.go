@@ -130,3 +130,10 @@ func TestRunningAsksAboutATimerTheDeliveryCarries(t *testing.T) {
 		t.Errorf("got %v, want %v", services, want)
 	}
 }
+
+func TestFlushReportsASyncThatFailed(t *testing.T) {
+	system := &calls{err: errors.New("exit status 1")}
+	if err := quadlet.New(t.TempDir(), system.run).Flush(context.Background()); !errors.Is(err, quadlet.ErrCommand) {
+		t.Errorf("got %v, want quadlet.ErrCommand", err)
+	}
+}

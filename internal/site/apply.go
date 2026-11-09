@@ -35,34 +35,34 @@ func (i Install) apply(ctx context.Context, req InstallRequest, c *pass) (int, e
 	host := c.before.host
 	tree := disk.NewTree(i.Root)
 	var changes int
-	if err := c.steps.run(release.StepValues, func() error {
+	if err := c.steps.run(ctx, release.StepValues, func() error {
 		return c.store.Write(c.resolution.Values)
 	}); err != nil {
 		return 0, err
 	}
-	if err := c.steps.run(release.StepActions, func() error {
+	if err := c.steps.run(ctx, release.StepActions, func() error {
 		return runActions(ctx, quiet(config.Actions, i.Shell), c.steps)
 	}); err != nil {
 		return 0, err
 	}
-	if err := c.steps.run(release.StepFiles, func() error {
+	if err := c.steps.run(ctx, release.StepFiles, func() error {
 		var err error
 		changes, err = c.writeFiles(ctx, req, tree)
 		return err
 	}); err != nil {
 		return 0, err
 	}
-	if err := c.steps.run(release.StepSecrets, func() error {
+	if err := c.steps.run(ctx, release.StepSecrets, func() error {
 		return addSecrets(ctx, host, c.resolution.Secrets)
 	}); err != nil {
 		return 0, err
 	}
-	if err := c.steps.run(release.StepImages, func() error {
+	if err := c.steps.run(ctx, release.StepImages, func() error {
 		return addImages(ctx, req, host)
 	}); err != nil {
 		return 0, err
 	}
-	if err := c.steps.run(release.StepServices, func() error {
+	if err := c.steps.run(ctx, release.StepServices, func() error {
 		reportMissingSecrets(req.Out, c.secrets, c.resolution.Secrets, config.Secrets)
 		up := host.Start
 		if c.before.replaces(req.Artifact.Root) {
@@ -72,7 +72,7 @@ func (i Install) apply(ctx context.Context, req InstallRequest, c *pass) (int, e
 	}); err != nil {
 		return 0, err
 	}
-	if err := c.steps.run(release.StepAfter, func() error {
+	if err := c.steps.run(ctx, release.StepAfter, func() error {
 		return runActions(ctx, after(config.After, i.Shell, req.Out), c.steps)
 	}); err != nil {
 		return 0, err
@@ -117,7 +117,7 @@ func afterRun(entry delivery.AfterAction, shell *disk.Shell, out io.Writer) func
 
 func runActions(ctx context.Context, todo actions, s *steps) error {
 	for _, next := range todo.list[min(count(s.opening.Actions, todo.step), len(todo.list)):] {
-		if err := s.action(todo.step, next.command, func() error { return next.run(ctx) }); err != nil {
+		if err := s.action(ctx, todo.step, next.command, func() error { return next.run(ctx) }); err != nil {
 			return err
 		}
 	}

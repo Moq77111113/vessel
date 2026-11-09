@@ -30,6 +30,7 @@ func (s kind) RemoveHint(string) string                          { return "" }
 func (s kind) Start(context.Context, []delivery.Service) error   { return nil }
 func (s kind) Restart(context.Context, []delivery.Service) error { return nil }
 func (s kind) Stop(context.Context, []delivery.Service) error    { return nil }
+func (s kind) Flush(context.Context) error                       { return nil }
 
 func (s kind) AddImages(context.Context, report.Report, *oci.Images) ([]string, error) {
 	return nil, nil

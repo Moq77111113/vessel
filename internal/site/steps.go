@@ -1,14 +1,17 @@
 package site
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/Moq77111113/vessel/internal/site/disk"
 	"github.com/Moq77111113/vessel/internal/site/release"
+	"github.com/Moq77111113/vessel/pkg/driver"
 )
 
 type steps struct {
+	machine driver.Machine
 	records *release.Records
 	opening release.Record
 	next    release.Record
@@ -20,21 +23,24 @@ func openSteps(before state, next release.Record) (*steps, error) {
 	opening.Services = unionServices(before.current.Services, next.Services)
 	opening.Steps = before.progress.Steps
 	opening.Actions = before.progress.Actions
-	return &steps{records: before.records, opening: opening, next: next}, before.records.Write(opening)
+	return &steps{machine: before.host, records: before.records, opening: opening, next: next}, before.records.Write(opening)
 }
 
-func (s *steps) run(step release.Step, do func() error) error {
+func (s *steps) run(ctx context.Context, step release.Step, do func() error) error {
 	if s.opening.Has(step) {
 		return nil
 	}
 	if err := do(); err != nil {
 		return err
 	}
+	if err := s.machine.Flush(ctx); err != nil {
+		return err
+	}
 	s.opening.Steps = append(s.opening.Steps, step)
 	return s.records.Write(s.opening)
 }
 
-func (s *steps) action(step release.Step, command string, do func() error) error {
+func (s *steps) action(ctx context.Context, step release.Step, command string, do func() error) error {
 	s.opening.Actions = append(s.opening.Actions, release.Action{Command: command, Step: step})
 	if err := s.records.Write(s.opening); err != nil {
 		return err
@@ -47,6 +53,9 @@ func (s *steps) action(step release.Step, command string, do func() error) error
 	if err != nil && !errors.Is(err, disk.ErrOutput) {
 		s.opening.Actions = s.opening.Actions[:last]
 		return errors.Join(err, s.records.Write(s.opening))
+	}
+	if flush := s.machine.Flush(ctx); flush != nil {
+		return errors.Join(err, flush)
 	}
 	s.opening.Actions[last].End = time.Now().UTC()
 	return errors.Join(err, s.records.Write(s.opening))

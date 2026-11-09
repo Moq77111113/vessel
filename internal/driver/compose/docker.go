@@ -73,6 +73,14 @@ func (d *docker) load(ctx context.Context, layout *oci.Images, i int) ([]byte, e
 	return d.run(ctx, Command{Line: []string{"docker", "load"}, Stdin: archive})
 }
 
+func (d *docker) flush(ctx context.Context) error {
+	output, err := d.run(ctx, line("docker", "info", "--format", "{{.DockerRootDir}}"))
+	if err != nil {
+		return fmt.Errorf("docker info: %w: %s", ErrCommand, strings.TrimSpace(string(output)))
+	}
+	return syncFileSystem(ctx, d.run, strings.TrimSpace(string(output)))
+}
+
 func (d *docker) ready(ctx context.Context) []error {
 	output, err := d.run(ctx, line("docker", "version", "--format", "{{.Server.Version}}"))
 	if errors.Is(err, exec.ErrNotFound) {

@@ -139,6 +139,13 @@ func (m *Machine) AddImages(ctx context.Context, work report.Report, images *oci
 	return m.docker.Load(ctx, work, images)
 }
 
+func (m *Machine) Flush(ctx context.Context) error {
+	if err := syncFileSystem(ctx, m.docker.run, m.root); err != nil {
+		return err
+	}
+	return m.docker.flush(ctx)
+}
+
 func (m *Machine) Start(ctx context.Context, services []delivery.Service) error {
 	return m.up(ctx, services, "up", "--detach", "--pull", "never", "--remove-orphans", "--wait")
 }

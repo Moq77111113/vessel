@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -324,4 +325,174 @@ func TestSkipActionRefusesAMachineWithNoOpenAction(t *testing.T) {
 	if !errors.Is(err, ErrNoOpenAction) {
 		t.Fatalf("got %v, want ErrNoOpenAction", err)
 	}
+}
+
+func TestResumeAfterAPowerCutFindsEverythingTheRecordNames(t *testing.T) {
+	secrets := map[string]string{"DB_PASSWORD": "hunter2", "KC_DB_PASSWORD": "hunter2"}
+	cuts := map[string]struct {
+		cut     func(root, text string) bool
+		secrets map[string]string
+	}{
+		"right after an action": {actionFinished, secrets},
+		"loading the images":    {starts("podman load"), nil},
+		"starting the services": {starts("systemctl daemon-reload"), nil},
+	}
+	for name, cut := range cuts {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := powerCutBundle(t)
+			power := &powerStub{root: root, cut: cut.cut}
+			kinds := []driver.Driver{quadlet.New(root, power.run)}
+			install := at(t, root, kinds).job(dir, nil)
+			install.Shell = disk.NewShell(power.shell)
+			install.SetFile = secrets
+			if err := install.Run(context.Background(), io.Discard, report.New(io.Discard)); err == nil {
+				t.Fatal("the install went through the power cut")
+			}
+			resume := at(t, root, kinds).job(dir, nil)
+			resume.Shell = disk.NewShell(power.shell)
+			resume.SetFile = cut.secrets
+			if err := resume.Resume(context.Background(), io.Discard, report.New(io.Discard)); err != nil {
+				t.Fatalf("resume: %v", err)
+			}
+			want := []string{"image", "secret DB_PASSWORD", "useradd acme"}
+			if !slices.Equal(slices.Sorted(maps.Keys(power.disk)), want) {
+				t.Errorf("got %v on the disk, want %v", slices.Sorted(maps.Keys(power.disk)), want)
+			}
+			if _, err := os.Stat(filepath.Join(root, "etc/credstore.encrypted/KC_DB_PASSWORD")); err != nil {
+				t.Errorf("the credential is not on the disk: %v", err)
+			}
+		})
+	}
+}
+
+func powerCutBundle(t *testing.T) string {
+	t.Helper()
+	body, err := os.ReadFile("testdata/power-cut/vessel.yaml")
+	if err != nil {
+		t.Fatalf("read the fixture: %v", err)
+	}
+	unit := "Secret=DB_PASSWORD,type=env,target=POSTGRES_PASSWORD\n[Service]\nLoadCredentialEncrypted=KC_DB_PASSWORD\n"
+	return linkTestDelivery(t, unit, map[string]string{"vessel.yaml": string(body)})
+}
+
+func starts(prefix string) func(root, text string) bool {
+	return func(_, text string) bool { return strings.HasPrefix(text, prefix) }
+}
+
+func actionFinished(root, _ string) bool {
+	dir, err := release.Dir(root, "acme")
+	if err != nil {
+		return false
+	}
+	entry, err := release.NewRecords(dir).Read()
+	if err != nil || len(entry.Actions) == 0 {
+		return false
+	}
+	return !entry.Actions[0].End.IsZero()
+}
+
+var errPowerCut = errors.New("power cut")
+
+const graphRoot = "/var/lib/containers/storage"
+
+// powerStub keeps what podman, systemd-creds and the shell write in memory, each until a sync reaches its file system.
+type powerStub struct {
+	root        string
+	cut         func(root, text string) bool
+	memory      map[string]string
+	disk        map[string]bool
+	credentials map[string][]byte
+}
+
+func (p *powerStub) shell(_ context.Context, command string, _, _ io.Writer) error {
+	if p.cut != nil && p.cut(p.root, command) {
+		p.powerCut()
+		return errPowerCut
+	}
+	p.write(command, p.root)
+	return nil
+}
+
+func (p *powerStub) run(_ context.Context, command quadlet.Command) ([]byte, error) {
+	text := strings.Join(command.Line, " ")
+	if p.cut != nil && p.cut(p.root, text) {
+		p.powerCut()
+		return nil, errPowerCut
+	}
+	switch {
+	case text == "podman --version":
+		return []byte("podman version 6.0.0\n"), nil
+	case text == "podman info --format {{.Store.GraphRoot}}":
+		return []byte(graphRoot + "\n"), nil
+	case text == "podman secret ls --format {{.Name}}":
+		return []byte(p.secrets()), nil
+	case strings.HasPrefix(text, "systemctl is-active"):
+		return []byte("active\n"), nil
+	case strings.HasPrefix(text, "podman secret create"):
+		p.write("secret "+command.Line[3], graphRoot)
+	case text == "podman load":
+		p.write("image", graphRoot)
+		return []byte("Loaded image: registry.test/acme/web:1.0\n"), nil
+	case strings.HasPrefix(text, "systemd-creds encrypt"):
+		return nil, p.seal(command)
+	case strings.HasPrefix(text, "sync --file-system "):
+		return nil, p.sync(command.Line[2])
+	}
+	return nil, nil
+}
+
+func (p *powerStub) powerCut() {
+	p.cut, p.memory, p.credentials = nil, nil, nil
+}
+
+func (p *powerStub) secrets() string {
+	var names []string
+	for _, thing := range slices.Concat(slices.Collect(maps.Keys(p.memory)), slices.Collect(maps.Keys(p.disk))) {
+		if name, ok := strings.CutPrefix(thing, "secret "); ok {
+			names = append(names, name+"\n")
+		}
+	}
+	return strings.Join(names, "")
+}
+
+func (p *powerStub) write(thing, fileSystem string) {
+	if p.memory == nil {
+		p.memory = map[string]string{}
+	}
+	p.memory[thing] = fileSystem
+}
+
+func (p *powerStub) seal(command quadlet.Command) error {
+	body, err := io.ReadAll(command.Stdin)
+	if err != nil {
+		return err
+	}
+	if p.credentials == nil {
+		p.credentials = map[string][]byte{}
+	}
+	p.credentials[command.Line[4]] = body
+	return nil
+}
+
+func (p *powerStub) sync(fileSystem string) error {
+	if p.disk == nil {
+		p.disk = map[string]bool{}
+	}
+	for thing, where := range p.memory {
+		if where == fileSystem {
+			p.disk[thing] = true
+			delete(p.memory, thing)
+		}
+	}
+	if fileSystem != p.root {
+		return nil
+	}
+	for path, body := range p.credentials {
+		if err := os.WriteFile(path, body, 0o600); err != nil {
+			return err
+		}
+	}
+	p.credentials = nil
+	return nil
 }
