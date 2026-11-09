@@ -59,7 +59,13 @@ func (m *Machine) RemoveHint(secret string) string {
 	return "podman secret rm " + secret
 }
 
+// A power cut during a load leaves a layer podman believes whole; the check removes damaged images, never an intact one.
+const repairLine = "podman system check --repair"
+
 func (m *Machine) AddImages(ctx context.Context, work report.Report, images *oci.Images) ([]string, error) {
+	if err := m.do(ctx, []string{repairLine}); err != nil {
+		return nil, err
+	}
 	return m.podman.Load(ctx, work, images)
 }
 
